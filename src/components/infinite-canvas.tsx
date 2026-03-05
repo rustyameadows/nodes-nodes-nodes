@@ -76,6 +76,9 @@ type InteractionState =
 const DEFAULT_NODE_WIDTH = 212;
 const DEFAULT_NODE_HEIGHT = 72;
 const LINE_DELTA_PX = 16;
+const WHEEL_ZOOM_SENSITIVITY = 0.00125;
+const GESTURE_ZOOM_SENSITIVITY = 0.00165;
+const PINCH_ZOOM_EXPONENT = 1.18;
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
@@ -132,6 +135,10 @@ export function InfiniteCanvas({
   const viewRef = useRef<CanvasViewport>(viewport);
   const interactionRef = useRef<InteractionState>({ type: "idle" });
   const viewportTimer = useRef<NodeJS.Timeout | null>(null);
+  const previousBodySelectionRef = useRef<{
+    userSelect: string;
+    webkitUserSelect: string;
+  } | null>(null);
   const gestureRef = useRef<{
     active: boolean;
     startView: CanvasViewport;
@@ -270,7 +277,7 @@ export function InfiniteCanvas({
       }
 
       const normalizedDeltaY = normalizeWheelDelta(event.deltaY, event.deltaMode);
-      const sensitivity = event.ctrlKey ? 0.0012 : 0.0009;
+      const sensitivity = event.ctrlKey ? GESTURE_ZOOM_SENSITIVITY : WHEEL_ZOOM_SENSITIVITY;
       const zoomFactor = Math.exp(-normalizedDeltaY * sensitivity);
       const nextZoom = clamp(current.zoom * zoomFactor, 0.35, 2.4);
       const cursorX = event.clientX - rect.left;
@@ -320,6 +327,8 @@ export function InfiniteCanvas({
       }
 
       if (interaction.type === "marquee") {
+        event.preventDefault();
+        window.getSelection()?.removeAllRanges();
         const point = toWorldPoint(event.clientX, event.clientY);
         interactionRef.current = {
           ...interaction,
@@ -390,9 +399,45 @@ export function InfiniteCanvas({
   }, [handlePointerMove, handlePointerUp]);
 
   useEffect(() => {
+    if (!marqueeDraft) {
+      if (previousBodySelectionRef.current) {
+        document.body.style.userSelect = previousBodySelectionRef.current.userSelect;
+        document.body.style.webkitUserSelect = previousBodySelectionRef.current.webkitUserSelect;
+        previousBodySelectionRef.current = null;
+      }
+      return;
+    }
+
+    if (!previousBodySelectionRef.current) {
+      previousBodySelectionRef.current = {
+        userSelect: document.body.style.userSelect,
+        webkitUserSelect: document.body.style.webkitUserSelect,
+      };
+    }
+
+    document.body.style.userSelect = "none";
+    document.body.style.webkitUserSelect = "none";
+    window.getSelection()?.removeAllRanges();
+
+    return () => {
+      if (!previousBodySelectionRef.current) {
+        return;
+      }
+      document.body.style.userSelect = previousBodySelectionRef.current.userSelect;
+      document.body.style.webkitUserSelect = previousBodySelectionRef.current.webkitUserSelect;
+      previousBodySelectionRef.current = null;
+    };
+  }, [marqueeDraft]);
+
+  useEffect(() => {
     return () => {
       if (viewportTimer.current) {
         clearTimeout(viewportTimer.current);
+      }
+      if (previousBodySelectionRef.current) {
+        document.body.style.userSelect = previousBodySelectionRef.current.userSelect;
+        document.body.style.webkitUserSelect = previousBodySelectionRef.current.webkitUserSelect;
+        previousBodySelectionRef.current = null;
       }
     };
   }, []);
@@ -475,7 +520,8 @@ export function InfiniteCanvas({
 
       const maybeGesture = event as Event & { scale?: number };
       const gestureScale = typeof maybeGesture.scale === "number" && maybeGesture.scale > 0 ? maybeGesture.scale : 1;
-      const nextZoom = clamp(gestureRef.current.startView.zoom * gestureScale, 0.35, 2.4);
+      const amplifiedScale = Math.pow(gestureScale, PINCH_ZOOM_EXPONENT);
+      const nextZoom = clamp(gestureRef.current.startView.zoom * amplifiedScale, 0.35, 2.4);
       const next: CanvasViewport = {
         zoom: nextZoom,
         x: gestureRef.current.originX - gestureRef.current.worldX * nextZoom,
@@ -510,6 +556,8 @@ export function InfiniteCanvas({
       }
 
       if (event.shiftKey) {
+        event.preventDefault();
+        window.getSelection()?.removeAllRanges();
         const point = toWorldPoint(event.clientX, event.clientY);
         interactionRef.current = {
           type: "marquee",
@@ -638,7 +686,7 @@ export function InfiniteCanvas({
   return (
     <div
       ref={containerRef}
-      className={styles.canvasRoot}
+      className={`${styles.canvasRoot} ${marqueeDraft ? styles.canvasMarqueeActive : ""}`}
       onPointerDown={onBackgroundPointerDown}
       onDoubleClick={onDoubleClick}
       onDragOver={(event) => {

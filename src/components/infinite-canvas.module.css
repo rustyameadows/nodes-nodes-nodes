@@ -12,6 +12,12 @@
     #060606;
 }
 
+.canvasMarqueeActive,
+.canvasMarqueeActive * {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
 .canvasRoot:active {
   cursor: grabbing;
 }
@@ -46,7 +52,7 @@
   position: absolute;
   width: 212px;
   border: 1px solid rgba(255, 255, 255, 0.82);
-  border-radius: 12px;
+  border-radius: var(--canvas-corner-radius);
   padding: 8px;
   background: rgba(255, 255, 255, 0.94);
   box-shadow:
@@ -63,9 +69,10 @@
 }
 
 .nodeSelected {
-  border-color: rgba(255, 255, 255, 1);
+  border-color: var(--canvas-selection-color);
   box-shadow:
-    0 0 0 2px rgba(255, 255, 255, 0.96),
+    0 0 0 1px var(--canvas-selection-color),
+    0 0 24px rgba(216, 255, 62, 0.48),
     0 18px 34px rgba(0, 0, 0, 0.34);
 }
 
@@ -104,7 +111,7 @@
 }
 
 .statusBubble {
-  border-radius: 999px;
+  border-radius: var(--canvas-corner-radius);
   padding: 2px 7px;
   font-size: 0.62rem;
   flex-shrink: 0;
@@ -115,7 +122,7 @@
 
 .sourcePreviewFrame {
   margin-top: 0;
-  border-radius: 10px;
+  border-radius: var(--canvas-corner-radius);
   overflow: hidden;
   border: 1px solid rgba(0, 0, 0, 0.2);
   background: #707070;
@@ -194,7 +201,7 @@
 
 .sourceBadge {
   margin-top: 5px;
-  border-radius: 8px;
+  border-radius: var(--canvas-corner-radius);
   border: 1px solid rgba(0, 0, 0, 0.2);
   background: rgba(255, 255, 255, 0.72);
   color: rgba(0, 0, 0, 0.74);
@@ -250,8 +257,8 @@
 
 .marquee {
   position: absolute;
-  border: 1px solid rgba(255, 255, 255, 0.88);
-  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid var(--canvas-selection-color);
+  background: rgba(216, 255, 62, 0.14);
   pointer-events: none;
   z-index: 8;
 }

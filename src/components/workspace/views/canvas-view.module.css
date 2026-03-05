@@ -1,6 +1,16 @@
 .page {
   position: absolute;
   inset: 0;
+  --canvas-corner-radius: 0px;
+  --canvas-selection-accent: #d8ff3e;
+  --canvas-selection-accent-p3: color(display-p3 0.84 0.98 0.22);
+  --canvas-selection-color: var(--canvas-selection-accent);
+}
+
+@supports (color: color(display-p3 1 1 1)) {
+  .page {
+    --canvas-selection-color: var(--canvas-selection-accent-p3);
+  }
 }
 
 .loading {
@@ -26,7 +36,7 @@
   right: 14px;
   bottom: 106px;
   z-index: 39;
-  border-radius: 10px;
+  border-radius: var(--canvas-corner-radius);
   border: 1px solid rgba(255, 255, 255, 0.82);
   background: rgba(255, 255, 255, 0.9);
   color: #101010;
@@ -53,7 +63,7 @@
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
-  border-radius: 12px;
+  border-radius: var(--canvas-corner-radius);
   border: 1px solid rgba(255, 255, 255, 0.82);
   background: rgba(255, 255, 255, 0.88);
   backdrop-filter: blur(10px);
@@ -75,7 +85,7 @@
   border: 1px solid rgba(0, 0, 0, 0.2);
   background: rgba(255, 255, 255, 0.86);
   color: #111;
-  border-radius: 10px;
+  border-radius: var(--canvas-corner-radius);
   font: inherit;
   font-size: 0.72rem;
   font-weight: 600;
@@ -92,7 +102,7 @@
   position: absolute;
   z-index: 35;
   width: 386px;
-  border-radius: 12px;
+  border-radius: var(--canvas-corner-radius);
   border: 1px solid rgba(255, 255, 255, 0.86);
   background: rgba(255, 255, 255, 0.9);
   backdrop-filter: blur(12px);
@@ -153,7 +163,7 @@
   border: 1px solid rgba(0, 0, 0, 0.2);
   background: rgba(255, 255, 255, 0.84);
   color: #111;
-  border-radius: 10px;
+  border-radius: var(--canvas-corner-radius);
   font: inherit;
 }
 
@@ -177,7 +187,7 @@
 }
 
 .connectionSummary {
-  border-radius: 8px;
+  border-radius: var(--canvas-corner-radius);
   border: 1px solid rgba(0, 0, 0, 0.2);
   background: rgba(255, 255, 255, 0.72);
   padding: 6px;
@@ -196,7 +206,7 @@
   border: 1px solid rgba(0, 0, 0, 0.2);
   background: rgba(255, 255, 255, 0.84);
   color: #111;
-  border-radius: 10px;
+  border-radius: var(--canvas-corner-radius);
   font: inherit;
   font-size: 0.72rem;
   font-weight: 600;
@@ -209,7 +219,7 @@
   max-height: 210px;
   overflow: auto;
   white-space: pre;
-  border-radius: 10px;
+  border-radius: var(--canvas-corner-radius);
   border: 1px solid rgba(0, 0, 0, 0.2);
   background: rgba(243, 246, 250, 0.9);
   color: #17212b;

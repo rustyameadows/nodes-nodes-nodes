@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import styles from "./workspace-shell.module.css";
 import { getProjects, openProject, summarizeQueue } from "@/components/workspace/client-api";
@@ -147,7 +147,10 @@ export function WorkspaceShell({ projectId, view, jobs = [], showQueuePill = fal
   );
 
   return (
-    <div className={styles.workspaceRoot}>
+    <div
+      className={styles.workspaceRoot}
+      style={view === "canvas" ? ({ "--workspace-shell-corner-radius": "0px" } as CSSProperties) : undefined}
+    >
       <div className={styles.workspaceContent}>{children}</div>
 
       <div
