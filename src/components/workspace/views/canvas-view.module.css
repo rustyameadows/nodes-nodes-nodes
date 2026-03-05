@@ -44,6 +44,50 @@
   cursor: wait;
 }
 
+.selectionBar {
+  position: absolute;
+  left: 14px;
+  bottom: 18px;
+  z-index: 39;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.82);
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(10px);
+  box-shadow:
+    0 12px 30px rgba(0, 0, 0, 0.3),
+    0 0 0 1px rgba(255, 255, 255, 0.66) inset;
+  padding: 7px;
+  max-width: calc(100vw - 170px);
+}
+
+.selectionCount {
+  color: rgba(0, 0, 0, 0.76);
+  font-size: 0.72rem;
+  font-weight: 600;
+  margin-right: 4px;
+}
+
+.selectionBar button {
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  background: rgba(255, 255, 255, 0.86);
+  color: #111;
+  border-radius: 10px;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 6px 8px;
+}
+
+.selectionBar button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .nodeModal {
   position: absolute;
   z-index: 35;
@@ -142,6 +186,44 @@
   line-height: 1.3;
 }
 
+.debuggerBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.debuggerToggle {
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  background: rgba(255, 255, 255, 0.84);
+  color: #111;
+  border-radius: 10px;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 6px 8px;
+}
+
+.debuggerPreview {
+  margin: 0;
+  max-height: 210px;
+  overflow: auto;
+  white-space: pre;
+  border-radius: 10px;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  background: rgba(243, 246, 250, 0.9);
+  color: #17212b;
+  padding: 8px;
+  font-size: 0.66rem;
+  line-height: 1.35;
+  font-family:
+    ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    monospace;
+}
+
 .nodeModalActions {
   display: flex;
   flex-wrap: wrap;
@@ -156,6 +238,12 @@
 }
 
 @media (max-width: 900px) {
+  .selectionBar {
+    right: 12px;
+    left: 12px;
+    max-width: none;
+  }
+
   .uploadCta {
     right: 12px;
     bottom: 104px;

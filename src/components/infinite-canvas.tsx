@@ -32,9 +32,11 @@ type CanvasNode = {
 
 type Props = {
   nodes: CanvasNode[];
-  selectedNodeId: string | null;
+  selectedNodeIds: string[];
   viewport: CanvasViewport;
-  onSelectNode: (nodeId: string | null) => void;
+  onSelectSingleNode: (nodeId: string | null) => void;
+  onToggleNodeSelection: (nodeId: string) => void;
+  onMarqueeSelectNodes: (nodeIds: string[]) => void;
   onDropNode: (position: { x: number; y: number }) => void;
   onDropFiles: (files: File[], position: { x: number; y: number }) => void;
   onViewportChange: (viewport: CanvasViewport) => void;
@@ -62,6 +64,13 @@ type InteractionState =
   | {
       type: "connect";
       sourceNodeId: string;
+    }
+  | {
+      type: "marquee";
+      startX: number;
+      startY: number;
+      endX: number;
+      endY: number;
     };
 
 const DEFAULT_NODE_WIDTH = 212;
@@ -103,9 +112,11 @@ function normalizeWheelDelta(deltaY: number, deltaMode: number) {
 
 export function InfiniteCanvas({
   nodes,
-  selectedNodeId,
+  selectedNodeIds,
   viewport,
-  onSelectNode,
+  onSelectSingleNode,
+  onToggleNodeSelection,
+  onMarqueeSelectNodes,
   onDropNode,
   onDropFiles,
   onViewportChange,
@@ -117,6 +128,7 @@ export function InfiniteCanvas({
   const nodeElementRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [view, setView] = useState<CanvasViewport>(viewport);
   const [nodeSizes, setNodeSizes] = useState<Record<string, { width: number; height: number }>>({});
+  const [imageAspectRatios, setImageAspectRatios] = useState<Record<string, number>>({});
   const viewRef = useRef<CanvasViewport>(viewport);
   const interactionRef = useRef<InteractionState>({ type: "idle" });
   const viewportTimer = useRef<NodeJS.Timeout | null>(null);
@@ -139,6 +151,12 @@ export function InfiniteCanvas({
     sourceNodeId: string;
     targetX: number;
     targetY: number;
+  } | null>(null);
+  const [marqueeDraft, setMarqueeDraft] = useState<{
+    startX: number;
+    startY: number;
+    endX: number;
+    endY: number;
   } | null>(null);
 
   const nodesById = useMemo(() => {
@@ -185,7 +203,7 @@ export function InfiniteCanvas({
 
       return prev;
     });
-  }, [latestNodeStates, nodes, selectedNodeId]);
+  }, [latestNodeStates, nodes, selectedNodeIds]);
 
   const edges = useMemo(() => {
     return nodes.flatMap((targetNode) => {
@@ -301,6 +319,22 @@ export function InfiniteCanvas({
         return;
       }
 
+      if (interaction.type === "marquee") {
+        const point = toWorldPoint(event.clientX, event.clientY);
+        interactionRef.current = {
+          ...interaction,
+          endX: point.x,
+          endY: point.y,
+        };
+        setMarqueeDraft({
+          startX: interaction.startX,
+          startY: interaction.startY,
+          endX: point.x,
+          endY: point.y,
+        });
+        return;
+      }
+
       const point = toWorldPoint(event.clientX, event.clientY);
       setConnectionDraft({
         sourceNodeId: interaction.sourceNodeId,
@@ -312,11 +346,38 @@ export function InfiniteCanvas({
   );
 
   const handlePointerUp = useCallback(() => {
-    if (interactionRef.current.type === "connect") {
+    const interaction = interactionRef.current;
+    if (interaction.type === "connect") {
       setConnectionDraft(null);
     }
+
+    if (interaction.type === "marquee") {
+      const minX = Math.min(interaction.startX, interaction.endX);
+      const maxX = Math.max(interaction.startX, interaction.endX);
+      const minY = Math.min(interaction.startY, interaction.endY);
+      const maxY = Math.max(interaction.startY, interaction.endY);
+
+      const selectedIds = nodes
+        .filter((node) => {
+          const size = getNodeSize(node.id);
+          const nodeMinX = node.x;
+          const nodeMaxX = node.x + size.width;
+          const nodeMinY = node.y;
+          const nodeMaxY = node.y + size.height;
+
+          return !(nodeMaxX < minX || nodeMinX > maxX || nodeMaxY < minY || nodeMinY > maxY);
+        })
+        .map((node) => node.id);
+
+      if (selectedIds.length > 0) {
+        onMarqueeSelectNodes(selectedIds);
+      }
+
+      setMarqueeDraft(null);
+    }
+
     interactionRef.current = { type: "idle" };
-  }, []);
+  }, [getNodeSize, nodes, onMarqueeSelectNodes]);
 
   useEffect(() => {
     window.addEventListener("pointermove", handlePointerMove);
@@ -448,7 +509,25 @@ export function InfiniteCanvas({
         return;
       }
 
-      onSelectNode(null);
+      if (event.shiftKey) {
+        const point = toWorldPoint(event.clientX, event.clientY);
+        interactionRef.current = {
+          type: "marquee",
+          startX: point.x,
+          startY: point.y,
+          endX: point.x,
+          endY: point.y,
+        };
+        setMarqueeDraft({
+          startX: point.x,
+          startY: point.y,
+          endX: point.x,
+          endY: point.y,
+        });
+        return;
+      }
+
+      onSelectSingleNode(null);
       interactionRef.current = {
         type: "pan",
         startClientX: event.clientX,
@@ -456,12 +535,17 @@ export function InfiniteCanvas({
         startViewport: viewRef.current,
       };
     },
-    [onSelectNode]
+    [onSelectSingleNode, toWorldPoint]
   );
 
   const onNodePointerDown = useCallback(
     (node: CanvasNode, event: ReactPointerEvent<HTMLDivElement>) => {
       event.stopPropagation();
+
+      if (event.shiftKey || event.metaKey || event.ctrlKey) {
+        onToggleNodeSelection(node.id);
+        return;
+      }
 
       const point = toWorldPoint(event.clientX, event.clientY);
       interactionRef.current = {
@@ -471,9 +555,9 @@ export function InfiniteCanvas({
         pointerOffsetY: point.y - node.y,
       };
 
-      onSelectNode(node.id);
+      onSelectSingleNode(node.id);
     },
-    [onSelectNode, toWorldPoint]
+    [onSelectSingleNode, onToggleNodeSelection, toWorldPoint]
   );
 
   const onOutputPortPointerDown = useCallback(
@@ -491,9 +575,9 @@ export function InfiniteCanvas({
         targetX: source.x,
         targetY: source.y,
       });
-      onSelectNode(node.id);
+      onSelectSingleNode(node.id);
     },
-    [getNodeSize, onSelectNode]
+    [getNodeSize, onSelectSingleNode]
   );
 
   const onInputPortPointerUp = useCallback(
@@ -598,17 +682,16 @@ export function InfiniteCanvas({
               }}
               role="button"
               tabIndex={0}
-              className={`${styles.node} ${selectedNodeId === node.id ? styles.nodeSelected : ""} ${hasImageSource ? styles.nodeWithImage : ""} ${connectedNodeIds.has(node.id) ? styles.nodeConnected : ""}`}
+              className={`${styles.node} ${selectedNodeIds.includes(node.id) ? styles.nodeSelected : ""} ${hasImageSource ? styles.nodeWithImage : ""} ${connectedNodeIds.has(node.id) ? styles.nodeConnected : ""}`}
               style={{ left: `${node.x}px`, top: `${node.y}px` }}
               onClick={(event) => {
                 event.stopPropagation();
-                onSelectNode(node.id);
               }}
               onPointerDown={(event) => onNodePointerDown(node, event)}
               onKeyDown={(event) => {
                 if (event.key === "Enter" || event.key === " ") {
                   event.preventDefault();
-                  onSelectNode(node.id);
+                  onSelectSingleNode(node.id);
                 }
               }}
             >
@@ -629,12 +712,38 @@ export function InfiniteCanvas({
               />
 
               {hasImageSource ? (
-                <div className={styles.sourcePreviewFrame}>
+                <div
+                  className={styles.sourcePreviewFrame}
+                  style={{
+                    aspectRatio: imageAspectRatios[node.id] ? String(imageAspectRatios[node.id]) : "1.33",
+                  }}
+                >
                   <img
                     className={styles.sourcePreviewImage}
                     src={`/api/assets/${node.sourceAssetId}/file`}
                     alt={`${node.label} source`}
                     draggable={false}
+                    onLoad={(event) => {
+                      const target = event.currentTarget;
+                      if (!target.naturalWidth || !target.naturalHeight) {
+                        return;
+                      }
+                      const nextRatio = target.naturalWidth / target.naturalHeight;
+                      if (!Number.isFinite(nextRatio) || nextRatio <= 0) {
+                        return;
+                      }
+
+                      setImageAspectRatios((prev) => {
+                        const currentRatio = prev[node.id];
+                        if (currentRatio && Math.abs(currentRatio - nextRatio) < 0.005) {
+                          return prev;
+                        }
+                        return {
+                          ...prev,
+                          [node.id]: nextRatio,
+                        };
+                      });
+                    }}
                   />
                   <div className={styles.imageNodeOverlay}>
                     <div className={styles.nodeTitle}>
@@ -666,6 +775,18 @@ export function InfiniteCanvas({
             </div>
           );
         })}
+
+        {marqueeDraft ? (
+          <div
+            className={styles.marquee}
+            style={{
+              left: `${Math.min(marqueeDraft.startX, marqueeDraft.endX)}px`,
+              top: `${Math.min(marqueeDraft.startY, marqueeDraft.endY)}px`,
+              width: `${Math.abs(marqueeDraft.endX - marqueeDraft.startX)}px`,
+              height: `${Math.abs(marqueeDraft.endY - marqueeDraft.startY)}px`,
+            }}
+          />
+        ) : null}
       </div>
     </div>
   );

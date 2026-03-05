@@ -50,6 +50,11 @@ export type WorkflowNode = {
   y: number;
 };
 
+export type WorkflowNodeSelectionState = {
+  selectedNodeIds: string[];
+  primarySelectedNodeId: string | null;
+};
+
 export type CanvasDocument = {
   canvasViewport: {
     x: number;
@@ -72,7 +77,18 @@ export type Job = {
   errorMessage: string | null;
   nodeRunPayload?: {
     nodeId?: string;
+    nodeType?: WorkflowNode["nodeType"];
+    prompt?: string;
+    settings?: Record<string, unknown>;
+    outputType?: WorkflowNode["outputType"];
+    upstreamNodeIds?: string[];
+    upstreamAssetIds?: string[];
   };
+  assets?: Array<{
+    id: string;
+    type: Asset["type"];
+    createdAt: string;
+  }>;
 };
 
 export type QueueSummary = {
@@ -83,10 +99,17 @@ export type QueueSummary = {
 
 export type Asset = {
   id: string;
+  projectId?: string;
+  jobId?: string | null;
   type: "image" | "video" | "text";
   storageRef: string;
   mimeType: string;
+  checksum?: string;
+  width?: number | null;
+  height?: number | null;
+  durationMs?: number | null;
   createdAt: string;
+  updatedAt?: string;
   tagNames: string[];
   rating: number | null;
   flagged: boolean;
@@ -109,6 +132,22 @@ export type AssetFilterState = {
 export type MenuFlyoutState = {
   open: boolean;
   projectsOpen: boolean;
+};
+
+export type JobAttemptDebug = {
+  id: string;
+  attemptNumber: number;
+  providerRequest: Record<string, unknown> | null;
+  providerResponse: Record<string, unknown> | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+  durationMs: number | null;
+  createdAt: string;
+};
+
+export type JobDebugResponse = {
+  job: Job;
+  attempts: JobAttemptDebug[];
 };
 
 export const defaultCanvasDocument: CanvasDocument = {

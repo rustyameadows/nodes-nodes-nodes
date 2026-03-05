@@ -9,6 +9,46 @@ const updateSchema = z.object({
   tags: z.array(z.string().trim().min(1).max(40)).optional(),
 });
 
+export async function GET(
+  _request: Request,
+  context: { params: Promise<{ assetId: string }> }
+) {
+  try {
+    const { assetId } = await context.params;
+    const asset = await prisma.asset.findUnique({
+      where: { id: assetId },
+      include: {
+        feedback: true,
+        tags: {
+          include: { tag: true },
+        },
+        job: {
+          select: {
+            providerId: true,
+            modelId: true,
+            state: true,
+          },
+        },
+      },
+    });
+
+    if (!asset) {
+      return badRequest("Asset not found", 404);
+    }
+
+    return NextResponse.json({
+      asset: {
+        ...asset,
+        tagNames: asset.tags.map((link) => link.tag.name),
+        rating: asset.feedback?.rating ?? null,
+        flagged: asset.feedback?.flagged ?? false,
+      },
+    });
+  } catch (error) {
+    return internalError(error);
+  }
+}
+
 export async function PATCH(
   request: Request,
   context: { params: Promise<{ assetId: string }> }

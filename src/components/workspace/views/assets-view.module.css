@@ -111,10 +111,10 @@
   min-height: 0;
   overflow: auto;
   display: grid;
-  gap: 8px;
+  gap: 10px;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-auto-rows: 170px;
   grid-auto-flow: row;
-  grid-auto-rows: 180px;
   align-content: start;
 }
 
@@ -126,9 +126,10 @@
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 6px;
-  background: rgba(10, 12, 17, 0.92);
+  background: #666;
   cursor: pointer;
   outline: none;
+  isolation: isolate;
 }
 
 .assetCard:focus-visible {
@@ -160,9 +161,41 @@
   width: 100%;
   height: 100%;
   display: block;
-  object-fit: cover;
+  object-fit: contain;
   border: none;
-  background: rgba(4, 6, 10, 0.72);
+  background: #5b5b5b;
+}
+
+.assetPreviewFrameCompact {
+  min-height: 100%;
+}
+
+.assetPreviewCompactFrame {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #777;
+  padding: 8px;
+  box-sizing: border-box;
+}
+
+.assetPreviewImageAnalysis {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center;
+  background: #000;
+}
+
+.assetPreviewFrameAnalysis {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: none;
+  background: #0a0a0a;
 }
 
 .videoPlaceholder {
@@ -180,7 +213,7 @@
   width: 100%;
   height: 100%;
   border: 1px dashed rgba(255, 255, 255, 0.45);
-  background: rgba(5, 7, 12, 0.7);
+  background: #545454;
   color: #dce6f4;
   display: flex;
   align-items: center;
@@ -190,11 +223,30 @@
   font-size: 0.78rem;
 }
 
+.videoPlaceholderAnalysis {
+  min-width: 100%;
+  min-height: 100%;
+  border: 1px dashed rgba(255, 255, 255, 0.35);
+  background: rgba(4, 6, 10, 0.88);
+  color: #dce6f4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  font-size: 0.82rem;
+}
+
 .videoPlaceholder a {
   color: #7ad6ff;
 }
 
 .videoPlaceholderCompact a {
+  color: #9fe3ff;
+}
+
+.videoPlaceholderAnalysis a {
   color: #9fe3ff;
 }
 
@@ -258,7 +310,7 @@
 .compareMode {
   flex: 1;
   min-height: 0;
-  overflow: auto;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -270,25 +322,78 @@
   font-size: 0.86rem;
 }
 
-.compareTwo,
-.compareFour {
+.compareHint {
+  color: #d4e4f2 !important;
+  font-size: 0.82rem !important;
+}
+
+.compareStage {
+  flex: 1;
+  min-height: 0;
   display: grid;
-  gap: 12px;
+  gap: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 12px;
+  background: #020202;
+  padding: 8px;
 }
 
 .compareTwo {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: minmax(0, 1fr);
 }
 
 .compareFour {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
 }
 
-.compareCard {
-  border: 1px solid rgba(120, 200, 255, 0.24);
-  border-radius: 12px;
-  background: rgba(20, 24, 36, 0.42);
-  padding: 8px;
+.compareCell {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 10px;
+  background: #000;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.comparePlaceholder {
+  border: 1px dashed rgba(255, 255, 255, 0.45);
+  border-radius: 10px;
+  background: #070707;
+  color: #cdd2d8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 16px;
+  min-height: 0;
+}
+
+.compareMetaOverlay {
+  position: absolute;
+  inset: auto 8px 8px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.34);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.72);
+  color: #111;
+  backdrop-filter: blur(8px);
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 4px 7px;
+  font-size: 0.72rem;
+  opacity: 0;
+  transition: opacity 140ms ease;
+}
+
+.compareCell:hover .compareMetaOverlay,
+.compareCell:focus-within .compareMetaOverlay {
+  opacity: 1;
 }
 
 @media (max-width: 1000px) {

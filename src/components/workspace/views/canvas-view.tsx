@@ -9,6 +9,7 @@ import {
   type ChangeEvent as ReactChangeEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
+import { useRouter } from "next/navigation";
 import { InfiniteCanvas } from "@/components/infinite-canvas";
 import { WorkspaceShell } from "@/components/workspace/workspace-shell";
 import {
@@ -124,14 +125,29 @@ function normalizeAssetNodeLabel(fileName: string, index: number) {
   return trimmed.length <= 28 ? trimmed : `${trimmed.slice(0, 26)}...`;
 }
 
+function isInputLikeElement(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  if (target.isContentEditable) {
+    return true;
+  }
+
+  const tagName = target.tagName.toLowerCase();
+  return tagName === "input" || tagName === "textarea" || tagName === "select";
+}
+
 export function CanvasView({ projectId }: Props) {
+  const router = useRouter();
   const [providers, setProviders] = useState<ProviderModel[]>([]);
   const [canvasDoc, setCanvasDoc] = useState<CanvasDocument>(defaultCanvasDocument);
   const [jobs, setJobs] = useState<Job[]>([]);
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [modalPosition, setModalPosition] = useState(defaultNodeModalPosition);
   const [isUploading, setIsUploading] = useState(false);
+  const [isApiPreviewOpen, setIsApiPreviewOpen] = useState(false);
 
   const saveTimer = useRef<NodeJS.Timeout | null>(null);
   const nodeModalRef = useRef<HTMLElement | null>(null);
@@ -159,9 +175,22 @@ export function CanvasView({ projectId }: Props) {
     }, {});
   }, [providers]);
 
+  const selectedNodes = useMemo(() => {
+    const nodeMap = canvasDoc.workflow.nodes.reduce<Record<string, WorkflowNode>>((acc, node) => {
+      acc[node.id] = node;
+      return acc;
+    }, {});
+
+    return selectedNodeIds
+      .map((nodeId) => nodeMap[nodeId])
+      .filter((node): node is WorkflowNode => Boolean(node));
+  }, [canvasDoc.workflow.nodes, selectedNodeIds]);
+
+  const primarySelectedNodeId = selectedNodeIds.length > 0 ? selectedNodeIds[selectedNodeIds.length - 1] : null;
+
   const selectedNode = useMemo(
-    () => canvasDoc.workflow.nodes.find((node) => node.id === selectedNodeId) || null,
-    [canvasDoc.workflow.nodes, selectedNodeId]
+    () => canvasDoc.workflow.nodes.find((node) => node.id === primarySelectedNodeId) || null,
+    [canvasDoc.workflow.nodes, primarySelectedNodeId]
   );
 
   const selectedNodeIsAssetSource = Boolean(selectedNode?.sourceAssetId);
@@ -194,6 +223,70 @@ export function CanvasView({ projectId }: Props) {
     return map;
   }, [jobs]);
 
+  const latestImageAssetByNodeId = useMemo(() => {
+    const map = new Map<string, { assetId: string; createdAtMs: number }>();
+
+    for (const job of jobs) {
+      if (job.state !== "succeeded") {
+        continue;
+      }
+      const nodeId = job.nodeRunPayload?.nodeId;
+      if (!nodeId) {
+        continue;
+      }
+
+      for (const asset of job.assets || []) {
+        if (asset.type !== "image") {
+          continue;
+        }
+
+        const createdAtMs = new Date(asset.createdAt).getTime();
+        const existing = map.get(nodeId);
+        if (!existing || createdAtMs > existing.createdAtMs) {
+          map.set(nodeId, { assetId: asset.id, createdAtMs });
+        }
+      }
+    }
+
+    return map;
+  }, [jobs]);
+
+  const resolveNodeImageAssetId = useCallback(
+    (node: WorkflowNode | null | undefined) => {
+      if (!node || node.outputType !== "image") {
+        return null;
+      }
+
+      if (node.sourceAssetId) {
+        return node.sourceAssetId;
+      }
+
+      return latestImageAssetByNodeId.get(node.id)?.assetId || null;
+    },
+    [latestImageAssetByNodeId]
+  );
+
+  const selectedImageAssetIds = useMemo(() => {
+    const ids: string[] = [];
+    const seen = new Set<string>();
+    for (const node of selectedNodes) {
+      const assetId = resolveNodeImageAssetId(node);
+      if (!assetId || seen.has(assetId)) {
+        continue;
+      }
+      ids.push(assetId);
+      seen.add(assetId);
+    }
+    return ids;
+  }, [resolveNodeImageAssetId, selectedNodes]);
+
+  const selectedSingleImageAssetId = useMemo(() => {
+    if (selectedNodeIds.length !== 1) {
+      return null;
+    }
+    return resolveNodeImageAssetId(selectedNode);
+  }, [resolveNodeImageAssetId, selectedNode, selectedNodeIds.length]);
+
   const fetchCanvas = useCallback(async () => {
     const data = await getCanvasWorkspace(projectId);
     const raw = (data.canvas?.canvasDocument || {}) as Record<string, unknown>;
@@ -220,7 +313,7 @@ export function CanvasView({ projectId }: Props) {
       },
     });
 
-    setSelectedNodeId((current) => (current && nodes.some((node) => node.id === current) ? current : null));
+    setSelectedNodeIds((current) => current.filter((nodeId) => nodes.some((node) => node.id === nodeId)));
   }, [projectId]);
 
   const fetchJobs = useCallback(async () => {
@@ -252,6 +345,54 @@ export function CanvasView({ projectId }: Props) {
     [persistCanvas]
   );
 
+  const selectSingleNode = useCallback((nodeId: string | null) => {
+    setSelectedNodeIds(nodeId ? [nodeId] : []);
+  }, []);
+
+  const toggleNodeSelection = useCallback((nodeId: string) => {
+    setSelectedNodeIds((prev) => {
+      if (prev.includes(nodeId)) {
+        return prev.filter((id) => id !== nodeId);
+      }
+      return [...prev, nodeId];
+    });
+  }, []);
+
+  const addNodesToSelection = useCallback((nodeIds: string[]) => {
+    setSelectedNodeIds((prev) => {
+      const seen = new Set(prev);
+      const merged = [...prev];
+      for (const nodeId of nodeIds) {
+        if (seen.has(nodeId)) {
+          continue;
+        }
+        seen.add(nodeId);
+        merged.push(nodeId);
+      }
+      return merged;
+    });
+  }, []);
+
+  const buildNodeRunRequest = useCallback(
+    (node: WorkflowNode) => {
+      const resolvedAssetIds = buildAssetRefsFromNodes(node.upstreamNodeIds, canvasDoc.workflow.nodes);
+      return {
+        providerId: node.providerId,
+        modelId: node.modelId,
+        nodePayload: {
+          nodeId: node.id,
+          nodeType: node.nodeType,
+          prompt: node.prompt,
+          settings: node.settings,
+          outputType: node.outputType,
+          upstreamNodeIds: node.upstreamNodeIds,
+          upstreamAssetIds: resolvedAssetIds,
+        },
+      };
+    },
+    [canvasDoc.workflow.nodes]
+  );
+
   useEffect(() => {
     setIsLoading(true);
 
@@ -274,6 +415,10 @@ export function CanvasView({ projectId }: Props) {
 
     return () => clearInterval(interval);
   }, [fetchJobs]);
+
+  useEffect(() => {
+    setIsApiPreviewOpen(false);
+  }, [primarySelectedNodeId]);
 
   useEffect(() => {
     const onPointerMove = (event: PointerEvent) => {
@@ -351,7 +496,7 @@ export function CanvasView({ projectId }: Props) {
         };
 
         queueCanvasSave(nextDoc);
-        setSelectedNodeId(node.id);
+        setSelectedNodeIds([node.id]);
         return nextDoc;
       });
     },
@@ -425,7 +570,8 @@ export function CanvasView({ projectId }: Props) {
           };
 
           queueCanvasSave(nextDoc);
-          setSelectedNodeId(sourceNodes[sourceNodes.length - 1]?.id || null);
+          const lastSourceNode = sourceNodes[sourceNodes.length - 1];
+          setSelectedNodeIds(lastSourceNode ? [lastSourceNode.id] : []);
           return nextDoc;
         });
       } catch (error) {
@@ -476,12 +622,17 @@ export function CanvasView({ projectId }: Props) {
     [queueCanvasSave]
   );
 
-  const removeNode = useCallback(
-    (nodeId: string) => {
+  const removeNodes = useCallback(
+    (nodeIds: string[]) => {
+      if (nodeIds.length === 0) {
+        return;
+      }
+      const nodeIdSet = new Set(nodeIds);
+
       setCanvasDoc((prev) => {
-        const remainingNodes = prev.workflow.nodes.filter((node) => node.id !== nodeId);
+        const remainingNodes = prev.workflow.nodes.filter((node) => !nodeIdSet.has(node.id));
         const nextNodes = remainingNodes.map((node) => {
-          const upstreamNodeIds = node.upstreamNodeIds.filter((upstreamNodeId) => upstreamNodeId !== nodeId);
+          const upstreamNodeIds = node.upstreamNodeIds.filter((upstreamNodeId) => !nodeIdSet.has(upstreamNodeId));
           return {
             ...node,
             upstreamNodeIds,
@@ -500,10 +651,32 @@ export function CanvasView({ projectId }: Props) {
         return nextDoc;
       });
 
-      setSelectedNodeId((current) => (current === nodeId ? null : current));
+      setSelectedNodeIds((current) => current.filter((nodeId) => !nodeIdSet.has(nodeId)));
     },
     [queueCanvasSave]
   );
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Delete" && event.key !== "Backspace") {
+        return;
+      }
+      if (selectedNodeIds.length === 0) {
+        return;
+      }
+      if (isInputLikeElement(event.target)) {
+        return;
+      }
+
+      event.preventDefault();
+      removeNodes(selectedNodeIds);
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [removeNodes, selectedNodeIds]);
 
   const updateViewport = useCallback(
     (nextViewport: CanvasDocument["canvasViewport"]) => {
@@ -526,14 +699,14 @@ export function CanvasView({ projectId }: Props) {
         return;
       }
 
-      const resolvedAssetIds = buildAssetRefsFromNodes(node.upstreamNodeIds, canvasDoc.workflow.nodes);
+      const requestPayload = buildNodeRunRequest(node);
       await createJob(projectId, {
         ...node,
-        upstreamAssetIds: resolvedAssetIds,
+        upstreamAssetIds: requestPayload.nodePayload.upstreamAssetIds,
       });
       await fetchJobs();
     },
-    [canvasDoc.workflow.nodes, fetchJobs, projectId]
+    [buildNodeRunRequest, fetchJobs, projectId]
   );
 
   const startDraggingModal = useCallback(
@@ -558,6 +731,35 @@ export function CanvasView({ projectId }: Props) {
     [uploadFilesToCanvas]
   );
 
+  const openAssetViewer = useCallback(
+    (assetId: string) => {
+      router.push(`/projects/${projectId}/assets/${assetId}`);
+    },
+    [projectId, router]
+  );
+
+  const openCompare = useCallback(
+    (mode: "compare_2" | "compare_4", count: number) => {
+      const assetIds = selectedImageAssetIds.slice(0, count);
+      if (assetIds.length < count) {
+        return;
+      }
+      const params = new URLSearchParams({
+        layout: mode,
+        assetIds: assetIds.join(","),
+      });
+      router.push(`/projects/${projectId}/assets?${params.toString()}`);
+    },
+    [projectId, router, selectedImageAssetIds]
+  );
+
+  const apiCallPreviewPayload = useMemo(() => {
+    if (!selectedNode || selectedNodeIsAssetSource) {
+      return null;
+    }
+    return buildNodeRunRequest(selectedNode);
+  }, [buildNodeRunRequest, selectedNode, selectedNodeIsAssetSource]);
+
   return (
     <WorkspaceShell projectId={projectId} view="canvas" jobs={jobs} showQueuePill>
       <div className={styles.page}>
@@ -566,9 +768,11 @@ export function CanvasView({ projectId }: Props) {
         ) : (
           <InfiniteCanvas
             nodes={canvasDoc.workflow.nodes}
-            selectedNodeId={selectedNodeId}
+            selectedNodeIds={selectedNodeIds}
             viewport={canvasDoc.canvasViewport}
-            onSelectNode={setSelectedNodeId}
+            onSelectSingleNode={selectSingleNode}
+            onToggleNodeSelection={toggleNodeSelection}
+            onMarqueeSelectNodes={addNodesToSelection}
             onDropNode={(position) => addNode(position)}
             onDropFiles={(files, position) => {
               uploadFilesToCanvas(files, position).catch(console.error);
@@ -579,6 +783,40 @@ export function CanvasView({ projectId }: Props) {
             latestNodeStates={latestNodeStates}
           />
         )}
+
+        {selectedNodeIds.length > 0 ? (
+          <div className={styles.selectionBar}>
+            <span className={styles.selectionCount}>
+              {`${selectedNodeIds.length} node${selectedNodeIds.length === 1 ? "" : "s"} selected`}
+            </span>
+
+            {selectedSingleImageAssetId ? (
+              <button type="button" onClick={() => openAssetViewer(selectedSingleImageAssetId)}>
+                View Image
+              </button>
+            ) : null}
+
+            <button
+              type="button"
+              onClick={() => openCompare("compare_2", 2)}
+              disabled={selectedImageAssetIds.length < 2}
+            >
+              Compare 2
+            </button>
+
+            <button
+              type="button"
+              onClick={() => openCompare("compare_4", 4)}
+              disabled={selectedImageAssetIds.length < 4}
+            >
+              Compare 4
+            </button>
+
+            <button type="button" onClick={() => removeNodes(selectedNodeIds)}>
+              Delete Selected
+            </button>
+          </div>
+        ) : null}
 
         <input
           ref={fileInputRef}
@@ -597,7 +835,7 @@ export function CanvasView({ projectId }: Props) {
           {isUploading ? "Uploading..." : "Upload Assets"}
         </button>
 
-        {selectedNode ? (
+        {selectedNode && selectedNodeIds.length === 1 ? (
           <section
             ref={(node) => {
               nodeModalRef.current = node;
@@ -743,6 +981,23 @@ export function CanvasView({ projectId }: Props) {
                 </div>
               </label>
 
+              {selectedNodeIsAssetSource ? null : (
+                <div className={styles.debuggerBlock}>
+                  <button
+                    type="button"
+                    className={styles.debuggerToggle}
+                    onClick={() => setIsApiPreviewOpen((value) => !value)}
+                  >
+                    {isApiPreviewOpen ? "Hide API Call Preview" : "Show API Call Preview"}
+                  </button>
+                  {isApiPreviewOpen && apiCallPreviewPayload ? (
+                    <pre className={styles.debuggerPreview}>
+                      {JSON.stringify(apiCallPreviewPayload, null, 2)}
+                    </pre>
+                  ) : null}
+                </div>
+              )}
+
               <div className={styles.nodeModalActions}>
                 {selectedNodeIsAssetSource ? null : <button onClick={() => runNode(selectedNode)}>Run Node</button>}
                 <button
@@ -755,8 +1010,8 @@ export function CanvasView({ projectId }: Props) {
                 >
                   Clear Inputs
                 </button>
-                <button onClick={() => removeNode(selectedNode.id)}>Delete Node</button>
-                <button onClick={() => setSelectedNodeId(null)}>Close</button>
+                <button onClick={() => removeNodes([selectedNode.id])}>Delete Node</button>
+                <button onClick={() => setSelectedNodeIds([])}>Close</button>
               </div>
             </div>
           </section>

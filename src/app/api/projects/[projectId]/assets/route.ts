@@ -17,6 +17,24 @@ export async function GET(
     const tag = searchParams.get("tag") || "";
     const sort = searchParams.get("sort") || "newest";
 
+    const providerFilter =
+      providerId !== "all"
+        ? {
+            OR: [
+              {
+                job: {
+                  is: {
+                    providerId,
+                  },
+                },
+              },
+              {
+                jobId: null,
+              },
+            ],
+          }
+        : {};
+
     const assets = await prisma.asset.findMany({
       where: {
         projectId,
@@ -41,15 +59,7 @@ export async function GET(
               },
             }
           : {}),
-        ...(providerId !== "all"
-          ? {
-              job: {
-                is: {
-                  providerId,
-                },
-              },
-            }
-          : {}),
+        ...providerFilter,
         ...(tag
           ? {
               tags: {

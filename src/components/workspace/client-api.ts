@@ -3,6 +3,7 @@ import type {
   AssetFilterState,
   CanvasDocument,
   Job,
+  JobDebugResponse,
   Project,
   ProviderModel,
   ProviderId,
@@ -99,6 +100,14 @@ export async function getJobs(projectId: string) {
   return data.jobs || [];
 }
 
+export async function getJobDebug(projectId: string, jobId: string) {
+  const res = await fetch(`/api/projects/${projectId}/jobs/${jobId}/debug`, {
+    cache: "no-store",
+  });
+
+  return readJson<JobDebugResponse>(res);
+}
+
 export async function uploadProjectAsset(projectId: string, file: File) {
   const formData = new FormData();
   formData.set("file", file);
@@ -150,6 +159,12 @@ export async function getAssets(projectId: string, filters: AssetFilterState) {
 
   const data = await readJson<{ assets: Asset[] }>(res);
   return data.assets || [];
+}
+
+export async function getAsset(assetId: string) {
+  const res = await fetch(`/api/assets/${assetId}`, { cache: "no-store" });
+  const data = await readJson<{ asset: Asset }>(res);
+  return data.asset;
 }
 
 export async function updateAsset(assetId: string, payload: { rating?: number | null; flagged?: boolean; tags?: string[] }) {
