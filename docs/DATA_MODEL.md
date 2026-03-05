@@ -51,7 +51,9 @@ type WorkflowNode = {
   settings: Record<string, unknown>;
   sourceAssetId: string | null;
   sourceAssetMimeType: string | null;
+  sourceJobId: string | null;
   sourceOutputIndex: number | null;
+  processingState: "queued" | "running" | "failed" | null;
   promptSourceNodeId: string | null; // model nodes only in v1
   upstreamNodeIds: string[];
   upstreamAssetIds: string[];
@@ -89,6 +91,18 @@ type Asset = {
   flagged: boolean;
   createdAt: Date;
   updatedAt: Date;
+};
+
+type JobPreviewFrame = {
+  id: string;
+  jobId: string;
+  outputIndex: number;
+  previewIndex: number;
+  storageRef: string;
+  mimeType: string;
+  width: number | null;
+  height: number | null;
+  createdAt: Date;
 };
 ```
 
@@ -185,6 +199,17 @@ type Asset = {
 - `created_at` timestamptz not null default now()
 - `updated_at` timestamptz not null default now()
 
+### `job_preview_frames`
+- `id` uuid pk
+- `job_id` uuid not null references `jobs(id)` on delete cascade
+- `output_index` integer not null
+- `preview_index` integer not null
+- `storage_ref` text not null
+- `mime_type` text not null
+- `width` integer null
+- `height` integer null
+- `created_at` timestamptz not null default now()
+
 ### `asset_feedback`
 - `asset_id` uuid pk references `assets(id)` on delete cascade
 - `rating` integer null check (`rating` between 1 and 5)
@@ -223,6 +248,11 @@ type Asset = {
 ## Integrity Rules
 - Assets must always reference a valid project.
 - Generated multi-output assets must retain stable `output_index` ordering inside a job.
+- Streamed preview frames are durable job data, not reviewable library assets.
+- Asset origin is derived, not persisted as a separate enum:
+  - `job_id is null` => uploaded
+  - `job_id is not null` => generated
+- Multiple canvas asset-source nodes may legally point at the same `asset.id`.
 - Canvas nodes/edges cannot cross project boundaries.
 - Text-note prompt-source links live inside canvas JSON and are project-scoped like other node relationships.
 - Deleting a project cascades to canvas, jobs, assets, and tags.

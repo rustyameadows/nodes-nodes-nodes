@@ -3,7 +3,7 @@ import { buildOpenAiImageDebugRequest } from "@/lib/openai-image-settings";
 import { prisma } from "@/lib/prisma";
 import { getProviderAdapter } from "@/lib/providers/registry";
 import { readAssetContent, saveBufferAsAsset, saveContentAsAsset } from "@/lib/storage/local-storage";
-import type { NodePayload, ProviderId } from "@/lib/types";
+import type { NodePayload, NormalizedPreviewFrame, ProviderId } from "@/lib/types";
 
 function asNodePayload(value: unknown): NodePayload {
   if (!value || typeof value !== "object") {
@@ -117,6 +117,36 @@ function buildProviderRequest(
   } as Prisma.InputJsonValue;
 }
 
+function extensionForPreviewMimeType(mimeType: string) {
+  if (mimeType === "image/jpeg") {
+    return "jpg";
+  }
+  if (mimeType === "image/webp") {
+    return "webp";
+  }
+  return "png";
+}
+
+async function persistPreviewFrame(projectId: string, jobId: string, previewFrame: NormalizedPreviewFrame) {
+  const stored = await saveBufferAsAsset(
+    projectId,
+    previewFrame.extension || extensionForPreviewMimeType(previewFrame.mimeType),
+    previewFrame.content
+  );
+
+  return prisma.jobPreviewFrame.create({
+    data: {
+      jobId,
+      outputIndex: previewFrame.outputIndex,
+      previewIndex: previewFrame.previewIndex,
+      storageRef: stored.storageRef,
+      mimeType: previewFrame.mimeType,
+      width: typeof previewFrame.metadata.width === "number" ? previewFrame.metadata.width : null,
+      height: typeof previewFrame.metadata.height === "number" ? previewFrame.metadata.height : null,
+    },
+  });
+}
+
 export async function processJobById(jobId: string) {
   const existing = await prisma.job.findUnique({ where: { id: jobId } });
   if (!existing || existing.state !== "queued") {
@@ -137,9 +167,19 @@ export async function processJobById(jobId: string) {
       errorMessage: null,
     },
   });
+  await prisma.jobPreviewFrame.deleteMany({
+    where: { jobId },
+  });
 
   const start = Date.now();
   let inputAssets: Awaited<ReturnType<typeof loadInputAssets>> = [];
+  const persistedPreviewFrames: Array<{
+    id: string;
+    outputIndex: number;
+    previewIndex: number;
+    mimeType: string;
+    createdAt: Date;
+  }> = [];
 
   try {
     inputAssets = await loadInputAssets(existing.projectId, payload.inputImageAssetIds);
@@ -151,6 +191,16 @@ export async function processJobById(jobId: string) {
       modelId: existing.modelId,
       payload,
       inputAssets,
+      onPreviewFrame: async (previewFrame) => {
+        const persisted = await persistPreviewFrame(existing.projectId, jobId, previewFrame);
+        persistedPreviewFrames.push({
+          id: persisted.id,
+          outputIndex: persisted.outputIndex,
+          previewIndex: persisted.previewIndex,
+          mimeType: persisted.mimeType,
+          createdAt: persisted.createdAt,
+        });
+      },
     });
 
     await prisma.jobAttempt.create({
@@ -166,6 +216,14 @@ export async function processJobById(jobId: string) {
             mimeType: output.mimeType,
             extension: output.extension,
             metadata: output.metadata,
+          })),
+          previewFrameCount: persistedPreviewFrames.length,
+          previewFrames: persistedPreviewFrames.map((previewFrame) => ({
+            id: previewFrame.id,
+            outputIndex: previewFrame.outputIndex,
+            previewIndex: previewFrame.previewIndex,
+            mimeType: previewFrame.mimeType,
+            createdAt: previewFrame.createdAt,
           })),
         } as Prisma.InputJsonValue,
         durationMs: Date.now() - start,
@@ -219,6 +277,19 @@ export async function processJobById(jobId: string) {
         jobId,
         attemptNumber,
         providerRequest: buildProviderRequest(providerId, existing.modelId, payload, inputAssets),
+        providerResponse:
+          persistedPreviewFrames.length > 0
+            ? ({
+                previewFrameCount: persistedPreviewFrames.length,
+                previewFrames: persistedPreviewFrames.map((previewFrame) => ({
+                  id: previewFrame.id,
+                  outputIndex: previewFrame.outputIndex,
+                  previewIndex: previewFrame.previewIndex,
+                  mimeType: previewFrame.mimeType,
+                  createdAt: previewFrame.createdAt,
+                })),
+              } as Prisma.InputJsonValue)
+            : undefined,
         errorCode: code,
         errorMessage: message,
         durationMs: Date.now() - start,

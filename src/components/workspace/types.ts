@@ -128,6 +128,15 @@ export type Job = {
     outputIndex: number | null;
     createdAt: string;
   }>;
+  latestPreviewFrames?: Array<{
+    id: string;
+    outputIndex: number;
+    previewIndex: number;
+    mimeType: string;
+    width: number | null;
+    height: number | null;
+    createdAt: string;
+  }>;
 };
 
 export type QueueSummary = {
@@ -140,6 +149,7 @@ export type Asset = {
   id: string;
   projectId?: string;
   jobId?: string | null;
+  origin?: "generated" | "uploaded";
   type: "image" | "video" | "text";
   storageRef: string;
   mimeType: string;

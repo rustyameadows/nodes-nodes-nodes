@@ -11,9 +11,10 @@
 ## Runtime Topology
 1. Next.js web app provides UI and API route handlers.
 2. Postgres stores project, canvas, job, and asset metadata.
-3. Jobs run inline by default (`JOB_EXECUTION_MODE=inline`) and can also run through `pg-boss`.
-4. Filesystem storage adapter persists uploaded and generated binaries.
-5. Provider adapters normalize OpenAI behavior now and reserve Gemini/Topaz placeholders behind the same contract.
+3. Postgres also stores transient `job_preview_frames` for in-progress streamed images.
+4. Jobs run inline by default (`JOB_EXECUTION_MODE=inline`) and can also run through `pg-boss`.
+5. Filesystem storage adapter persists uploaded/generated binaries plus transient streamed preview frames.
+6. Provider adapters normalize OpenAI behavior now and reserve Gemini/Topaz placeholders behind the same contract.
 
 ## Core Modules
 - `ProjectService`: project lifecycle and active project switching.
@@ -36,12 +37,25 @@
 3. API validates the resolved payload and creates a `job` record.
 4. Canvas client inserts one or more generated output placeholder nodes immediately after job creation and stores the originating `jobId` plus `outputIndex` on each node.
 5. Inline executor or `pg-boss` worker loads referenced asset bytes from local storage and invokes the provider adapter.
-6. Adapter returns normalized outputs, including binary image buffers for generated images.
-7. Storage adapter writes binaries to disk; DB stores metadata + storage ref + output ordering for generated variants.
-8. UI polls job updates and reconciles output nodes by `(jobId, outputIndex)`:
+6. OpenAI image runs stream partial images; the processor persists them as durable preview-frame records keyed by `(jobId, outputIndex, previewIndex)`.
+7. Adapter returns normalized final outputs, including binary image buffers for generated images.
+8. Storage adapter writes final binaries to disk; DB stores metadata + storage ref + output ordering for generated variants.
+9. UI polls job updates and reconciles output nodes by `(jobId, outputIndex)`:
   - `queued` -> `running`
+  - `running` nodes render the latest streamed preview frame when available
   - `running/queued` -> `failed` keeps the placeholder
   - `succeeded` attaches the final image asset and clears the processing badge
+
+## Canvas Graph Semantics
+- Wire creation can start from either port.
+- Dragging from an input to an output is normalized into the same persisted `source -> target` relationship as output-to-input wiring.
+- Prompt-note connections are stored separately from standard upstream media inputs:
+  - text note -> model sets `promptSourceNodeId`
+  - media/image inputs accumulate in `upstreamNodeIds`
+- Asset-source nodes are peer pointers to one `asset` record:
+  - uploaded asset pointers resolve `jobId = null`
+  - generated asset pointers resolve `jobId != null`
+  - multiple canvas nodes may point at the same asset without duplication
 
 ## Project Switching Behavior
 1. Only one project workspace can be open at once.

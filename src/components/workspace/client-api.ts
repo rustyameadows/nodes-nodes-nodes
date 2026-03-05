@@ -178,7 +178,14 @@ export async function createJobFromRequest(
   return data.job;
 }
 
-export async function getAssets(projectId: string, filters: AssetFilterState) {
+export async function getAssets(
+  projectId: string,
+  filters: AssetFilterState,
+  options?: {
+    origin?: "all" | "uploaded" | "generated";
+    query?: string;
+  }
+) {
   const query = new URLSearchParams({
     type: filters.type,
     ratingAtLeast: String(filters.ratingAtLeast),
@@ -186,6 +193,8 @@ export async function getAssets(projectId: string, filters: AssetFilterState) {
     tag: filters.tag,
     providerId: filters.providerId,
     sort: filters.sort,
+    origin: options?.origin || "all",
+    q: options?.query || "",
   });
 
   const res = await fetch(`/api/projects/${projectId}/assets?${query.toString()}`, {
@@ -194,6 +203,30 @@ export async function getAssets(projectId: string, filters: AssetFilterState) {
 
   const data = await readJson<{ assets: Asset[] }>(res);
   return data.assets || [];
+}
+
+export async function getAssetPointers(
+  projectId: string,
+  options: {
+    origin: "uploaded" | "generated";
+    query?: string;
+  }
+) {
+  return getAssets(
+    projectId,
+    {
+      type: "all",
+      ratingAtLeast: 0,
+      flaggedOnly: false,
+      tag: "",
+      providerId: "all",
+      sort: "newest",
+    },
+    {
+      origin: options.origin,
+      query: options.query,
+    }
+  );
 }
 
 export async function getAsset(assetId: string) {

@@ -39,6 +39,26 @@
   fill: none;
   stroke: rgba(255, 255, 255, 0.54);
   stroke-width: 1.9;
+  pointer-events: none;
+}
+
+.connectionPrompt {
+  stroke: rgba(216, 255, 62, 0.64);
+  stroke-dasharray: 9 5;
+}
+
+.connectionSelected {
+  stroke: var(--canvas-selection-color);
+  stroke-width: 2.8;
+  filter: drop-shadow(0 0 8px rgba(216, 255, 62, 0.7));
+}
+
+.connectionHit {
+  fill: none;
+  stroke: rgba(0, 0, 0, 0);
+  stroke-width: 20;
+  cursor: pointer;
+  pointer-events: stroke;
 }
 
 .connectionDraft {
@@ -280,15 +300,28 @@
 .port {
   position: absolute;
   top: 50%;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  background: transparent;
+  cursor: crosshair;
+  opacity: 0;
+  transform: translateY(-50%) scale(0.92);
+  transition: opacity 120ms ease, transform 120ms ease;
+  padding: 0;
+}
+
+.port::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
   width: 12px;
   height: 12px;
   border-radius: 999px;
   border: 1px solid rgba(0, 0, 0, 0.58);
   background: rgba(255, 255, 255, 0.9);
-  cursor: crosshair;
-  opacity: 0;
-  transform: translateY(-50%) scale(0.92);
-  transition: opacity 120ms ease, transform 120ms ease;
+  transform: translate(-50%, -50%);
 }
 
 .node:hover .port,
@@ -299,16 +332,19 @@
 }
 
 .port:hover {
-  background: #fff;
   transform: translateY(-50%) scale(1.08) !important;
 }
 
+.port:hover::after {
+  background: #fff;
+}
+
 .inputPort {
-  left: -8px;
+  left: -14px;
 }
 
 .outputPort {
-  right: -8px;
+  right: -14px;
 }
 
 .marquee {

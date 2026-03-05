@@ -16,6 +16,8 @@ export async function GET(
     const providerId = searchParams.get("providerId") || "all";
     const tag = searchParams.get("tag") || "";
     const sort = searchParams.get("sort") || "newest";
+    const origin = searchParams.get("origin") || "all";
+    const query = searchParams.get("q") || "";
 
     const providerFilter =
       providerId !== "all"
@@ -38,6 +40,17 @@ export async function GET(
     const assets = await prisma.asset.findMany({
       where: {
         projectId,
+        ...(origin === "generated"
+          ? {
+              jobId: {
+                not: null,
+              },
+            }
+          : origin === "uploaded"
+            ? {
+                jobId: null,
+              }
+            : {}),
         ...(type !== "all" ? { type: type as "image" | "video" | "text" } : {}),
         ...(flaggedOnly
           ? {
@@ -60,6 +73,44 @@ export async function GET(
             }
           : {}),
         ...providerFilter,
+        ...(query
+          ? {
+              OR: [
+                {
+                  id: {
+                    contains: query,
+                    mode: "insensitive",
+                  },
+                },
+                {
+                  storageRef: {
+                    contains: query,
+                    mode: "insensitive",
+                  },
+                },
+                {
+                  job: {
+                    is: {
+                      providerId: {
+                        contains: query,
+                        mode: "insensitive",
+                      },
+                    },
+                  },
+                },
+                {
+                  job: {
+                    is: {
+                      modelId: {
+                        contains: query,
+                        mode: "insensitive",
+                      },
+                    },
+                  },
+                },
+              ],
+            }
+          : {}),
         ...(tag
           ? {
               tags: {
@@ -99,6 +150,7 @@ export async function GET(
 
     const serialized = assets.map((asset) => ({
       ...asset,
+      origin: asset.jobId ? "generated" : "uploaded",
       tagNames: asset.tags.map((link) => link.tag.name),
       rating: asset.feedback?.rating ?? null,
       flagged: asset.feedback?.flagged ?? false,

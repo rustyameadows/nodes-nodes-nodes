@@ -85,12 +85,39 @@ export async function GET(
         assets: {
           select: { id: true, type: true, mimeType: true, outputIndex: true, createdAt: true },
         },
+        previewFrames: {
+          select: {
+            id: true,
+            outputIndex: true,
+            previewIndex: true,
+            mimeType: true,
+            width: true,
+            height: true,
+            createdAt: true,
+          },
+          orderBy: [{ createdAt: "desc" }, { previewIndex: "desc" }],
+        },
       },
       orderBy: { createdAt: "desc" },
       take: 100,
     });
 
-    return NextResponse.json({ jobs });
+    const serializedJobs = jobs.map(({ previewFrames, ...job }) => {
+      const latestPreviewFrames = previewFrames.reduce<typeof previewFrames>((acc, previewFrame) => {
+        if (acc.some((existing) => existing.outputIndex === previewFrame.outputIndex)) {
+          return acc;
+        }
+        acc.push(previewFrame);
+        return acc;
+      }, []);
+
+      return {
+        ...job,
+        latestPreviewFrames,
+      };
+    });
+
+    return NextResponse.json({ jobs: serializedJobs });
   } catch (error) {
     return internalError(error);
   }

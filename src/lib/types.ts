@@ -68,6 +68,7 @@ export type ProviderJobInput = {
   modelId: string;
   payload: NodePayload;
   inputAssets: ProviderInputAsset[];
+  onPreviewFrame?: (previewFrame: NormalizedPreviewFrame) => Promise<void> | void;
 };
 
 export type NormalizedOutput = {
@@ -77,6 +78,18 @@ export type NormalizedOutput = {
   content: string | Buffer;
   encoding: BufferEncoding | "binary";
   extension: string;
+};
+
+export type NormalizedPreviewFrame = {
+  outputIndex: number;
+  previewIndex: number;
+  mimeType: string;
+  extension: string;
+  content: Buffer;
+  metadata: {
+    width?: number | null;
+    height?: number | null;
+  };
 };
 
 export type ProviderModelDescriptor = {

@@ -95,6 +95,173 @@
   background: rgba(255, 255, 255, 0.72);
 }
 
+.assetPickerBackdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 43;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.34);
+  backdrop-filter: blur(6px);
+}
+
+.assetPickerModal {
+  width: min(720px, calc(100vw - 44px));
+  max-height: min(78vh, 760px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.82);
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow:
+    0 20px 46px rgba(0, 0, 0, 0.4),
+    0 0 0 1px rgba(255, 255, 255, 0.68) inset;
+}
+
+.assetPickerHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.assetPickerHeader strong {
+  display: block;
+  color: #101010;
+  font-size: 0.9rem;
+}
+
+.assetPickerHeader span {
+  display: block;
+  margin-top: 3px;
+  color: rgba(0, 0, 0, 0.58);
+  font-size: 0.7rem;
+}
+
+.assetPickerHeader button,
+.assetPickerActions button {
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  background: rgba(255, 255, 255, 0.86);
+  color: #111;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 6px 9px;
+  cursor: pointer;
+}
+
+.assetPickerToolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.assetPickerSearch {
+  flex: 1;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  background: rgba(255, 255, 255, 0.84);
+  color: #111;
+  font: inherit;
+  padding: 7px 9px;
+}
+
+.assetPickerMeta {
+  color: rgba(0, 0, 0, 0.58);
+  font-size: 0.7rem;
+  white-space: nowrap;
+}
+
+.assetPickerList {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  overflow-y: auto;
+  min-height: 220px;
+  max-height: min(52vh, 520px);
+  padding-right: 2px;
+}
+
+.assetPickerItem {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  padding: 8px;
+  border: 1px solid rgba(0, 0, 0, 0.14);
+  background: rgba(255, 255, 255, 0.78);
+  text-align: left;
+  cursor: pointer;
+}
+
+.assetPickerItemSelected {
+  border-color: var(--canvas-selection-color);
+  box-shadow: 0 0 0 1px var(--canvas-selection-color) inset;
+}
+
+.assetPickerThumb,
+.assetPickerThumbPlaceholder {
+  width: 92px;
+  height: 92px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(0, 0, 0, 0.14);
+  background: #b4b4b4;
+  object-fit: contain;
+}
+
+.assetPickerThumbPlaceholder {
+  color: rgba(0, 0, 0, 0.64);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.assetPickerItemMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.assetPickerItemMeta strong,
+.assetPickerItemMeta span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.assetPickerItemMeta strong {
+  color: #111;
+  font-size: 0.74rem;
+}
+
+.assetPickerItemMeta span {
+  color: rgba(0, 0, 0, 0.58);
+  font-size: 0.65rem;
+}
+
+.assetPickerEmpty {
+  grid-column: 1 / -1;
+  padding: 18px 10px;
+  border: 1px dashed rgba(0, 0, 0, 0.18);
+  color: rgba(0, 0, 0, 0.54);
+  font-size: 0.72rem;
+  text-align: center;
+}
+
+.assetPickerActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  color: rgba(0, 0, 0, 0.58);
+  font-size: 0.7rem;
+}
+
 .selectionBar {
   position: absolute;
   left: 14px;

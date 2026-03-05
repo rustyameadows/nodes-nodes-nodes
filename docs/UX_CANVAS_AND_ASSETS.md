@@ -26,9 +26,14 @@
   - add model node
   - add text note
   - upload assets from insert picker or upload CTA
+  - add previous generated assets from project library
+  - add previous uploaded assets from project library
   - drag/move node cards
-  - connect node output port to another node input port
+  - connect nodes from either port direction; canvas normalizes the final source/target relationship
+  - click a connection line to select it
+  - delete the selected connection with `Delete` / `Backspace`
   - delete the active node selection with `Delete`/`Backspace`
+  - duplicate exactly one selected node with `Cmd/Ctrl + D`
   - run from node modal
 - Selection behavior:
   - click selects one node
@@ -43,6 +48,7 @@
   - running
   - failed
   - completed outputs clear the badge and simply show the final asset
+- Port hit targets are intentionally larger than the visible nipple so connector drags are easy without visually bloating the node.
 
 ## Node Configuration UX
 - Node settings live in the draggable canvas modal and only appear for a single selected node.
@@ -62,6 +68,7 @@
 - Input/output ports display supported media types.
 - Text notes expose output-only prompt-source connections into model nodes.
 - Image-backed nodes preserve original asset aspect ratio inside the canvas preview.
+- Generated output nodes can show a streamed partial preview before the final asset lands.
 - Canvas-selected nodes use a high-visibility citrus selection border/glow.
 - Canvas node chrome uses squared corners rather than rounded cards/pills.
 - Validation appears before run when required ports/settings are missing.
@@ -95,6 +102,8 @@
 - Queue rows support source-call inspection for provider request/response debugging.
 - Generated output nodes expose inline `Show Source Call` inspection plus a Queue deep link.
 - Successful OpenAI image jobs update the existing placeholder output nodes in place rather than creating second nodes on completion.
+- While a job is `running`, output nodes render the latest durable preview frame available for that `(jobId, outputIndex)`.
+- Reloading during a run restores those preview frames from durable job-preview records.
 
 ## Asset Viewer Modes
 - `grid`: regular row/column thumbnail grid using contain-fit previews without cropping.
@@ -118,11 +127,26 @@
   - choose exactly 4 assets for 4-up
 - Invalid selection counts show inline guidance.
 
+## Asset Pointer Nodes
+- The insert picker exposes:
+  - `Add Generated Asset`
+  - `Add Uploaded Asset`
+- Both open the same compact library picker with:
+  - origin-prefiltered results
+  - newest-first ordering
+  - text search
+  - multi-select spawning
+- Spawned asset nodes are peer pointers to existing assets:
+  - no asset duplication
+  - no master/child hierarchy
+  - any generated-asset pointer still exposes source-call inspection
+
 ## Keyboard Shortcuts (Proposed V1)
 - Canvas:
   - background drag: pan
   - wheel / trackpad pinch: zoom
   - `Shift + drag`: marquee-select nodes
+  - `Cmd/Ctrl + D`: duplicate selected node
   - `Delete` / `Backspace`: remove selected nodes
 - Asset viewer:
   - `1..5`: set star rating

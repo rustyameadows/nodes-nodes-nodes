@@ -27,6 +27,18 @@ export async function GET(
             createdAt: "desc",
           },
         },
+        previewFrames: {
+          select: {
+            id: true,
+            outputIndex: true,
+            previewIndex: true,
+            mimeType: true,
+            width: true,
+            height: true,
+            createdAt: true,
+          },
+          orderBy: [{ outputIndex: "asc" }, { createdAt: "desc" }],
+        },
       },
     });
 

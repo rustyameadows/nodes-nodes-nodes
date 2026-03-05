@@ -16,6 +16,7 @@ import {
 import type {
   OpenAIImageMode,
   ImageOutputFormat,
+  NormalizedPreviewFrame,
   NormalizedOutput,
   ProviderAdapter,
   ProviderId,
@@ -230,6 +231,74 @@ function readExecutionMode(value: unknown): OpenAIImageMode {
   return value === "generate" ? "generate" : "edit";
 }
 
+function outputIndexForStreamingPreview(completedOutputCount: number, requestedOutputCount: number) {
+  if (requestedOutputCount <= 1) {
+    return 0;
+  }
+  return Math.min(completedOutputCount, requestedOutputCount - 1);
+}
+
+function buildImageOutput(
+  input: ProviderJobInput,
+  executionMode: OpenAIImageMode,
+  outputFormat: ImageOutputFormat,
+  resolvedSettings: ReturnType<typeof resolveOpenAiImageSettings>,
+  inputAssets: ProviderJobInput["inputAssets"],
+  b64Json: string,
+  outputIndex: number
+): NormalizedOutput {
+  const dimensions = parseImageSize(resolvedSettings.size);
+
+  return {
+    type: "image",
+    mimeType: outputFormatToMimeType(outputFormat),
+    extension: outputFormat === "jpeg" ? "jpg" : outputFormat,
+    encoding: "binary",
+    metadata: {
+      providerId: input.providerId,
+      modelId: input.modelId,
+      width: dimensions?.width ?? null,
+      height: dimensions?.height ?? null,
+      executionMode,
+      quality: resolvedSettings.quality,
+      size: resolvedSettings.size,
+      background: resolvedSettings.background,
+      moderation: resolvedSettings.moderation,
+      outputFormat,
+      outputCount: resolvedSettings.outputCount,
+      outputIndex,
+      outputCompression: resolvedSettings.outputCompression,
+      inputFidelity: executionMode === "edit" ? resolvedSettings.inputFidelity : null,
+      inputAssetIds: inputAssets.map((asset) => asset.assetId),
+      revisedPrompt: null,
+    },
+    content: Buffer.from(b64Json, "base64"),
+  };
+}
+
+function buildPreviewFrame(
+  mimeType: string,
+  extension: string,
+  size: ReturnType<typeof resolveOpenAiImageSettings>["size"],
+  b64Json: string,
+  outputIndex: number,
+  previewIndex: number
+): NormalizedPreviewFrame {
+  const dimensions = parseImageSize(size);
+
+  return {
+    outputIndex,
+    previewIndex,
+    mimeType,
+    extension,
+    content: Buffer.from(b64Json, "base64"),
+    metadata: {
+      width: dimensions?.width ?? null,
+      height: dimensions?.height ?? null,
+    },
+  };
+}
+
 async function submitOpenAiImage(input: ProviderJobInput): Promise<NormalizedOutput[]> {
   const model = getProviderModelDescriptor(input.providerId, input.modelId);
   if (!model) {
@@ -285,7 +354,11 @@ async function submitOpenAiImage(input: ProviderJobInput): Promise<NormalizedOut
   } = resolvedSettings;
 
   const client = getOpenAIClient();
-  const response =
+  const mimeType = outputFormatToMimeType(outputFormat);
+  const extension = outputFormat === "jpeg" ? "jpg" : outputFormat;
+  const outputs: NormalizedOutput[] = [];
+
+  const stream =
     executionMode === "generate"
       ? await client.images.generate({
           model: input.modelId,
@@ -296,6 +369,8 @@ async function submitOpenAiImage(input: ProviderJobInput): Promise<NormalizedOut
           output_format: outputFormat,
           moderation,
           n: outputCount,
+          stream: true,
+          partial_images: 2,
           ...(outputCompression !== null ? { output_compression: outputCompression } : {}),
         })
       : await client.images.edit({
@@ -314,46 +389,54 @@ async function submitOpenAiImage(input: ProviderJobInput): Promise<NormalizedOut
           output_format: outputFormat,
           input_fidelity: inputFidelity || OPENAI_DEFAULT_INPUT_FIDELITY,
           n: outputCount,
+          stream: true,
+          partial_images: 2,
           ...(outputCompression !== null ? { output_compression: outputCompression } : {}),
         });
 
-  if (!response.data || response.data.length === 0) {
+  for await (const event of stream) {
+    if (
+      (event.type === "image_generation.partial_image" || event.type === "image_edit.partial_image") &&
+      event.b64_json &&
+      input.onPreviewFrame
+    ) {
+      const previewOutputIndex = outputIndexForStreamingPreview(outputs.length, outputCount);
+      await input.onPreviewFrame(
+        buildPreviewFrame(
+          mimeType,
+          extension,
+          resolvedSettings.size,
+          event.b64_json,
+          previewOutputIndex,
+          event.partial_image_index
+        )
+      );
+      continue;
+    }
+
+    if (
+      (event.type === "image_generation.completed" || event.type === "image_edit.completed") &&
+      event.b64_json
+    ) {
+      outputs.push(
+        buildImageOutput(
+          input,
+          executionMode,
+          outputFormat,
+          resolvedSettings,
+          inputAssets,
+          event.b64_json,
+          outputs.length
+        )
+      );
+    }
+  }
+
+  if (outputs.length === 0) {
     throw createProviderError("PROVIDER_ERROR", "OpenAI returned no image bytes.");
   }
 
-  const dimensions = parseImageSize(size);
-
-  return response.data.flatMap((image, outputIndex) => {
-    if (!image?.b64_json) {
-      return [];
-    }
-
-    return {
-      type: "image",
-      mimeType: outputFormatToMimeType(outputFormat),
-      extension: outputFormat === "jpeg" ? "jpg" : outputFormat,
-      encoding: "binary",
-      metadata: {
-        providerId: input.providerId,
-        modelId: input.modelId,
-        width: dimensions?.width ?? null,
-        height: dimensions?.height ?? null,
-        executionMode,
-        quality,
-        size,
-        background,
-        moderation,
-        outputFormat,
-        outputCount,
-        outputIndex,
-        outputCompression,
-        inputFidelity: executionMode === "edit" ? inputFidelity : null,
-        inputAssetIds: inputAssets.map((asset) => asset.assetId),
-        revisedPrompt: image.revised_prompt || null,
-      },
-      content: Buffer.from(image.b64_json, "base64"),
-    };
-  });
+  return outputs;
 }
 
 function buildComingSoonAdapter(providerId: ProviderId): ProviderAdapter {
@@ -378,7 +461,7 @@ const adapters: Record<ProviderId, ProviderAdapter> = {
     providerId: "openai",
     getCapabilities: () => ({
       supportsCancel: false,
-      supportsStreaming: false,
+      supportsStreaming: true,
       nodeKinds: ["image-gen"],
     }),
     getModels: () => buildProviderCatalog().openai,

@@ -117,6 +117,7 @@ model Job {
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
   attemptsLog    JobAttempt[]
+  previewFrames  JobPreviewFrame[]
   assets         Asset[]
 
   @@index([projectId, state, createdAt(sort: Desc)])
@@ -157,6 +158,21 @@ model Asset {
   tags        AssetTagLink[]
 
   @@index([projectId, createdAt(sort: Desc)])
+}
+
+model JobPreviewFrame {
+  id           String   @id @default(cuid())
+  jobId        String
+  job          Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  outputIndex  Int
+  previewIndex Int
+  storageRef   String
+  mimeType     String
+  width        Int?
+  height       Int?
+  createdAt    DateTime @default(now())
+
+  @@index([jobId, outputIndex, createdAt(sort: Desc)])
 }
 
 model AssetFeedback {

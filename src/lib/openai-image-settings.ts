@@ -267,6 +267,8 @@ export function buildOpenAiImageDebugRequest(input: {
       background: resolved.background,
       output_format: resolved.outputFormat,
       n: resolved.outputCount,
+      stream: true,
+      partial_images: 2,
       ...(resolved.moderation ? { moderation: resolved.moderation } : {}),
       ...(input.executionMode === "edit" && resolved.inputFidelity
         ? { input_fidelity: resolved.inputFidelity }

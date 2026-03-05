@@ -11,7 +11,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { useRouter } from "next/navigation";
-import { InfiniteCanvas } from "@/components/infinite-canvas";
+import { InfiniteCanvas, type CanvasConnection } from "@/components/infinite-canvas";
 import { WorkspaceShell } from "@/components/workspace/workspace-shell";
 import { isModelParameterVisible } from "@/lib/model-parameters";
 import {
@@ -31,6 +31,7 @@ import {
 import {
   createJobFromRequest,
   getCanvasWorkspace,
+  getAssetPointers,
   getJobDebug,
   getJobs,
   getProviders,
@@ -71,6 +72,14 @@ type CanvasInsertMenuState = {
   worldX: number;
   worldY: number;
 };
+
+type AssetPickerState = {
+  origin: "generated" | "uploaded";
+  worldX: number;
+  worldY: number;
+};
+
+type PreviewFrameSummary = NonNullable<Job["latestPreviewFrames"]>[number];
 
 function capabilityEnabled(value: unknown) {
   return value === true || value === "true" || value === 1;
@@ -203,6 +212,24 @@ function normalizeAssetNodeLabel(fileName: string, index: number) {
     return `Asset ${index + 1}`;
   }
   return trimmed.length <= 28 ? trimmed : `${trimmed.slice(0, 26)}...`;
+}
+
+function getAssetPointerNodeLabel(asset: Asset, index: number) {
+  if (asset.origin === "generated") {
+    const variant =
+      typeof asset.outputIndex === "number" ? ` ${asset.outputIndex + 1}` : index > 0 ? ` ${index + 1}` : "";
+    return `Generated${variant}`;
+  }
+
+  const fileName = asset.storageRef.split("/").at(-1) || "";
+  if (fileName.trim()) {
+    return normalizeAssetNodeLabel(fileName, index);
+  }
+  return `Upload ${index + 1}`;
+}
+
+function getPreviewFrameUrl(projectId: string, jobId: string, previewFrame: PreviewFrameSummary) {
+  return `/api/projects/${projectId}/jobs/${jobId}/preview-frames/${previewFrame.id}/file?ts=${encodeURIComponent(previewFrame.createdAt)}`;
 }
 
 function getNodeSourceJobId(node: WorkflowNode | null | undefined) {
@@ -345,12 +372,20 @@ export function CanvasView({ projectId }: Props) {
   const [sourceCallLoading, setSourceCallLoading] = useState(false);
   const [sourceCallError, setSourceCallError] = useState<string | null>(null);
   const [insertMenu, setInsertMenu] = useState<CanvasInsertMenuState | null>(null);
+  const [assetPicker, setAssetPicker] = useState<AssetPickerState | null>(null);
+  const [assetPickerQuery, setAssetPickerQuery] = useState("");
+  const [assetPickerAssets, setAssetPickerAssets] = useState<Asset[]>([]);
+  const [assetPickerSelectedIds, setAssetPickerSelectedIds] = useState<string[]>([]);
+  const [assetPickerLoading, setAssetPickerLoading] = useState(false);
+  const [assetPickerError, setAssetPickerError] = useState<string | null>(null);
+  const [selectedConnection, setSelectedConnection] = useState<CanvasConnection | null>(null);
   const [showAdvancedParameters, setShowAdvancedParameters] = useState(false);
 
   const saveTimer = useRef<NodeJS.Timeout | null>(null);
   const nodeModalRef = useRef<HTMLElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const insertMenuRef = useRef<HTMLDivElement | null>(null);
+  const assetPickerRef = useRef<HTMLDivElement | null>(null);
   const pendingUploadAnchorRef = useRef<{ x: number; y: number } | null>(null);
 
   const modalDragStateRef = useRef<{
@@ -456,6 +491,22 @@ export function CanvasView({ projectId }: Props) {
     return map;
   }, [jobs]);
 
+  const latestPreviewFrameByJobOutputKey = useMemo(() => {
+    const map = new Map<string, PreviewFrameSummary>();
+
+    for (const job of jobs) {
+      for (const previewFrame of job.latestPreviewFrames || []) {
+        const key = `${job.id}:${previewFrame.outputIndex}`;
+        const existing = map.get(key);
+        if (!existing || new Date(previewFrame.createdAt).getTime() > new Date(existing.createdAt).getTime()) {
+          map.set(key, previewFrame);
+        }
+      }
+    }
+
+    return map;
+  }, [jobs]);
+
   const resolveNodeImageAsset = useCallback(
     (node: WorkflowNode | null | undefined) => {
       if (!node || node.outputType !== "image") {
@@ -481,6 +532,30 @@ export function CanvasView({ projectId }: Props) {
     },
     [latestImageAssetByNodeId]
   );
+
+  const canvasNodes = useMemo(() => {
+    return canvasDoc.workflow.nodes.map((node) => {
+      if (!isGeneratedAssetNode(node)) {
+        return node;
+      }
+
+      const sourceJobId = getNodeSourceJobId(node);
+      const sourceOutputIndex = getNodeSourceOutputIndex(node);
+      if (!sourceJobId || typeof sourceOutputIndex !== "number") {
+        return node;
+      }
+
+      const previewFrame = latestPreviewFrameByJobOutputKey.get(`${sourceJobId}:${sourceOutputIndex}`);
+      if (!previewFrame) {
+        return node;
+      }
+
+      return {
+        ...node,
+        previewImageUrl: getPreviewFrameUrl(projectId, sourceJobId, previewFrame),
+      };
+    });
+  }, [canvasDoc.workflow.nodes, latestPreviewFrameByJobOutputKey, projectId]);
 
   const resolveNodeImageAssetId = useCallback(
     (node: WorkflowNode | null | undefined) => resolveNodeImageAsset(node)?.assetId || null,
@@ -639,10 +714,12 @@ export function CanvasView({ projectId }: Props) {
   );
 
   const selectSingleNode = useCallback((nodeId: string | null) => {
+    setSelectedConnection(null);
     setSelectedNodeIds(nodeId ? [nodeId] : []);
   }, []);
 
   const toggleNodeSelection = useCallback((nodeId: string) => {
+    setSelectedConnection(null);
     setSelectedNodeIds((prev) => {
       if (prev.includes(nodeId)) {
         return prev.filter((id) => id !== nodeId);
@@ -652,6 +729,7 @@ export function CanvasView({ projectId }: Props) {
   }, []);
 
   const addNodesToSelection = useCallback((nodeIds: string[]) => {
+    setSelectedConnection(null);
     setSelectedNodeIds((prev) => {
       const seen = new Set(prev);
       const merged = [...prev];
@@ -789,12 +867,13 @@ export function CanvasView({ projectId }: Props) {
   }, [fetchCanvas, fetchJobs, projectId]);
 
   useEffect(() => {
+    const hasActiveJobs = jobs.some((job) => job.state === "queued" || job.state === "running");
     const interval = setInterval(() => {
       fetchJobs().catch(console.error);
-    }, 2500);
+    }, hasActiveJobs ? 900 : 2500);
 
     return () => clearInterval(interval);
-  }, [fetchJobs]);
+  }, [fetchJobs, jobs]);
 
   useEffect(() => {
     setIsApiPreviewOpen(false);
@@ -836,6 +915,27 @@ export function CanvasView({ projectId }: Props) {
       canceled = true;
     };
   }, [isSourceCallOpen, projectId, selectedNodeSourceJobId]);
+
+  useEffect(() => {
+    if (!selectedConnection) {
+      return;
+    }
+
+    const targetNode = canvasDoc.workflow.nodes.find((node) => node.id === selectedConnection.targetNodeId);
+    if (!targetNode) {
+      setSelectedConnection(null);
+      return;
+    }
+
+    const exists =
+      selectedConnection.kind === "prompt"
+        ? targetNode.promptSourceNodeId === selectedConnection.sourceNodeId
+        : targetNode.upstreamNodeIds.includes(selectedConnection.sourceNodeId);
+
+    if (!exists) {
+      setSelectedConnection(null);
+    }
+  }, [canvasDoc.workflow.nodes, selectedConnection]);
 
   useEffect(() => {
     if (jobs.length === 0) {
@@ -881,7 +981,11 @@ export function CanvasView({ projectId }: Props) {
           continue;
         }
 
-        const jobNodes = workingNodes.filter((node) => getNodeSourceJobId(node) === job.id);
+        const jobNodes = workingNodes.filter(
+          (node) =>
+            getNodeSourceJobId(node) === job.id &&
+            (typeof node.settings.sourceModelNodeId === "string" || node.upstreamNodeIds.includes(sourceNodeId))
+        );
         for (let outputIndex = 0; outputIndex < expectedOutputCount; outputIndex += 1) {
           const hasIndexedNode = jobNodes.some((node) => getNodeSourceOutputIndex(node) === outputIndex);
           const hasLegacyPrimaryNode =
@@ -972,21 +1076,22 @@ export function CanvasView({ projectId }: Props) {
 
   useEffect(() => {
     const onPointerDown = (event: PointerEvent) => {
-      if (!insertMenuRef.current) {
+      const target = event.target as Node | null;
+      if (insertMenuRef.current && target && insertMenuRef.current.contains(target)) {
         return;
       }
-
-      const target = event.target as Node | null;
-      if (target && insertMenuRef.current.contains(target)) {
+      if (assetPickerRef.current && target && assetPickerRef.current.contains(target)) {
         return;
       }
 
       setInsertMenu(null);
+      setAssetPicker(null);
     };
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setInsertMenu(null);
+        setAssetPicker(null);
       }
     };
 
@@ -998,6 +1103,46 @@ export function CanvasView({ projectId }: Props) {
       window.removeEventListener("keydown", onKeyDown);
     };
   }, []);
+
+  useEffect(() => {
+    if (!assetPicker) {
+      setAssetPickerAssets([]);
+      setAssetPickerSelectedIds([]);
+      setAssetPickerQuery("");
+      setAssetPickerError(null);
+      return;
+    }
+
+    let canceled = false;
+    setAssetPickerLoading(true);
+    getAssetPointers(projectId, {
+      origin: assetPicker.origin,
+      query: assetPickerQuery,
+    })
+      .then((assets) => {
+        if (canceled) {
+          return;
+        }
+        setAssetPickerAssets(assets);
+        setAssetPickerError(null);
+      })
+      .catch((error) => {
+        if (canceled) {
+          return;
+        }
+        setAssetPickerAssets([]);
+        setAssetPickerError(error instanceof Error ? error.message : "Failed to load assets.");
+      })
+      .finally(() => {
+        if (!canceled) {
+          setAssetPickerLoading(false);
+        }
+      });
+
+    return () => {
+      canceled = true;
+    };
+  }, [assetPicker, assetPickerQuery, projectId]);
 
   useEffect(() => {
     const onPointerMove = (event: PointerEvent) => {
@@ -1082,6 +1227,7 @@ export function CanvasView({ projectId }: Props) {
 
         queueCanvasSave(nextDoc);
         setSelectedNodeIds([node.id]);
+        setSelectedConnection(null);
         setInsertMenu(null);
         return nextDoc;
       });
@@ -1126,6 +1272,7 @@ export function CanvasView({ projectId }: Props) {
 
         queueCanvasSave(nextDoc);
         setSelectedNodeIds([node.id]);
+        setSelectedConnection(null);
         setInsertMenu(null);
         return nextDoc;
       });
@@ -1231,6 +1378,7 @@ export function CanvasView({ projectId }: Props) {
           queueCanvasSave(nextDoc);
           const lastSourceNode = sourceNodes[sourceNodes.length - 1];
           setSelectedNodeIds(lastSourceNode ? [lastSourceNode.id] : []);
+          setSelectedConnection(null);
           setInsertMenu(null);
           return nextDoc;
         });
@@ -1242,6 +1390,167 @@ export function CanvasView({ projectId }: Props) {
       }
     },
     [projectId, providers, queueCanvasSave]
+  );
+
+  const spawnAssetPointerNodes = useCallback(
+    (assets: Asset[], position?: { x: number; y: number }) => {
+      if (assets.length === 0) {
+        return;
+      }
+
+      const defaultProvider = fallbackProviderModel(providers);
+      setCanvasDoc((prev) => {
+        const baseX = position?.x ?? Math.round(120 + (prev.workflow.nodes.length % 4) * 260);
+        const baseY = position?.y ?? Math.round(120 + Math.floor(prev.workflow.nodes.length / 4) * 170);
+
+        const sourceNodes = assets.map((asset, index) => {
+          const outputType = outputTypeFromAssetType(asset.type);
+          const providerId: WorkflowNode["providerId"] =
+            asset.job?.providerId === "openai" || asset.job?.providerId === "google-gemini" || asset.job?.providerId === "topaz"
+              ? asset.job.providerId
+              : defaultProvider.providerId;
+
+          return {
+            id: uid(),
+            label: getAssetPointerNodeLabel(asset, index),
+            kind: "asset-source" as const,
+            providerId,
+            modelId: asset.job?.modelId || defaultProvider.modelId,
+            nodeType: "transform" as const,
+            outputType,
+            prompt: "",
+            settings: {
+              source: asset.origin || (asset.jobId ? "generated" : "upload"),
+              sourceJobId: asset.jobId || null,
+              outputIndex: typeof asset.outputIndex === "number" ? asset.outputIndex : null,
+            },
+            sourceAssetId: asset.id,
+            sourceAssetMimeType: asset.mimeType,
+            sourceJobId: asset.jobId || null,
+            sourceOutputIndex: typeof asset.outputIndex === "number" ? asset.outputIndex : null,
+            processingState: null,
+            promptSourceNodeId: null,
+            upstreamNodeIds: [],
+            upstreamAssetIds: [],
+            x: Math.round(baseX + index * 34),
+            y: Math.round(baseY + index * 26),
+          };
+        });
+
+        const nextDoc: CanvasDocument = {
+          ...prev,
+          workflow: {
+            nodes: [...prev.workflow.nodes, ...sourceNodes],
+          },
+        };
+
+        queueCanvasSave(nextDoc);
+        const lastSourceNode = sourceNodes[sourceNodes.length - 1];
+        setSelectedNodeIds(lastSourceNode ? [lastSourceNode.id] : []);
+        setSelectedConnection(null);
+        setAssetPicker(null);
+        return nextDoc;
+      });
+    },
+    [providers, queueCanvasSave]
+  );
+
+  const removeConnection = useCallback(
+    (connection: CanvasConnection | null) => {
+      if (!connection) {
+        return;
+      }
+
+      setCanvasDoc((prev) => {
+        const nextNodes = prev.workflow.nodes.map((node) => {
+          if (node.id !== connection.targetNodeId) {
+            return node;
+          }
+
+          if (connection.kind === "prompt") {
+            return {
+              ...node,
+              promptSourceNodeId: node.promptSourceNodeId === connection.sourceNodeId ? null : node.promptSourceNodeId,
+            };
+          }
+
+          const upstreamNodeIds = node.upstreamNodeIds.filter((nodeId) => nodeId !== connection.sourceNodeId);
+          return {
+            ...node,
+            upstreamNodeIds,
+            upstreamAssetIds: buildAssetRefsFromNodes(upstreamNodeIds, prev.workflow.nodes),
+          };
+        });
+
+        const nextDoc: CanvasDocument = {
+          ...prev,
+          workflow: {
+            nodes: nextNodes,
+          },
+        };
+
+        queueCanvasSave(nextDoc);
+        return nextDoc;
+      });
+
+      setSelectedConnection(null);
+    },
+    [queueCanvasSave]
+  );
+
+  const duplicateNode = useCallback(
+    (nodeId: string) => {
+      setCanvasDoc((prev) => {
+        const sourceNode = prev.workflow.nodes.find((node) => node.id === nodeId);
+        if (!sourceNode) {
+          return prev;
+        }
+
+        const duplicateBase =
+          sourceNode.kind === "model"
+            ? {
+                ...sourceNode,
+              }
+            : sourceNode.kind === "text-note"
+              ? {
+                  ...sourceNode,
+                  promptSourceNodeId: null,
+                  upstreamNodeIds: [],
+                  upstreamAssetIds: [],
+                }
+              : {
+                  ...sourceNode,
+                  upstreamNodeIds: [],
+                  upstreamAssetIds: [],
+                  processingState: null,
+                  settings: {
+                    ...sourceNode.settings,
+                    sourceModelNodeId: null,
+                  },
+                };
+
+        const duplicate: WorkflowNode = {
+          ...duplicateBase,
+          id: uid(),
+          label: sourceNode.label.endsWith(" Copy") ? sourceNode.label : `${sourceNode.label} Copy`,
+          x: Math.round(sourceNode.x + 44),
+          y: Math.round(sourceNode.y + 36),
+        };
+
+        const nextDoc: CanvasDocument = {
+          ...prev,
+          workflow: {
+            nodes: [...prev.workflow.nodes, duplicate],
+          },
+        };
+
+        queueCanvasSave(nextDoc);
+        setSelectedNodeIds([duplicate.id]);
+        setSelectedConnection(null);
+        return nextDoc;
+      });
+    },
+    [queueCanvasSave]
   );
 
   const connectNodes = useCallback(
@@ -1343,19 +1652,45 @@ export function CanvasView({ projectId }: Props) {
       });
 
       setSelectedNodeIds((current) => current.filter((nodeId) => !nodeIdSet.has(nodeId)));
+      setSelectedConnection((current) =>
+        current && (nodeIdSet.has(current.sourceNodeId) || nodeIdSet.has(current.targetNodeId)) ? null : current
+      );
     },
     [queueCanvasSave]
   );
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "d") {
+        if (selectedNodeIds.length !== 1 || isInputLikeElement(event.target)) {
+          return;
+        }
+
+        event.preventDefault();
+        duplicateNode(selectedNodeIds[0]);
+        return;
+      }
+
+      if (event.key === "Escape" && selectedConnection) {
+        event.preventDefault();
+        setSelectedConnection(null);
+        return;
+      }
+
       if (event.key !== "Delete" && event.key !== "Backspace") {
         return;
       }
-      if (selectedNodeIds.length === 0) {
+      if (isInputLikeElement(event.target)) {
         return;
       }
-      if (isInputLikeElement(event.target)) {
+
+      if (selectedConnection) {
+        event.preventDefault();
+        removeConnection(selectedConnection);
+        return;
+      }
+
+      if (selectedNodeIds.length === 0) {
         return;
       }
 
@@ -1367,7 +1702,7 @@ export function CanvasView({ projectId }: Props) {
     return () => {
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [removeNodes, selectedNodeIds]);
+  }, [duplicateNode, removeConnection, removeNodes, selectedConnection, selectedNodeIds]);
 
   const updateViewport = useCallback(
     (nextViewport: CanvasDocument["canvasViewport"]) => {
@@ -1388,7 +1723,11 @@ export function CanvasView({ projectId }: Props) {
     (job: Job, sourceNodeId: string, outputCount: number) => {
       setCanvasDoc((prev) => {
         if (
-          prev.workflow.nodes.filter((node) => getNodeSourceJobId(node) === job.id).length >= outputCount
+          prev.workflow.nodes.filter(
+            (node) =>
+              getNodeSourceJobId(node) === job.id &&
+              (typeof node.settings.sourceModelNodeId === "string" || node.upstreamNodeIds.includes(sourceNodeId))
+          ).length >= outputCount
         ) {
           return prev;
         }
@@ -1537,14 +1876,16 @@ export function CanvasView({ projectId }: Props) {
           <div className={styles.loading}>Loading canvas...</div>
         ) : (
           <InfiniteCanvas
-            nodes={canvasDoc.workflow.nodes}
+            nodes={canvasNodes}
             selectedNodeIds={selectedNodeIds}
+            selectedConnectionId={selectedConnection?.id || null}
             viewport={canvasDoc.canvasViewport}
             onSelectSingleNode={selectSingleNode}
             onToggleNodeSelection={toggleNodeSelection}
             onMarqueeSelectNodes={addNodesToSelection}
             onUpdateTextNote={(nodeId, prompt) => updateNode(nodeId, { prompt })}
             onRequestInsertMenu={(position) => {
+              setSelectedConnection(null);
               setInsertMenu({
                 clientX: position.clientX,
                 clientY: position.clientY,
@@ -1558,6 +1899,7 @@ export function CanvasView({ projectId }: Props) {
             onViewportChange={updateViewport}
             onNodePositionChange={(nodeId, nodePosition) => updateNode(nodeId, nodePosition)}
             onConnectNodes={connectNodes}
+            onSelectConnection={setSelectedConnection}
           />
         )}
 
@@ -1587,6 +1929,114 @@ export function CanvasView({ projectId }: Props) {
             >
               Upload Assets
             </button>
+            <button
+              type="button"
+              onClick={() => {
+                setInsertMenu(null);
+                setAssetPicker({
+                  origin: "generated",
+                  worldX: insertMenu.worldX,
+                  worldY: insertMenu.worldY,
+                });
+              }}
+            >
+              Add Generated Asset
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setInsertMenu(null);
+                setAssetPicker({
+                  origin: "uploaded",
+                  worldX: insertMenu.worldX,
+                  worldY: insertMenu.worldY,
+                });
+              }}
+            >
+              Add Uploaded Asset
+            </button>
+          </div>
+        ) : null}
+
+        {assetPicker ? (
+          <div className={styles.assetPickerBackdrop}>
+            <section ref={assetPickerRef} className={styles.assetPickerModal}>
+              <header className={styles.assetPickerHeader}>
+                <div>
+                  <strong>{assetPicker.origin === "generated" ? "Add Generated Asset" : "Add Uploaded Asset"}</strong>
+                  <span>{assetPicker.origin === "generated" ? "Spawn pointer nodes to previous generations." : "Spawn pointer nodes to previous uploads."}</span>
+                </div>
+                <button type="button" onClick={() => setAssetPicker(null)}>
+                  Close
+                </button>
+              </header>
+
+              <div className={styles.assetPickerToolbar}>
+                <input
+                  className={styles.assetPickerSearch}
+                  value={assetPickerQuery}
+                  onChange={(event) => setAssetPickerQuery(event.target.value)}
+                  placeholder="Search by id, provider, model, or storage ref"
+                />
+                <div className={styles.assetPickerMeta}>
+                  {assetPickerLoading ? "Loading…" : `${assetPickerAssets.length} asset${assetPickerAssets.length === 1 ? "" : "s"}`}
+                </div>
+              </div>
+
+              {assetPickerError ? <div className={styles.connectionSummaryWarning}>{assetPickerError}</div> : null}
+
+              <div className={styles.assetPickerList}>
+                {assetPickerAssets.map((asset, index) => {
+                  const isSelected = assetPickerSelectedIds.includes(asset.id);
+                  return (
+                    <button
+                      key={asset.id}
+                      type="button"
+                      className={`${styles.assetPickerItem} ${isSelected ? styles.assetPickerItemSelected : ""}`}
+                      onClick={() =>
+                        setAssetPickerSelectedIds((prev) =>
+                          prev.includes(asset.id) ? prev.filter((id) => id !== asset.id) : [...prev, asset.id]
+                        )
+                      }
+                    >
+                      {asset.type === "image" ? (
+                        <img className={styles.assetPickerThumb} src={`/api/assets/${asset.id}/file`} alt={asset.id} />
+                      ) : (
+                        <div className={styles.assetPickerThumbPlaceholder}>{asset.type.toUpperCase()}</div>
+                      )}
+                      <div className={styles.assetPickerItemMeta}>
+                        <strong>{getAssetPointerNodeLabel(asset, index)}</strong>
+                        <span>{asset.origin === "generated" ? `${asset.job?.providerId || "generated"} / ${asset.job?.modelId || "unknown"}` : "Uploaded asset"}</span>
+                        <span>{new Date(asset.createdAt).toLocaleString()}</span>
+                      </div>
+                    </button>
+                  );
+                })}
+                {!assetPickerLoading && assetPickerAssets.length === 0 ? (
+                  <div className={styles.assetPickerEmpty}>No matching assets found.</div>
+                ) : null}
+              </div>
+
+              <footer className={styles.assetPickerActions}>
+                <span>{assetPickerSelectedIds.length} selected</span>
+                <button type="button" onClick={() => setAssetPicker(null)}>
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={assetPickerSelectedIds.length === 0}
+                  onClick={() => {
+                    const selectedAssets = assetPickerAssets.filter((asset) => assetPickerSelectedIds.includes(asset.id));
+                    spawnAssetPointerNodes(selectedAssets, {
+                      x: assetPicker.worldX,
+                      y: assetPicker.worldY,
+                    });
+                  }}
+                >
+                  Add Selected
+                </button>
+              </footer>
+            </section>
           </div>
         ) : null}
 

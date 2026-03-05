@@ -50,6 +50,7 @@ export type ProviderJobInput = {
   modelId: string;
   payload: NodePayload;
   inputAssets: ProviderInputAsset[];
+  onPreviewFrame?: (previewFrame: NormalizedPreviewFrame) => Promise<void> | void;
 };
 
 export type NormalizedOutput = {
@@ -59,6 +60,15 @@ export type NormalizedOutput = {
   content: string | Buffer;
   encoding: BufferEncoding | "binary";
   extension: string;
+};
+
+export type NormalizedPreviewFrame = {
+  outputIndex: number;
+  previewIndex: number;
+  mimeType: string;
+  extension: string;
+  content: Buffer;
+  metadata: Record<string, unknown>;
 };
 ```
 
@@ -91,6 +101,7 @@ This keeps the browser truthful about whether a node can run without inventing c
 - Image references come from connected image-producing nodes when the inferred mode is `edit`
 - Server resolves those references into concrete asset bytes before invoking OpenAI
 - Run inserts one or more generated output placeholder nodes on the canvas immediately after job creation
+- OpenAI image runs request streaming partial images and persist them as transient `job_preview_frames`
 - Successful outputs are stored as project assets and attached back to the matching placeholder node by `(jobId, outputIndex)`
 - Failed output nodes remain on canvas and retain source-call inspection
 
@@ -106,6 +117,8 @@ This keeps the browser truthful about whether a node can run without inventing c
   - `background = auto`
   - `n = 1`
   - `input_fidelity = high` (`edit` only)
+  - `stream = true`
+  - `partial_images = 2`
 - Core controls exposed in node UI:
   - aspect ratio (`size`): `auto`, `1024x1024`, `1024x1536`, `1536x1024`
   - resolution (`quality`): `auto`, `low`, `medium`, `high`
@@ -131,6 +144,7 @@ OpenAI run is disabled when:
 - one or more image connections exist but none resolve to supported image assets
 
 ### Output Normalization
+- Partial previews are decoded from streamed base64 and persisted as durable preview frames keyed by `(jobId, outputIndex, previewIndex)`.
 - Generated image bytes are decoded from OpenAI base64 output into `Buffer`
 - Asset metadata stores:
   - `mimeType`
@@ -143,6 +157,7 @@ OpenAI run is disabled when:
   - originating `outputIndex`
   - transient processing state (`queued | running | failed | null`)
   - source-call inspection via the same `job_attempts` payloads shown in Queue
+- When the job is still running, the canvas renders the latest preview frame instead of waiting for the final asset.
 
 ## Placeholder Providers
 Gemini and Topaz currently use the same registry and dropdown surfaces but reject execution with `COMING_SOON`. This preserves the provider-agnostic node contract without pretending those backends are live.

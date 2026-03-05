@@ -74,3 +74,8 @@
 - Decision: move model controls to declarative provider metadata and expose GPT Image 1.5 aspect ratio, resolution, transparency, format, output count, and advanced controls from that schema.
 - Rationale: future model expansion should not require hard-coded modal rewrites, and GPT Image 1.5 needs more of its real Images API surface than a fixed square/medium default.
 - Consequence: provider capabilities now include parameter definitions, OpenAI defaults shift to `auto` where supported, generated outputs can fan out to multiple placeholders, and generated assets persist `outputIndex` so canvas reconciliation remains deterministic.
+
+## 2026-03-05 - Asset Nodes Are Peer Pointers and OpenAI Previews Are Durable
+- Decision: allow multiple canvas asset-source nodes to point at the same uploaded/generated asset, and persist streamed GPT Image 1.5 partial previews as separate durable job-preview records instead of normal assets.
+- Rationale: users need to reuse previous outputs/uploads freely on canvas without duplicating binaries, and progressive previews must survive refresh while remaining outside the review library.
+- Consequence: the insert picker now includes generated/uploaded asset library actions, generated pointer nodes retain source-call access through shared asset/job metadata, and `job_preview_frames` back the running-node preview UI until final assets are persisted.
