@@ -19,6 +19,8 @@ export async function GET(
           select: {
             id: true,
             type: true,
+            mimeType: true,
+            outputIndex: true,
             createdAt: true,
           },
           orderBy: {

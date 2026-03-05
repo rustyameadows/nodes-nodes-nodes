@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
+import { resolveOpenAiImageSettings } from "@/lib/openai-image-settings";
 import { prisma } from "@/lib/prisma";
 import { getProviderModel } from "@/lib/providers/registry";
 import { badRequest, internalError } from "@/lib/server/http";
@@ -18,6 +19,7 @@ const createJobSchema = z.object({
     settings: z.record(z.string(), z.unknown()).default({}),
     outputType: z.enum(["text", "image", "video"]),
     executionMode: z.enum(["generate", "edit"]).default("edit"),
+    outputCount: z.number().int().min(1).max(4).default(1),
     promptSourceNodeId: z.string().nullable().optional(),
     upstreamNodeIds: z.array(z.string()).default([]),
     upstreamAssetIds: z.array(z.string()).default([]),
@@ -53,11 +55,18 @@ function getSubmissionError(input: z.infer<typeof createJobSchema>) {
   }
 
   if (executionMode === "generate" && input.nodePayload.inputImageAssetIds.length > 0) {
-    return "Disconnect image inputs or switch the node to Edit mode before running.";
+    return "Disconnect image inputs before running prompt-only generation.";
   }
 
   if (executionMode === "edit" && input.nodePayload.inputImageAssetIds.length === 0) {
     return "Connect at least one supported image input before running.";
+  }
+
+  if (input.providerId === "openai" && input.modelId === "gpt-image-1.5") {
+    const resolved = resolveOpenAiImageSettings(input.nodePayload.settings, executionMode);
+    if (resolved.outputCount !== input.nodePayload.outputCount) {
+      return "Output count is outside the supported range.";
+    }
   }
 
   return null;
@@ -74,7 +83,7 @@ export async function GET(
       where: { projectId },
       include: {
         assets: {
-          select: { id: true, type: true, mimeType: true, createdAt: true },
+          select: { id: true, type: true, mimeType: true, outputIndex: true, createdAt: true },
         },
       },
       orderBy: { createdAt: "desc" },

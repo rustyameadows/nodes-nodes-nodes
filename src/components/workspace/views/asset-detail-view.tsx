@@ -127,6 +127,10 @@ export function AssetDetailView({ projectId, assetId }: Props) {
                     <dd>{asset.job?.state || "-"}</dd>
                   </div>
                   <div className={styles.metaRow}>
+                    <dt>Output Variant</dt>
+                    <dd>{typeof asset.outputIndex === "number" ? asset.outputIndex + 1 : "-"}</dd>
+                  </div>
+                  <div className={styles.metaRow}>
                     <dt>Created</dt>
                     <dd>{formatDate(asset.createdAt)}</dd>
                   </div>

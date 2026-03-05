@@ -62,11 +62,11 @@ model ProjectWorkspaceState {
 }
 
 model Canvas {
-  projectId       String   @id
-  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  canvasDocument  Json?
-  version         Int      @default(1)
-  updatedAt       DateTime @updatedAt
+  projectId      String   @id
+  project        Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  canvasDocument Json?
+  version        Int      @default(1)
+  updatedAt      DateTime @updatedAt
 }
 
 model CanvasNode {
@@ -124,65 +124,66 @@ model Job {
 
 model JobAttempt {
   id               String   @id @default(cuid())
-  jobId             String
-  job               Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  attemptNumber     Int
-  providerRequest   Json
-  providerResponse  Json?
-  errorCode         String?
-  errorMessage      String?
-  durationMs        Int?
-  createdAt         DateTime @default(now())
+  jobId            String
+  job              Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  attemptNumber    Int
+  providerRequest  Json
+  providerResponse Json?
+  errorCode        String?
+  errorMessage     String?
+  durationMs       Int?
+  createdAt        DateTime @default(now())
 
   @@unique([jobId, attemptNumber])
 }
 
 model Asset {
-  id           String       @id @default(cuid())
-  projectId    String
-  project      Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  jobId        String?
-  job          Job?         @relation(fields: [jobId], references: [id], onDelete: SetNull)
-  type         AssetType
-  storageRef   String
-  mimeType     String
-  width        Int?
-  height       Int?
-  durationMs   Int?
-  checksum     String?
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
-  feedback     AssetFeedback?
-  tags         AssetTagLink[]
+  id          String         @id @default(cuid())
+  projectId   String
+  project     Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  jobId       String?
+  job         Job?           @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  type        AssetType
+  storageRef  String
+  mimeType    String
+  outputIndex Int?
+  width       Int?
+  height      Int?
+  durationMs  Int?
+  checksum    String?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  feedback    AssetFeedback?
+  tags        AssetTagLink[]
 
   @@index([projectId, createdAt(sort: Desc)])
 }
 
 model AssetFeedback {
-  assetId     String   @id
-  asset       Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
-  rating      Int?
-  flagged     Boolean  @default(false)
-  updatedAt   DateTime @updatedAt
+  assetId   String   @id
+  asset     Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  rating    Int?
+  flagged   Boolean  @default(false)
+  updatedAt DateTime @updatedAt
 }
 
 model AssetTag {
-  id         String         @id @default(cuid())
-  projectId  String
-  project    Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  name       String
-  createdAt  DateTime       @default(now())
-  assets     AssetTagLink[]
+  id        String         @id @default(cuid())
+  projectId String
+  project   Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name      String
+  createdAt DateTime       @default(now())
+  assets    AssetTagLink[]
 
   @@unique([projectId, name])
 }
 
 model AssetTagLink {
-  assetId    String
-  tagId      String
-  asset      Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
-  tag        AssetTag @relation(fields: [tagId], references: [id], onDelete: Cascade)
-  createdAt  DateTime @default(now())
+  assetId   String
+  tagId     String
+  asset     Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  tag       AssetTag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
 
   @@id([assetId, tagId])
 }

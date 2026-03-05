@@ -1,3 +1,5 @@
+import type { ModelParameterDefinition } from "@/lib/model-parameters";
+
 export type ProviderId = "openai" | "google-gemini" | "topaz";
 export type NodeKind = "text-gen" | "image-gen" | "video-gen" | "transform";
 export type OutputType = "text" | "image" | "video";
@@ -7,6 +9,8 @@ export type ImageOutputFormat = "png" | "jpeg" | "webp";
 export type ImageSize = "1024x1024" | "1536x1024" | "1024x1536" | "auto";
 export type ImageQuality = "low" | "medium" | "high" | "auto";
 export type ImageInputFidelity = "high" | "low";
+export type ImageBackground = "auto" | "opaque" | "transparent";
+export type ImageModeration = "auto" | "low";
 
 export type ProviderModelCapabilities = {
   text: boolean;
@@ -19,11 +23,15 @@ export type ProviderModelCapabilities = {
   executionModes: OpenAIImageMode[];
   acceptedInputMimeTypes: string[];
   maxInputImages: number;
+  parameters: ModelParameterDefinition[];
   defaults: {
     outputFormat?: ImageOutputFormat;
     quality?: ImageQuality;
     size?: ImageSize;
     inputFidelity?: ImageInputFidelity;
+    background?: ImageBackground;
+    moderation?: ImageModeration;
+    n?: number;
   };
 };
 
@@ -34,6 +42,7 @@ export type NodePayload = {
   settings: Record<string, unknown>;
   outputType: OutputType;
   executionMode: OpenAIImageMode;
+  outputCount: number;
   promptSourceNodeId?: string | null;
   upstreamNodeIds: string[];
   upstreamAssetIds: string[];

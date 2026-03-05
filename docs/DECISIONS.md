@@ -69,3 +69,8 @@
 - Decision: remove the explicit `generate` / `edit` control from the `gpt-image-1.5` node UI, infer the execution mode from whether supported image inputs are connected, and keep runtime job-state visibility on the immediately-created generated output node.
 - Rationale: users think in terms of prompt-only vs reference-image generation, not OpenAI endpoint names. The manual toggle adds API vocabulary without adding product value.
 - Consequence: queued job payloads still snapshot `executionMode`, but the client derives it automatically from resolved image inputs, generated nodes retain `sourceJobId` plus inline source-call inspection, and model nodes stay focused on prompt/input wiring instead of transport details.
+
+## 2026-03-05 - Model Parameters Are Schema-Driven and GPT Image 1.5 Uses the Fuller Images API Surface
+- Decision: move model controls to declarative provider metadata and expose GPT Image 1.5 aspect ratio, resolution, transparency, format, output count, and advanced controls from that schema.
+- Rationale: future model expansion should not require hard-coded modal rewrites, and GPT Image 1.5 needs more of its real Images API surface than a fixed square/medium default.
+- Consequence: provider capabilities now include parameter definitions, OpenAI defaults shift to `auto` where supported, generated outputs can fan out to multiple placeholders, and generated assets persist `outputIndex` so canvas reconciliation remains deterministic.

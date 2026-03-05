@@ -1,4 +1,5 @@
 import { Prisma } from "@prisma/client";
+import { buildOpenAiImageDebugRequest } from "@/lib/openai-image-settings";
 import { prisma } from "@/lib/prisma";
 import { getProviderAdapter } from "@/lib/providers/registry";
 import { readAssetContent, saveBufferAsAsset, saveContentAsAsset } from "@/lib/storage/local-storage";
@@ -17,6 +18,8 @@ function asNodePayload(value: unknown): NodePayload {
     settings: (raw.settings as Record<string, unknown>) || {},
     outputType: (raw.outputType as NodePayload["outputType"]) || "image",
     executionMode: raw.executionMode === "generate" ? "generate" : "edit",
+    outputCount:
+      typeof raw.outputCount === "number" && Number.isInteger(raw.outputCount) ? Math.max(1, raw.outputCount) : 1,
     promptSourceNodeId: raw.promptSourceNodeId ? String(raw.promptSourceNodeId) : null,
     upstreamNodeIds: Array.isArray(raw.upstreamNodeIds)
       ? raw.upstreamNodeIds.map((id) => String(id))
@@ -85,9 +88,21 @@ function buildProviderRequest(
   payload: NodePayload,
   inputAssets: Awaited<ReturnType<typeof loadInputAssets>>
 ) {
+  const providerRequestPreview =
+    providerId === "openai"
+      ? buildOpenAiImageDebugRequest({
+          modelId,
+          prompt: payload.prompt,
+          executionMode: payload.executionMode,
+          rawSettings: payload.settings,
+          inputImageAssetIds: payload.inputImageAssetIds,
+        })
+      : null;
+
   return {
     providerId,
     modelId,
+    providerRequestPreview,
     payload,
     inputAssets: inputAssets.map((asset) => ({
       assetId: asset.assetId,
@@ -176,6 +191,7 @@ export async function processJobById(jobId: string) {
           height,
           durationMs,
           checksum: stored.checksum,
+          outputIndex: typeof output.metadata.outputIndex === "number" ? output.metadata.outputIndex : null,
         },
       });
 

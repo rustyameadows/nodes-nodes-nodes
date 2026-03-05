@@ -142,7 +142,10 @@
 .nodeModal {
   position: absolute;
   z-index: 35;
-  width: 386px;
+  width: min(396px, calc(100vw - 28px));
+  max-height: min(82vh, 860px);
+  display: flex;
+  flex-direction: column;
   border-radius: var(--canvas-corner-radius);
   border: 1px solid rgba(255, 255, 255, 0.86);
   background: rgba(255, 255, 255, 0.9);
@@ -179,7 +182,9 @@
   padding: 9px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 7px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .nodeGrid {
@@ -188,12 +193,39 @@
   gap: 6px;
 }
 
+.parameterSection {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.parameterSectionHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  color: rgba(0, 0, 0, 0.76);
+  font-size: 0.7rem;
+}
+
+.parameterSectionHeader strong {
+  font-size: 0.74rem;
+  color: rgba(0, 0, 0, 0.86);
+}
+
+.parameterSectionHeader span {
+  color: rgba(0, 0, 0, 0.48);
+  font-size: 0.64rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
 .nodeGrid label,
 .nodeModalBody label {
   display: flex;
   flex-direction: column;
   gap: 3px;
-  font-size: 0.71rem;
+  font-size: 0.69rem;
   color: rgba(0, 0, 0, 0.76);
 }
 
@@ -212,11 +244,11 @@
 .nodePrompt,
 .nodeGrid select {
   width: 100%;
-  padding: 6px;
+  padding: 5px 6px;
 }
 
 .nodePrompt {
-  min-height: 70px;
+  min-height: 56px;
   resize: vertical;
 }
 
@@ -231,10 +263,10 @@
   border-radius: var(--canvas-corner-radius);
   border: 1px solid rgba(0, 0, 0, 0.2);
   background: rgba(255, 255, 255, 0.72);
-  padding: 6px;
-  font-size: 0.68rem;
+  padding: 5px 6px;
+  font-size: 0.66rem;
   color: rgba(0, 0, 0, 0.82);
-  line-height: 1.3;
+  line-height: 1.25;
 }
 
 .connectionSummary strong {
@@ -271,9 +303,22 @@
   padding: 6px 8px;
 }
 
+.parameterToggle {
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  background: rgba(255, 255, 255, 0.84);
+  color: #111;
+  border-radius: var(--canvas-corner-radius);
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 6px 8px;
+  text-align: left;
+}
+
 .debuggerPreview {
   margin: 0;
-  max-height: 210px;
+  max-height: 170px;
   overflow: auto;
   white-space: pre;
   border-radius: var(--canvas-corner-radius);
@@ -295,11 +340,17 @@
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+  position: sticky;
+  bottom: 0;
+  padding-top: 4px;
+  background:
+    linear-gradient(to bottom, rgba(255, 255, 255, 0), rgba(255, 255, 255, 0.92) 16px),
+    rgba(255, 255, 255, 0.92);
 }
 
 .nodeModalActions button {
-  padding: 6px 8px;
-  font-size: 0.72rem;
+  padding: 5px 7px;
+  font-size: 0.7rem;
   font-weight: 600;
   cursor: pointer;
 }
@@ -323,6 +374,7 @@
 
   .nodeModal {
     width: calc(100vw - 28px);
+    max-height: calc(100vh - 84px);
     left: 14px !important;
     top: 70px !important;
   }

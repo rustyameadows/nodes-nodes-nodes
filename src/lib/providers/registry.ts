@@ -1,10 +1,21 @@
 import OpenAI, { toFile } from "openai";
+import {
+  OPENAI_DEFAULT_BACKGROUND,
+  OPENAI_DEFAULT_INPUT_FIDELITY,
+  OPENAI_DEFAULT_MODERATION,
+  OPENAI_DEFAULT_OUTPUT_COUNT,
+  OPENAI_DEFAULT_OUTPUT_FORMAT,
+  OPENAI_DEFAULT_QUALITY,
+  OPENAI_DEFAULT_SIZE,
+  OPENAI_IMAGE_INPUT_MIME_TYPES,
+  OPENAI_IMAGE_PARAMETER_DEFINITIONS,
+  OPENAI_MAX_INPUT_IMAGES,
+  parseImageSize,
+  resolveOpenAiImageSettings,
+} from "@/lib/openai-image-settings";
 import type {
   OpenAIImageMode,
-  ImageInputFidelity,
   ImageOutputFormat,
-  ImageQuality,
-  ImageSize,
   NormalizedOutput,
   ProviderAdapter,
   ProviderId,
@@ -12,13 +23,6 @@ import type {
   ProviderModelCapabilities,
   ProviderModelDescriptor,
 } from "@/lib/types";
-
-const OPENAI_IMAGE_INPUT_MIME_TYPES = ["image/png", "image/jpeg", "image/webp"];
-const OPENAI_DEFAULT_OUTPUT_FORMAT: ImageOutputFormat = "png";
-const OPENAI_DEFAULT_QUALITY: ImageQuality = "medium";
-const OPENAI_DEFAULT_SIZE: ImageSize = "1024x1024";
-const OPENAI_DEFAULT_INPUT_FIDELITY: ImageInputFidelity = "high";
-const OPENAI_MAX_INPUT_IMAGES = 5;
 
 type ProviderErrorCode = "CONFIG_ERROR" | "COMING_SOON" | "INVALID_INPUT" | "PROVIDER_ERROR";
 
@@ -49,6 +53,7 @@ function buildCapabilities({
   executionModes = [],
   acceptedInputMimeTypes = [],
   maxInputImages = 0,
+  parameters = [],
   defaults = {},
 }: {
   text: boolean;
@@ -60,6 +65,7 @@ function buildCapabilities({
   executionModes?: ProviderModelCapabilities["executionModes"];
   acceptedInputMimeTypes?: string[];
   maxInputImages?: number;
+  parameters?: ProviderModelCapabilities["parameters"];
   defaults?: ProviderModelCapabilities["defaults"];
 }): ProviderModelCapabilities {
   return {
@@ -73,6 +79,7 @@ function buildCapabilities({
     executionModes,
     acceptedInputMimeTypes,
     maxInputImages,
+    parameters,
     defaults,
   };
 }
@@ -88,11 +95,15 @@ function buildProviderCatalog(): Record<ProviderId, ProviderModelDescriptor[]> {
     executionModes: ["generate", "edit"],
     acceptedInputMimeTypes: OPENAI_IMAGE_INPUT_MIME_TYPES,
     maxInputImages: OPENAI_MAX_INPUT_IMAGES,
+    parameters: OPENAI_IMAGE_PARAMETER_DEFINITIONS,
     defaults: {
       outputFormat: OPENAI_DEFAULT_OUTPUT_FORMAT,
       quality: OPENAI_DEFAULT_QUALITY,
       size: OPENAI_DEFAULT_SIZE,
+      background: OPENAI_DEFAULT_BACKGROUND,
+      moderation: OPENAI_DEFAULT_MODERATION,
       inputFidelity: OPENAI_DEFAULT_INPUT_FIDELITY,
+      n: OPENAI_DEFAULT_OUTPUT_COUNT,
     },
   });
 
@@ -103,6 +114,7 @@ function buildProviderCatalog(): Record<ProviderId, ProviderModelDescriptor[]> {
     runnable: false,
     availability: "coming_soon",
     executionModes: [],
+    parameters: [],
   });
 
   const comingSoonTextCapabilities = buildCapabilities({
@@ -112,6 +124,7 @@ function buildProviderCatalog(): Record<ProviderId, ProviderModelDescriptor[]> {
     runnable: false,
     availability: "coming_soon",
     executionModes: [],
+    parameters: [],
   });
 
   const comingSoonMixedCapabilities = buildCapabilities({
@@ -121,6 +134,7 @@ function buildProviderCatalog(): Record<ProviderId, ProviderModelDescriptor[]> {
     runnable: false,
     availability: "coming_soon",
     executionModes: [],
+    parameters: [],
   });
 
   return {
@@ -202,16 +216,6 @@ function outputFormatToMimeType(outputFormat: ImageOutputFormat) {
   return "image/png";
 }
 
-function parseImageSize(size: ImageSize) {
-  if (size === "1536x1024") {
-    return { width: 1536, height: 1024 };
-  }
-  if (size === "1024x1536") {
-    return { width: 1024, height: 1536 };
-  }
-  return { width: 1024, height: 1024 };
-}
-
 function extensionForMimeType(mimeType: string) {
   if (mimeType === "image/jpeg") {
     return "jpg";
@@ -220,24 +224,6 @@ function extensionForMimeType(mimeType: string) {
     return "webp";
   }
   return "png";
-}
-
-function readOutputFormat(value: unknown, fallback: ImageOutputFormat): ImageOutputFormat {
-  return value === "png" || value === "jpeg" || value === "webp" ? value : fallback;
-}
-
-function readQuality(value: unknown, fallback: ImageQuality): ImageQuality {
-  return value === "low" || value === "medium" || value === "high" || value === "auto" ? value : fallback;
-}
-
-function readSize(value: unknown, fallback: ImageSize): ImageSize {
-  return value === "1024x1024" || value === "1536x1024" || value === "1024x1536" || value === "auto"
-    ? value
-    : fallback;
-}
-
-function readInputFidelity(value: unknown, fallback: ImageInputFidelity): ImageInputFidelity {
-  return value === "high" || value === "low" ? value : fallback;
 }
 
 function readExecutionMode(value: unknown): OpenAIImageMode {
@@ -286,14 +272,17 @@ async function submitOpenAiImage(input: ProviderJobInput): Promise<NormalizedOut
     );
   }
 
-  const defaults = model.capabilities.defaults;
-  const outputFormat = readOutputFormat(input.payload.settings.outputFormat, defaults.outputFormat || OPENAI_DEFAULT_OUTPUT_FORMAT);
-  const quality = readQuality(input.payload.settings.quality, defaults.quality || OPENAI_DEFAULT_QUALITY);
-  const size = readSize(input.payload.settings.size, defaults.size || OPENAI_DEFAULT_SIZE);
-  const inputFidelity = readInputFidelity(
-    input.payload.settings.inputFidelity,
-    defaults.inputFidelity || OPENAI_DEFAULT_INPUT_FIDELITY
-  );
+  const resolvedSettings = resolveOpenAiImageSettings(input.payload.settings, executionMode);
+  const {
+    outputFormat,
+    quality,
+    size,
+    background,
+    moderation,
+    outputCount,
+    inputFidelity,
+    outputCompression,
+  } = resolvedSettings;
 
   const client = getOpenAIClient();
   const response =
@@ -303,8 +292,11 @@ async function submitOpenAiImage(input: ProviderJobInput): Promise<NormalizedOut
           prompt,
           size,
           quality,
+          background,
           output_format: outputFormat,
-          n: 1,
+          moderation,
+          n: outputCount,
+          ...(outputCompression !== null ? { output_compression: outputCompression } : {}),
         })
       : await client.images.edit({
           model: input.modelId,
@@ -318,21 +310,25 @@ async function submitOpenAiImage(input: ProviderJobInput): Promise<NormalizedOut
           prompt,
           size,
           quality,
+          background,
           output_format: outputFormat,
-          input_fidelity: inputFidelity,
-          n: 1,
+          input_fidelity: inputFidelity || OPENAI_DEFAULT_INPUT_FIDELITY,
+          n: outputCount,
+          ...(outputCompression !== null ? { output_compression: outputCompression } : {}),
         });
 
-  const firstImage = response.data?.[0];
-  if (!firstImage?.b64_json) {
+  if (!response.data || response.data.length === 0) {
     throw createProviderError("PROVIDER_ERROR", "OpenAI returned no image bytes.");
   }
 
-  const content = Buffer.from(firstImage.b64_json, "base64");
   const dimensions = parseImageSize(size);
 
-  return [
-    {
+  return response.data.flatMap((image, outputIndex) => {
+    if (!image?.b64_json) {
+      return [];
+    }
+
+    return {
       type: "image",
       mimeType: outputFormatToMimeType(outputFormat),
       extension: outputFormat === "jpeg" ? "jpg" : outputFormat,
@@ -340,19 +336,24 @@ async function submitOpenAiImage(input: ProviderJobInput): Promise<NormalizedOut
       metadata: {
         providerId: input.providerId,
         modelId: input.modelId,
-        width: dimensions.width,
-        height: dimensions.height,
+        width: dimensions?.width ?? null,
+        height: dimensions?.height ?? null,
         executionMode,
         quality,
         size,
+        background,
+        moderation,
         outputFormat,
+        outputCount,
+        outputIndex,
+        outputCompression,
         inputFidelity: executionMode === "edit" ? inputFidelity : null,
         inputAssetIds: inputAssets.map((asset) => asset.assetId),
-        revisedPrompt: firstImage.revised_prompt || null,
+        revisedPrompt: image.revised_prompt || null,
       },
-      content,
-    },
-  ];
+      content: Buffer.from(image.b64_json, "base64"),
+    };
+  });
 }
 
 function buildComingSoonAdapter(providerId: ProviderId): ProviderAdapter {

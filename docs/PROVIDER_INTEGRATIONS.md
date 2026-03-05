@@ -25,6 +25,7 @@ export type NodePayload = {
   settings: Record<string, unknown>;
   outputType: "text" | "image" | "video";
   executionMode: "generate" | "edit";
+  outputCount: number;
   promptSourceNodeId?: string | null;
   upstreamNodeIds: string[];
   upstreamAssetIds: string[];
@@ -70,6 +71,7 @@ Provider-model records sync into `provider_models.capabilities` with the runtime
 - `executionModes`
 - `acceptedInputMimeTypes`
 - `maxInputImages`
+- `parameters`
 - `defaults`
 
 This keeps the browser truthful about whether a node can run without inventing client-side rules.
@@ -84,10 +86,12 @@ This keeps the browser truthful about whether a node can run without inventing c
 - Execution mode is inferred from connected image inputs:
   - `generate`: no connected image inputs
   - `edit`: one or more connected supported image inputs
+- Parameter UI is schema-driven from provider metadata and split into `core` and `advanced` sections.
+- Effective node settings are resolved before preview/enqueue so the UI, job payload, and provider request match.
 - Image references come from connected image-producing nodes when the inferred mode is `edit`
 - Server resolves those references into concrete asset bytes before invoking OpenAI
-- Run inserts a generated output placeholder node on the canvas immediately after job creation
-- Successful output is stored as a project asset and attached to that same output node
+- Run inserts one or more generated output placeholder nodes on the canvas immediately after job creation
+- Successful outputs are stored as project assets and attached back to the matching placeholder node by `(jobId, outputIndex)`
 - Failed output nodes remain on canvas and retain source-call inspection
 
 ### Request Shape
@@ -97,13 +101,28 @@ This keeps the browser truthful about whether a node can run without inventing c
 - Model: `gpt-image-1.5`
 - Defaults used in this pass:
   - `output_format = png`
-  - `quality = medium`
-  - `size = 1024x1024`
+  - `quality = auto`
+  - `size = auto`
+  - `background = auto`
+  - `n = 1`
   - `input_fidelity = high` (`edit` only)
+- Core controls exposed in node UI:
+  - aspect ratio (`size`): `auto`, `1024x1024`, `1024x1536`, `1536x1024`
+  - resolution (`quality`): `auto`, `low`, `medium`, `high`
+  - transparency (`background`): `auto`, `opaque`, `transparent`
+  - format (`output_format`): `png`, `jpeg`, `webp`
+  - outputs (`n`): `1..4`
+- Advanced controls exposed in node UI:
+  - `input_fidelity` (`edit` only)
+  - `output_compression` (`jpeg` / `webp` only)
+  - `moderation` (`generate` only in the current Node SDK surface)
 - Input constraints enforced in app:
   - `generate`: zero image inputs
   - `edit`: only image inputs, first 5 connected images in stable connection order
   - accepted types for `edit`: `image/png`, `image/jpeg`, `image/webp`
+- Compatibility rules:
+  - JPEG coerces transparent background to opaque
+  - compression is omitted unless format is JPEG or WebP
 
 ### Run Gating
 OpenAI run is disabled when:
@@ -121,6 +140,7 @@ OpenAI run is disabled when:
   - provider/model metadata in `job_attempts.provider_response`
 - Generated output nodes also retain:
   - originating `jobId`
+  - originating `outputIndex`
   - transient processing state (`queued | running | failed | null`)
   - source-call inspection via the same `job_attempts` payloads shown in Queue
 

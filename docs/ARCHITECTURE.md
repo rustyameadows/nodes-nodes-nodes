@@ -30,13 +30,15 @@
   - connected text note content becomes `nodePayload.prompt` when present
   - model prompt field is fallback when no text note is connected
   - OpenAI image execution mode is inferred from connected image inputs and snapshotted as `nodePayload.executionMode`
+  - schema-driven model parameters are resolved to effective provider settings before enqueue
+  - requested OpenAI output count is snapshotted as `nodePayload.outputCount`
   - connected image inputs resolve to concrete asset IDs and are capped to the model limit
 3. API validates the resolved payload and creates a `job` record.
-4. Canvas client inserts a generated output placeholder node immediately after job creation and stores the originating `jobId` on that node.
+4. Canvas client inserts one or more generated output placeholder nodes immediately after job creation and stores the originating `jobId` plus `outputIndex` on each node.
 5. Inline executor or `pg-boss` worker loads referenced asset bytes from local storage and invokes the provider adapter.
 6. Adapter returns normalized outputs, including binary image buffers for generated images.
-7. Storage adapter writes binaries to disk; DB stores metadata + storage ref.
-8. UI polls job updates and reconciles the existing output node by `jobId`:
+7. Storage adapter writes binaries to disk; DB stores metadata + storage ref + output ordering for generated variants.
+8. UI polls job updates and reconciles output nodes by `(jobId, outputIndex)`:
   - `queued` -> `running`
   - `running/queued` -> `failed` keeps the placeholder
   - `succeeded` attaches the final image asset and clears the processing badge

@@ -1,5 +1,9 @@
+import type { ModelParameterDefinition } from "@/lib/model-parameters";
+
 export type ProviderId = "openai" | "google-gemini" | "topaz";
 export type OpenAIImageMode = "generate" | "edit";
+export type ImageBackground = "auto" | "opaque" | "transparent";
+export type ImageModeration = "auto" | "low";
 
 export type WorkspaceView = "canvas" | "assets" | "queue" | "settings";
 
@@ -14,11 +18,15 @@ export type ProviderModelCapabilities = {
   executionModes: OpenAIImageMode[];
   acceptedInputMimeTypes: string[];
   maxInputImages: number;
+  parameters: ModelParameterDefinition[];
   defaults: {
     outputFormat?: "png" | "jpeg" | "webp";
     quality?: "low" | "medium" | "high" | "auto";
     size?: "1024x1024" | "1536x1024" | "1024x1536" | "auto";
     inputFidelity?: "high" | "low";
+    background?: ImageBackground;
+    moderation?: ImageModeration;
+    n?: number;
   };
 };
 
@@ -66,6 +74,7 @@ export type WorkflowNode = {
   sourceAssetId: string | null;
   sourceAssetMimeType: string | null;
   sourceJobId: string | null;
+  sourceOutputIndex: number | null;
   processingState: "queued" | "running" | "failed" | null;
   promptSourceNodeId: string | null;
   upstreamNodeIds: string[];
@@ -106,6 +115,7 @@ export type Job = {
     settings?: Record<string, unknown>;
     outputType?: WorkflowNode["outputType"];
     executionMode?: OpenAIImageMode;
+    outputCount?: number;
     promptSourceNodeId?: string | null;
     upstreamNodeIds?: string[];
     upstreamAssetIds?: string[];
@@ -115,6 +125,7 @@ export type Job = {
     id: string;
     type: Asset["type"];
     mimeType: string;
+    outputIndex: number | null;
     createdAt: string;
   }>;
 };
@@ -132,6 +143,7 @@ export type Asset = {
   type: "image" | "video" | "text";
   storageRef: string;
   mimeType: string;
+  outputIndex?: number | null;
   checksum?: string;
   width?: number | null;
   height?: number | null;

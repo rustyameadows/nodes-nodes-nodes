@@ -51,6 +51,7 @@ type WorkflowNode = {
   settings: Record<string, unknown>;
   sourceAssetId: string | null;
   sourceAssetMimeType: string | null;
+  sourceOutputIndex: number | null;
   promptSourceNodeId: string | null; // model nodes only in v1
   upstreamNodeIds: string[];
   upstreamAssetIds: string[];
@@ -80,6 +81,7 @@ type Asset = {
   type: AssetType;
   storageRef: string;
   mimeType: string;
+  outputIndex: number | null;
   width: number | null;
   height: number | null;
   durationMs: number | null;
@@ -175,6 +177,7 @@ type Asset = {
 - `type` text not null
 - `storage_ref` text not null
 - `mime_type` text not null
+- `output_index` integer null
 - `width` integer null
 - `height` integer null
 - `duration_ms` integer null
@@ -219,6 +222,7 @@ type Asset = {
 
 ## Integrity Rules
 - Assets must always reference a valid project.
+- Generated multi-output assets must retain stable `output_index` ordering inside a job.
 - Canvas nodes/edges cannot cross project boundaries.
 - Text-note prompt-source links live inside canvas JSON and are project-scoped like other node relationships.
 - Deleting a project cascades to canvas, jobs, assets, and tags.

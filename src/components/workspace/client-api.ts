@@ -1,3 +1,4 @@
+import { resolveOpenAiImageSettings } from "@/lib/openai-image-settings";
 import type {
   Asset,
   AssetFilterState,
@@ -124,6 +125,10 @@ export async function uploadProjectAsset(projectId: string, file: File) {
 
 export async function createJob(projectId: string, node: WorkflowNode) {
   const executionMode: OpenAIImageMode = node.upstreamAssetIds.length > 0 ? "edit" : "generate";
+  const outputCount =
+    node.providerId === "openai" && node.modelId === "gpt-image-1.5"
+      ? resolveOpenAiImageSettings(node.settings, executionMode).outputCount
+      : 1;
   return createJobFromRequest(projectId, {
     providerId: node.providerId,
     modelId: node.modelId,
@@ -134,6 +139,7 @@ export async function createJob(projectId: string, node: WorkflowNode) {
       settings: node.settings,
       outputType: node.outputType,
       executionMode,
+      outputCount,
       promptSourceNodeId: node.promptSourceNodeId,
       upstreamNodeIds: node.upstreamNodeIds,
       upstreamAssetIds: node.upstreamAssetIds,
@@ -154,6 +160,7 @@ export async function createJobFromRequest(
       settings: Record<string, unknown>;
       outputType: WorkflowNode["outputType"];
       executionMode: OpenAIImageMode;
+      outputCount: number;
       promptSourceNodeId?: string | null;
       upstreamNodeIds: string[];
       upstreamAssetIds: string[];
@@ -277,6 +284,14 @@ export function normalizeNode(raw: Record<string, unknown>, index: number): Work
           (raw.settings as Record<string, unknown>).sourceJobId
         ? String((raw.settings as Record<string, unknown>).sourceJobId)
         : null,
+    sourceOutputIndex:
+      typeof raw.sourceOutputIndex === "number"
+        ? raw.sourceOutputIndex
+        : raw.settings &&
+            typeof raw.settings === "object" &&
+            typeof (raw.settings as Record<string, unknown>).outputIndex === "number"
+          ? Number((raw.settings as Record<string, unknown>).outputIndex)
+          : null,
     processingState:
       raw.processingState === "queued" || raw.processingState === "running" || raw.processingState === "failed"
         ? raw.processingState
