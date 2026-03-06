@@ -80,6 +80,8 @@ type AssetPickerState = {
 };
 
 type PreviewFrameSummary = NonNullable<Job["latestPreviewFrames"]>[number];
+type CanvasSemanticType = WorkflowNode["outputType"];
+const canvasSemanticTypeOrder: CanvasSemanticType[] = ["text", "image", "video"];
 
 function capabilityEnabled(value: unknown) {
   return value === true || value === "true" || value === 1;
@@ -252,6 +254,13 @@ function getNodeSourceOutputIndex(node: WorkflowNode | null | undefined) {
   return typeof node.settings.outputIndex === "number" ? Number(node.settings.outputIndex) : null;
 }
 
+function getSourceModelNodeId(node: WorkflowNode | null | undefined) {
+  if (!node) {
+    return null;
+  }
+  return typeof node.settings.sourceModelNodeId === "string" ? node.settings.sourceModelNodeId : null;
+}
+
 function isGeneratedAssetNode(node: WorkflowNode | null | undefined) {
   if (!node || node.kind !== "asset-source") {
     return false;
@@ -261,6 +270,11 @@ function isGeneratedAssetNode(node: WorkflowNode | null | undefined) {
 
 function getGeneratedNodeLabel(existingCount: number) {
   return `Output ${existingCount + 1}`;
+}
+
+function sortSemanticTypes(values: CanvasSemanticType[]) {
+  const unique = [...new Set(values)];
+  return canvasSemanticTypeOrder.filter((type) => unique.includes(type));
 }
 
 function getExpectedGeneratedOutputCount(job: Job) {
@@ -410,6 +424,13 @@ export function CanvasView({ projectId }: Props) {
     }, {});
   }, [providers]);
 
+  const providerModelDisplayNames = useMemo(() => {
+    return providers.reduce<Record<string, string>>((acc, model) => {
+      acc[`${model.providerId}:${model.modelId}`] = model.displayName;
+      return acc;
+    }, {});
+  }, [providers]);
+
   const nodesById = useMemo(() => {
     return canvasDoc.workflow.nodes.reduce<Record<string, WorkflowNode>>((acc, node) => {
       acc[node.id] = node;
@@ -535,27 +556,56 @@ export function CanvasView({ projectId }: Props) {
 
   const canvasNodes = useMemo(() => {
     return canvasDoc.workflow.nodes.map((node) => {
+      const displayModelName = providerModelDisplayNames[`${node.providerId}:${node.modelId}`] || node.modelId;
+      const inputSemanticTypes = sortSemanticTypes([
+        ...(node.kind === "model" && node.promptSourceNodeId ? (["text"] as CanvasSemanticType[]) : []),
+        ...node.upstreamNodeIds
+          .map((nodeId) => nodesById[nodeId] || null)
+          .filter((inputNode): inputNode is WorkflowNode => Boolean(inputNode))
+          .map((inputNode) => inputNode.outputType),
+      ]);
+
       if (!isGeneratedAssetNode(node)) {
-        return node;
+        return {
+          ...node,
+          assetOrigin: node.kind === "asset-source" ? ("uploaded" as const) : null,
+          sourceModelNodeId: getSourceModelNodeId(node),
+          displayModelName,
+          displaySourceLabel: node.kind === "asset-source" ? "Uploaded Asset" : displayModelName,
+          inputSemanticTypes,
+          outputSemanticType: node.outputType,
+          previewImageUrl: null,
+        };
       }
 
       const sourceJobId = getNodeSourceJobId(node);
       const sourceOutputIndex = getNodeSourceOutputIndex(node);
+      const sourceModelNodeId = getSourceModelNodeId(node);
       if (!sourceJobId || typeof sourceOutputIndex !== "number") {
-        return node;
+        return {
+          ...node,
+          assetOrigin: "generated" as const,
+          sourceModelNodeId,
+          displayModelName,
+          displaySourceLabel: displayModelName,
+          inputSemanticTypes,
+          outputSemanticType: node.outputType,
+        };
       }
 
       const previewFrame = latestPreviewFrameByJobOutputKey.get(`${sourceJobId}:${sourceOutputIndex}`);
-      if (!previewFrame) {
-        return node;
-      }
-
       return {
         ...node,
-        previewImageUrl: getPreviewFrameUrl(projectId, sourceJobId, previewFrame),
+        assetOrigin: "generated" as const,
+        sourceModelNodeId,
+        displayModelName,
+        displaySourceLabel: displayModelName,
+        inputSemanticTypes,
+        outputSemanticType: node.outputType,
+        previewImageUrl: previewFrame ? getPreviewFrameUrl(projectId, sourceJobId, previewFrame) : null,
       };
     });
-  }, [canvasDoc.workflow.nodes, latestPreviewFrameByJobOutputKey, projectId]);
+  }, [canvasDoc.workflow.nodes, latestPreviewFrameByJobOutputKey, nodesById, projectId, providerModelDisplayNames]);
 
   const resolveNodeImageAssetId = useCallback(
     (node: WorkflowNode | null | undefined) => resolveNodeImageAsset(node)?.assetId || null,
@@ -2147,6 +2197,9 @@ export function CanvasView({ projectId }: Props) {
                     <textarea
                       className={styles.nodePrompt}
                       value={selectedNode.prompt}
+                      spellCheck={false}
+                      autoCorrect="off"
+                      autoCapitalize="off"
                       onChange={(event) => updateNode(selectedNode.id, { prompt: event.target.value })}
                       placeholder="Write prompt notes here"
                     />

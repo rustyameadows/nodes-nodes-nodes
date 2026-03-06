@@ -48,6 +48,13 @@
   - running
   - failed
   - completed outputs clear the badge and simply show the final asset
+- Canvas graph visuals are media-semantic rather than provider-semantic:
+  - text connections/ports use neon pink
+  - image connections/ports use neon blue
+  - video connections/ports use neon orange
+  - generated image placeholders use a citrus-led shell while processing
+  - generated output frame borders stay citrus on the left, use the output-type color on the right, and blend across the top edge while the job is active
+  - model-to-generated-output connections and model output nipples use citrus rather than the media-type color
 - Port hit targets are intentionally larger than the visible nipple so connector drags are easy without visually bloating the node.
 
 ## Node Configuration UX
@@ -69,8 +76,18 @@
 - Text notes expose output-only prompt-source connections into model nodes.
 - Image-backed nodes preserve original asset aspect ratio inside the canvas preview.
 - Generated output nodes can show a streamed partial preview before the final asset lands.
-- Canvas-selected nodes use a high-visibility citrus selection border/glow.
+- Generated image nodes reserve their expected final frame size immediately:
+  - explicit aspect-ratio settings shape the placeholder before the first preview
+  - `auto` in edit mode inherits the first connected image-input aspect ratio
+  - `auto` without image inputs starts square until the first preview/final image determines the real ratio
+- Canvas-selected nodes use a semantic halo that follows the same color logic as the node border:
+  - text notes glow pink
+  - uploaded assets glow blue
+  - generated outputs glow citrus-to-output-color
+  - model pills use the same left/right semantic border split in the selected halo
 - Canvas node chrome uses squared corners rather than rounded cards/pills.
+- Canvas nodes use one unified 4px semantic outer border; image/text/model cards should not render secondary inset frames or double-border treatments.
+- Connection nipples stay hidden until a node is hovered, selected, or actively participating in a connection interaction.
 - Validation appears before run when required ports/settings are missing.
 - Model execution rules in this pass:
   - `openai / gpt-image-1.5` is the only runnable model
@@ -97,6 +114,7 @@
 - Run also inserts one or more generated output placeholder nodes immediately to the right of the model node.
 - Job-state badge lives on that output node, not on the model node.
 - Completed generated outputs clear their badge; failed outputs stay on canvas with failed state.
+- Generated model->output edges are dashed only while the output node is processing, then become solid once the output completes.
 - Failed jobs show normalized error class and short detail.
 - Users can retry failed jobs or cancel running jobs when supported.
 - Queue rows support source-call inspection for provider request/response debugging.
@@ -140,6 +158,29 @@
   - no asset duplication
   - no master/child hierarchy
   - any generated-asset pointer still exposes source-call inspection
+
+## Canvas Card Styling
+- Image nodes are image-first:
+  - single 4px semantic outer border
+  - no bevel/inset treatment
+  - no large title overlay
+  - simplified footer shows source label/model name plus output type on hover/selection
+  - generated image nodes keep the citrus-to-output-color border treatment until generation completes
+  - uploaded asset nodes use a pure image-blue frame
+- Text notes use a solid neon-pink frame so prompt inputs are distinct even before reading their connection lines.
+  - on-canvas text notes only show the note body/value; label and note metadata stay in the modal
+- Model cards are slightly taller, bright white, and visually reflect data flow:
+- Model nodes render as compact semantic pills rather than large content cards:
+  - the model name is the primary canvas label
+  - a title only appears when the node has a user-customized label
+  - untitled model pills vertically center the model name to stay visually compact
+  - provider, output type, and other configuration details live in the settings modal rather than on the canvas
+  - left-edge border coloration mirrors the connected input media types
+  - right-edge border and output nipple are citrus as soon as the model has a connected output node and remain white before that
+  - generated-output edges from the model stay citrus while running and after completion
+  - mixed input-type borders use a quadrant split on the left side: upper-left pink for text, lower-left blue for image, then blend into citrus across the entire right half with short transition bands
+  - model card interiors stay flat white; the semantic border carries the color system rather than interior glow spreads
+  - model borders render as explicit edge layers so compact pills keep a clean top blend in both titled and untitled states
 
 ## Keyboard Shortcuts (Proposed V1)
 - Canvas:

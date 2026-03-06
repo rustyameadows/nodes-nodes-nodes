@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  type CSSProperties,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -10,6 +11,7 @@ import {
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
+import { parseImageSize } from "@/lib/openai-image-settings";
 import styles from "./infinite-canvas.module.css";
 
 type CanvasViewport = {
@@ -23,25 +25,39 @@ type CanvasNode = {
   label: string;
   kind: "model" | "asset-source" | "text-note";
   providerId: "openai" | "google-gemini" | "topaz";
+  modelId: string;
   nodeType: "text-gen" | "image-gen" | "video-gen" | "transform" | "text-note";
   outputType: "image" | "video" | "text";
   prompt: string;
+  settings: Record<string, unknown>;
   sourceAssetId: string | null;
   sourceAssetMimeType: string | null;
   sourceJobId: string | null;
+  sourceOutputIndex: number | null;
   processingState: "queued" | "running" | "failed" | null;
   promptSourceNodeId: string | null;
   upstreamNodeIds: string[];
+  upstreamAssetIds: string[];
+  assetOrigin?: "generated" | "uploaded" | null;
+  sourceModelNodeId?: string | null;
+  displayModelName?: string | null;
+  displaySourceLabel?: string | null;
+  inputSemanticTypes?: Array<"text" | "image" | "video">;
+  outputSemanticType?: "text" | "image" | "video";
   previewImageUrl?: string | null;
   x: number;
   y: number;
 };
+
+type CanvasAccentType = "text" | "image" | "video" | "citrus" | "neutral";
 
 export type CanvasConnection = {
   id: string;
   kind: "input" | "prompt";
   sourceNodeId: string;
   targetNodeId: string;
+  semanticType: CanvasAccentType;
+  lineStyle: "solid" | "dashed";
 };
 
 type Props = {
@@ -96,6 +112,41 @@ const LINE_DELTA_PX = 16;
 const WHEEL_ZOOM_SENSITIVITY = 0.00125;
 const GESTURE_ZOOM_SENSITIVITY = 0.00165;
 const PINCH_ZOOM_EXPONENT = 1.18;
+const SEMANTIC_TYPE_ORDER = ["text", "image", "video"] as const;
+const CITRUS_COLOR = "#d8ff3e";
+const CITRUS_GLOW = "rgba(216, 255, 62, 0.52)";
+
+function semanticColor(type: CanvasAccentType) {
+  if (type === "citrus") {
+    return CITRUS_COLOR;
+  }
+  if (type === "neutral") {
+    return "rgba(255, 255, 255, 0.9)";
+  }
+  if (type === "text") {
+    return "#ff4dc4";
+  }
+  if (type === "video") {
+    return "#ff8d34";
+  }
+  return "#3ea4ff";
+}
+
+function semanticGlow(type: CanvasAccentType) {
+  if (type === "citrus") {
+    return CITRUS_GLOW;
+  }
+  if (type === "neutral") {
+    return "rgba(255, 255, 255, 0.26)";
+  }
+  if (type === "text") {
+    return "rgba(255, 77, 196, 0.5)";
+  }
+  if (type === "video") {
+    return "rgba(255, 141, 52, 0.46)";
+  }
+  return "rgba(62, 164, 255, 0.48)";
+}
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
@@ -128,6 +179,249 @@ function normalizeWheelDelta(deltaY: number, deltaMode: number) {
     return deltaY * window.innerHeight;
   }
   return deltaY;
+}
+
+function getNodeOutputSemanticType(node: CanvasNode) {
+  return node.outputSemanticType || node.outputType;
+}
+
+function getNodeOutputAccentType(node: CanvasNode): CanvasAccentType {
+  if (node.kind === "model") {
+    return "citrus";
+  }
+  return getNodeOutputSemanticType(node);
+}
+
+function hasCustomModelTitle(label: string) {
+  return !/^Node \d+( Copy)?$/.test(label.trim());
+}
+
+function isEditableElement(target: EventTarget | null) {
+  return (
+    target instanceof HTMLElement &&
+    (target.isContentEditable ||
+      target.tagName === "INPUT" ||
+      target.tagName === "TEXTAREA" ||
+      target.tagName === "SELECT")
+  );
+}
+
+function isGeneratedAssetNode(node: CanvasNode) {
+  return node.kind === "asset-source" && node.assetOrigin === "generated";
+}
+
+function getImageFrameAspectRatio(
+  node: CanvasNode,
+  nodesById: Record<string, CanvasNode>,
+  imageAspectRatios: Record<string, number>
+) {
+  const measuredRatio = imageAspectRatios[node.id];
+  if (measuredRatio) {
+    return measuredRatio;
+  }
+
+  if (!isGeneratedAssetNode(node)) {
+    return 1.33;
+  }
+
+  const sourceModelNodeId = node.sourceModelNodeId;
+  const sourceModelNode = sourceModelNodeId ? nodesById[sourceModelNodeId] : null;
+  if (!sourceModelNode || sourceModelNode.kind !== "model") {
+    return 1;
+  }
+
+  if (sourceModelNode.providerId === "openai" && sourceModelNode.modelId === "gpt-image-1.5") {
+    const sizeSetting = sourceModelNode.settings.size;
+    const parsedSize =
+      sizeSetting === "1024x1024" || sizeSetting === "1536x1024" || sizeSetting === "1024x1536" || sizeSetting === "auto"
+        ? parseImageSize(sizeSetting)
+        : null;
+    if (parsedSize) {
+      return parsedSize.width / parsedSize.height;
+    }
+
+    for (const upstreamNodeId of sourceModelNode.upstreamNodeIds) {
+      const inputNode = nodesById[upstreamNodeId];
+      if (!inputNode || inputNode.outputType !== "image") {
+        continue;
+      }
+
+      const inputRatio = imageAspectRatios[inputNode.id];
+      if (inputRatio) {
+        return inputRatio;
+      }
+    }
+  }
+
+  return 1;
+}
+
+function getInputAccentGradient(inputSemanticTypes: Array<"text" | "image" | "video"> | undefined) {
+  const filteredTypes = SEMANTIC_TYPE_ORDER.filter((type) => inputSemanticTypes?.includes(type));
+  if (filteredTypes.length === 0) {
+    return "transparent";
+  }
+
+  if (filteredTypes.length === 1) {
+    const color = semanticColor(filteredTypes[0]);
+    return `linear-gradient(to bottom, ${color}, ${color})`;
+  }
+
+  const step = 100 / filteredTypes.length;
+  const stops = filteredTypes
+    .map((type, index) => {
+      const start = index * step;
+      const end = start + step;
+      const color = semanticColor(type);
+      return `${color} ${start}%, ${color} ${end}%`;
+    })
+    .join(", ");
+
+  return `linear-gradient(to bottom, ${stops})`;
+}
+
+function mixColor(colorA: string, colorB: string, ratioA = 50) {
+  const ratioB = 100 - ratioA;
+  return `color-mix(in srgb, ${colorA} ${ratioA}%, ${colorB} ${ratioB}%)`;
+}
+
+function getBorderGradient(leftAccentTypes: CanvasAccentType[], rightAccentType: CanvasAccentType) {
+  const orderedTypes = [...leftAccentTypes, rightAccentType].filter((type, index, allTypes) => {
+    if (index === 0) {
+      return true;
+    }
+    return allTypes[index - 1] !== type;
+  });
+
+  if (orderedTypes.length === 0) {
+    const neutral = semanticColor("neutral");
+    return `linear-gradient(90deg, ${neutral} 0%, ${neutral} 100%)`;
+  }
+
+  if (orderedTypes.length === 1) {
+    const color = semanticColor(orderedTypes[0]);
+    return `linear-gradient(90deg, ${color} 0%, ${color} 100%)`;
+  }
+
+  const uniqueLeftTypes = leftAccentTypes.filter((type, index) => leftAccentTypes.indexOf(type) === index);
+  if (uniqueLeftTypes.length > 1 && rightAccentType === "citrus") {
+    const upperLeft = semanticColor(uniqueLeftTypes[0]);
+    const lowerLeft = semanticColor(uniqueLeftTypes[1]);
+    const citrus = semanticColor("citrus");
+    const upperBlend = `color-mix(in srgb, ${upperLeft} 56%, ${citrus} 44%)`;
+    const lowerBlend = `color-mix(in srgb, ${lowerLeft} 56%, ${citrus} 44%)`;
+    const leftBlend = `color-mix(in srgb, ${upperLeft} 50%, ${lowerLeft} 50%)`;
+
+    return `conic-gradient(
+      from 0deg at 50% 50%,
+      ${citrus} 0deg 174deg,
+      ${lowerBlend} 180deg,
+      ${lowerLeft} 186deg 264deg,
+      ${leftBlend} 270deg,
+      ${upperLeft} 276deg 354deg,
+      ${upperBlend} 360deg,
+      ${citrus} 360deg
+    )`;
+  }
+
+  const step = 100 / orderedTypes.length;
+  const blendWidth = Math.min(10, step * 0.42);
+  const stops: string[] = [];
+
+  orderedTypes.forEach((type, index) => {
+    const color = semanticColor(type);
+    if (index === 0) {
+      stops.push(`${color} 0%`);
+    }
+
+    if (index === orderedTypes.length - 1) {
+      stops.push(`${color} 100%`);
+      return;
+    }
+
+    const nextColor = semanticColor(orderedTypes[index + 1]);
+    const boundary = (index + 1) * step;
+    const blendStart = Math.max(index * step, boundary - blendWidth / 2);
+    const blendEnd = Math.min((index + 2) * step, boundary + blendWidth / 2);
+    const mixedColor = `color-mix(in srgb, ${color} 50%, ${nextColor} 50%)`;
+
+    stops.push(
+      `${color} ${blendStart}%`,
+      `${mixedColor} ${boundary}%`,
+      `${nextColor} ${blendEnd}%`
+    );
+  });
+
+  return `linear-gradient(90deg, ${stops.join(", ")})`;
+}
+
+function getModelBorderLayers(leftAccentTypes: CanvasAccentType[], rightAccentType: CanvasAccentType) {
+  const uniqueLeftTypes = leftAccentTypes.filter((type, index) => leftAccentTypes.indexOf(type) === index);
+  const normalizedLeftTypes: CanvasAccentType[] = uniqueLeftTypes.length > 0 ? uniqueLeftTypes : ["neutral"];
+  const topLeft = semanticColor(normalizedLeftTypes[0]);
+  const bottomLeft = semanticColor(normalizedLeftTypes[Math.min(1, normalizedLeftTypes.length - 1)]);
+  const right = semanticColor(rightAccentType);
+  const neutral = semanticColor("neutral");
+  const rightSide = rightAccentType === "neutral" ? neutral : right;
+
+  if (normalizedLeftTypes.length > 1) {
+    return {
+      top: `linear-gradient(90deg, ${topLeft} 0%, ${topLeft} 42%, ${mixColor(topLeft, rightSide, 58)} 50%, ${rightSide} 58%, ${rightSide} 100%)`,
+      bottom: `linear-gradient(90deg, ${bottomLeft} 0%, ${bottomLeft} 42%, ${mixColor(bottomLeft, rightSide, 58)} 50%, ${rightSide} 58%, ${rightSide} 100%)`,
+      left: `linear-gradient(180deg, ${topLeft} 0%, ${topLeft} 42%, ${mixColor(topLeft, bottomLeft, 52)} 50%, ${bottomLeft} 58%, ${bottomLeft} 100%)`,
+      right: `linear-gradient(180deg, ${rightSide} 0%, ${rightSide} 100%)`,
+    };
+  }
+
+  const left = topLeft;
+  return {
+    top: `linear-gradient(90deg, ${left} 0%, ${left} 42%, ${mixColor(left, rightSide, 58)} 50%, ${rightSide} 58%, ${rightSide} 100%)`,
+    bottom: `linear-gradient(90deg, ${left} 0%, ${left} 42%, ${mixColor(left, rightSide, 58)} 50%, ${rightSide} 58%, ${rightSide} 100%)`,
+    left: `linear-gradient(180deg, ${left} 0%, ${left} 100%)`,
+    right: `linear-gradient(180deg, ${rightSide} 0%, ${rightSide} 100%)`,
+  };
+}
+
+function getSelectionHaloColors(
+  leftAccentTypes: CanvasAccentType[],
+  rightAccentType: CanvasAccentType,
+  kind: CanvasNode["kind"],
+  assetOrigin?: CanvasNode["assetOrigin"]
+) {
+  if (kind === "text-note") {
+    const color = semanticColor("text");
+    return {
+      leftTop: color,
+      leftBottom: color,
+      right: color,
+    };
+  }
+
+  if (kind === "asset-source" && assetOrigin === "uploaded") {
+    const color = semanticColor("image");
+    return {
+      leftTop: color,
+      leftBottom: color,
+      right: color,
+    };
+  }
+
+  if (kind === "asset-source" && assetOrigin === "generated") {
+    return {
+      leftTop: semanticColor("citrus"),
+      leftBottom: semanticColor("citrus"),
+      right: semanticColor(rightAccentType),
+    };
+  }
+
+  const uniqueLeftTypes = leftAccentTypes.filter((type, index) => leftAccentTypes.indexOf(type) === index);
+  const leftTop = uniqueLeftTypes[0] || "neutral";
+  const leftBottom = uniqueLeftTypes[1] || leftTop;
+  return {
+    leftTop: semanticColor(leftTop),
+    leftBottom: semanticColor(leftBottom),
+    right: semanticColor(rightAccentType),
+  };
 }
 
 export function InfiniteCanvas({
@@ -240,6 +534,8 @@ export function InfiniteCanvas({
           kind: "input" as const,
           sourceNodeId,
           targetNodeId: targetNode.id,
+          semanticType: "image" as const,
+          lineStyle: "solid" as const,
         })),
         ...(targetNode.promptSourceNodeId
           ? [
@@ -248,6 +544,8 @@ export function InfiniteCanvas({
                 kind: "prompt" as const,
                 sourceNodeId: targetNode.promptSourceNodeId,
                 targetNodeId: targetNode.id,
+                semanticType: "text" as const,
+                lineStyle: "solid" as const,
               },
             ]
           : []),
@@ -260,11 +558,26 @@ export function InfiniteCanvas({
             return null;
           }
 
+          const semanticType =
+            connection.kind === "prompt"
+              ? ("text" as const)
+              : sourceNode.kind === "model" && isGeneratedAssetNode(targetNode)
+                ? ("citrus" as const)
+                : getNodeOutputSemanticType(sourceNode);
+          const lineStyle =
+            connection.kind === "input" &&
+            isGeneratedAssetNode(targetNode) &&
+            (targetNode.processingState === "queued" || targetNode.processingState === "running")
+              ? ("dashed" as const)
+              : ("solid" as const);
+
           const start = getOutputPortPoint(sourceNode, getNodeSize(sourceNode.id));
           const end = getInputPortPoint(targetNode, getNodeSize(targetNode.id));
 
           return {
             ...connection,
+            semanticType,
+            lineStyle,
             start,
             end,
           };
@@ -272,8 +585,7 @@ export function InfiniteCanvas({
         .filter(
           (
             edge
-          ): edge is CanvasConnection & { start: { x: number; y: number }; end: { x: number; y: number } } =>
-            Boolean(edge)
+          ): edge is NonNullable<typeof edge> => Boolean(edge)
         );
     });
   }, [getNodeSize, nodes, nodesById]);
@@ -766,22 +1078,26 @@ export function InfiniteCanvas({
     return curvePath(start.x, start.y, connectionDraft.targetX, connectionDraft.targetY);
   }, [connectionDraft, getNodeSize, nodesById]);
 
-  const connectedNodeIds = useMemo(() => {
+  const activeConnectionNodeIds = useMemo(() => {
     const ids = new Set<string>();
-    for (const node of nodes) {
-      if (node.upstreamNodeIds.length > 0) {
-        ids.add(node.id);
-      }
-      if (node.promptSourceNodeId) {
-        ids.add(node.id);
-        ids.add(node.promptSourceNodeId);
-      }
-      for (const upstreamNodeId of node.upstreamNodeIds) {
-        ids.add(upstreamNodeId);
-      }
+
+    if (connectionDraft?.nodeId) {
+      ids.add(connectionDraft.nodeId);
     }
+
+    if (!selectedConnectionId) {
+      return ids;
+    }
+
+    const selectedEdge = edges.find((edge) => edge.id === selectedConnectionId);
+    if (!selectedEdge) {
+      return ids;
+    }
+
+    ids.add(selectedEdge.sourceNodeId);
+    ids.add(selectedEdge.targetNodeId);
     return ids;
-  }, [nodes]);
+  }, [connectionDraft?.nodeId, edges, selectedConnectionId]);
 
   return (
     <div
@@ -822,22 +1138,52 @@ export function InfiniteCanvas({
                     kind: edge.kind,
                     sourceNodeId: edge.sourceNodeId,
                     targetNodeId: edge.targetNodeId,
+                    semanticType: edge.semanticType,
+                    lineStyle: edge.lineStyle,
                   });
                 }}
               />
+              {selectedConnectionId === edge.id ? (
+                <path
+                  className={styles.connectionSelectionHalo}
+                  d={curvePath(edge.start.x, edge.start.y, edge.end.x, edge.end.y)}
+                />
+              ) : null}
               <path
                 className={`${styles.connection} ${selectedConnectionId === edge.id ? styles.connectionSelected : ""} ${
-                  edge.kind === "prompt" ? styles.connectionPrompt : ""
+                  edge.lineStyle === "dashed" ? styles.connectionDashed : ""
                 }`}
                 d={curvePath(edge.start.x, edge.start.y, edge.end.x, edge.end.y)}
+                style={
+                  {
+                    "--edge-color": semanticColor(edge.semanticType),
+                    "--edge-glow": semanticGlow(edge.semanticType),
+                  } as CSSProperties
+                }
               />
             </g>
           ))}
-          {draftPath ? <path className={styles.connectionDraft} d={draftPath} /> : null}
+          {draftPath ? (
+            <path
+              className={styles.connectionDraft}
+              d={draftPath}
+              style={
+                {
+                  "--edge-color":
+                    connectionDraft?.port === "output"
+                      ? semanticColor(getNodeOutputAccentType(nodesById[connectionDraft.nodeId]))
+                      : "#ffffff",
+                } as CSSProperties
+              }
+            />
+          ) : null}
         </svg>
 
         {nodes.map((node) => {
           const isTextNote = node.kind === "text-note";
+          const isModelNode = node.kind === "model";
+          const isGeneratedAsset = isGeneratedAssetNode(node);
+          const isUploadedAsset = node.kind === "asset-source" && node.assetOrigin === "uploaded";
           const imageSourceUrl =
             node.outputType === "image"
               ? node.sourceAssetId
@@ -845,10 +1191,67 @@ export function InfiniteCanvas({
                 : node.previewImageUrl || null
               : null;
           const hasImageSource = Boolean(imageSourceUrl);
+          const shouldRenderImageFrame = node.kind === "asset-source" && node.outputType === "image";
           const hasNonImageSource = Boolean(node.sourceAssetId && node.outputType !== "image");
           const isSelected = selectedNodeIds.includes(node.id);
           const showInputPort = !isTextNote;
           const showProcessingState = Boolean(node.processingState);
+          const showsProcessingShell = isGeneratedAsset && (node.processingState === "queued" || node.processingState === "running");
+          const inputAccentGradient = getInputAccentGradient(node.inputSemanticTypes);
+          const semanticOutputType = getNodeOutputSemanticType(node);
+          const outputAccentType = getNodeOutputAccentType(node);
+          const outputColor = semanticColor(outputAccentType);
+          const hasConnectedOutput = isModelNode
+            ? edges.some((edge) => edge.sourceNodeId === node.id)
+            : false;
+          const modelRightAccentType: CanvasAccentType = hasConnectedOutput ? "citrus" : "neutral";
+          const imageFrameAspectRatio = shouldRenderImageFrame
+            ? getImageFrameAspectRatio(node, nodesById, imageAspectRatios)
+            : 1;
+          const generatedBorderGradient = getBorderGradient(["citrus"], semanticOutputType);
+          const modelBorderLayers = getModelBorderLayers(
+            (node.inputSemanticTypes && node.inputSemanticTypes.length > 0
+              ? node.inputSemanticTypes
+              : ["neutral"]) as CanvasAccentType[],
+            modelRightAccentType
+          );
+          const selectionHaloColors = getSelectionHaloColors(
+            (node.inputSemanticTypes && node.inputSemanticTypes.length > 0
+              ? (node.inputSemanticTypes as CanvasAccentType[])
+              : ["neutral"]),
+            isModelNode ? modelRightAccentType : outputAccentType,
+            node.kind,
+            node.assetOrigin
+          );
+          const showsCustomModelTitle = isModelNode && hasCustomModelTitle(node.label);
+          const displayFooterLabel =
+            node.displaySourceLabel ||
+            (isGeneratedAsset ? node.displayModelName || node.modelId : node.displayModelName || node.providerId);
+          const nodeStyle: CSSProperties = {
+            left: `${node.x}px`,
+            top: `${node.y}px`,
+            "--node-output-accent": outputColor,
+            "--node-border-gradient": generatedBorderGradient,
+            "--model-border-top": modelBorderLayers.top,
+            "--model-border-right": modelBorderLayers.right,
+            "--model-border-bottom": modelBorderLayers.bottom,
+            "--model-border-left": modelBorderLayers.left,
+            "--node-glow-left-top": selectionHaloColors.leftTop,
+            "--node-glow-left-bottom": selectionHaloColors.leftBottom,
+            "--node-glow-right": selectionHaloColors.right,
+            "--node-right-accent": semanticColor(isModelNode ? modelRightAccentType : outputAccentType),
+          } as CSSProperties;
+          const inputPortStyle = {
+            "--port-fill": inputAccentGradient,
+            "--port-glow":
+              node.inputSemanticTypes && node.inputSemanticTypes.length > 0
+                ? semanticGlow(node.inputSemanticTypes[0])
+                : "rgba(255, 255, 255, 0.34)",
+          } as CSSProperties;
+          const outputPortStyle = {
+            "--port-fill": outputColor,
+            "--port-glow": semanticGlow(outputAccentType),
+          } as CSSProperties;
 
           return (
             <div
@@ -858,8 +1261,8 @@ export function InfiniteCanvas({
               }}
               role="button"
               tabIndex={0}
-              className={`${styles.node} ${isSelected ? styles.nodeSelected : ""} ${hasImageSource ? styles.nodeWithImage : ""} ${isTextNote ? styles.nodeTextNote : ""} ${connectedNodeIds.has(node.id) ? styles.nodeConnected : ""}`}
-              style={{ left: `${node.x}px`, top: `${node.y}px` }}
+              className={`${styles.node} ${isSelected ? styles.nodeSelected : ""} ${shouldRenderImageFrame ? styles.nodeWithImage : ""} ${isGeneratedAsset ? styles.nodeGeneratedAsset : ""} ${isUploadedAsset ? styles.nodeUploadedAsset : ""} ${isTextNote ? styles.nodeTextNote : ""} ${isModelNode ? styles.nodeModel : ""} ${activeConnectionNodeIds.has(node.id) ? styles.nodePortActive : ""} ${showsProcessingShell ? styles.nodeGeneratedProcessing : ""}`}
+              style={nodeStyle}
               onClick={(event) => {
                 event.stopPropagation();
               }}
@@ -868,6 +1271,9 @@ export function InfiniteCanvas({
               }}
               onPointerDown={(event) => onNodePointerDown(node, event)}
               onKeyDown={(event) => {
+                if (event.target !== event.currentTarget || isEditableElement(event.target)) {
+                  return;
+                }
                 if (event.key === "Enter" || event.key === " ") {
                   event.preventDefault();
                   onSelectSingleNode(node.id);
@@ -878,6 +1284,7 @@ export function InfiniteCanvas({
                 <button
                   type="button"
                   className={`${styles.port} ${styles.inputPort}`}
+                  style={inputPortStyle}
                   onPointerDown={(event) => onPortPointerDown(node, "input", event)}
                   onPointerUp={(event) => onPortPointerUp(node.id, "input", event)}
                   onClick={(event) => event.stopPropagation()}
@@ -888,75 +1295,81 @@ export function InfiniteCanvas({
               <button
                 type="button"
                 className={`${styles.port} ${styles.outputPort}`}
+                style={outputPortStyle}
                 onPointerDown={(event) => onPortPointerDown(node, "output", event)}
                 onPointerUp={(event) => onPortPointerUp(node.id, "output", event)}
                 onClick={(event) => event.stopPropagation()}
                 aria-label={`Start output connection from ${node.label}`}
               />
 
-              {hasImageSource ? (
+              {shouldRenderImageFrame ? (
                 <div
-                  className={styles.sourcePreviewFrame}
+                  className={`${styles.sourcePreviewFrame} ${isGeneratedAsset ? styles.sourcePreviewFrameGenerated : ""} ${isUploadedAsset ? styles.sourcePreviewFrameUploaded : ""} ${showsProcessingShell ? styles.sourcePreviewFrameProcessing : ""} ${
+                    !hasImageSource ? styles.sourcePreviewFramePlaceholder : ""
+                  }`}
                   style={{
-                    aspectRatio: imageAspectRatios[node.id] ? String(imageAspectRatios[node.id]) : "1.33",
+                    aspectRatio: String(imageFrameAspectRatio),
                   }}
                 >
-                  <img
-                    className={styles.sourcePreviewImage}
-                    src={imageSourceUrl || undefined}
-                    alt={`${node.label} source`}
-                    draggable={false}
-                    onLoad={(event) => {
-                      const target = event.currentTarget;
-                      if (!target.naturalWidth || !target.naturalHeight) {
-                        return;
-                      }
-                      const nextRatio = target.naturalWidth / target.naturalHeight;
-                      if (!Number.isFinite(nextRatio) || nextRatio <= 0) {
-                        return;
-                      }
-
-                      setImageAspectRatios((prev) => {
-                        const currentRatio = prev[node.id];
-                        if (currentRatio && Math.abs(currentRatio - nextRatio) < 0.005) {
-                          return prev;
+                  {hasImageSource ? (
+                    <img
+                      className={styles.sourcePreviewImage}
+                      src={imageSourceUrl || undefined}
+                      alt={`${node.label} source`}
+                      draggable={false}
+                      onLoad={(event) => {
+                        const target = event.currentTarget;
+                        if (!target.naturalWidth || !target.naturalHeight) {
+                          return;
                         }
-                        return {
-                          ...prev,
-                          [node.id]: nextRatio,
-                        };
-                      });
-                    }}
-                  />
-                  <div className={styles.imageNodeOverlay}>
-                    <div className={styles.nodeTitle}>
-                      <span>{node.label}</span>
-                      {showProcessingState ? (
-                        <span className={styles.statusBubble} data-state={node.processingState || undefined}>
-                          {node.processingState}
-                        </span>
-                      ) : null}
+                        const nextRatio = target.naturalWidth / target.naturalHeight;
+                        if (!Number.isFinite(nextRatio) || nextRatio <= 0) {
+                          return;
+                        }
+
+                        setImageAspectRatios((prev) => {
+                          const currentRatio = prev[node.id];
+                          if (currentRatio && Math.abs(currentRatio - nextRatio) < 0.005) {
+                            return prev;
+                          }
+                          return {
+                            ...prev,
+                            [node.id]: nextRatio,
+                          };
+                        });
+                      }}
+                    />
+                  ) : (
+                    <div className={styles.imagePlaceholderSurface} />
+                  )}
+                  {showProcessingState ? (
+                    <div className={styles.imageNodeStatus}>
+                      <span className={styles.statusBubble} data-state={node.processingState || undefined}>
+                        {node.processingState}
+                      </span>
                     </div>
-                    <div className={styles.nodeBody}>
-                      <span>{node.providerId}</span>
-                      <span>{node.outputType}</span>
-                    </div>
+                  ) : null}
+                  <div className={styles.imageNodeFooter}>
+                    <span>{displayFooterLabel}</span>
+                    <span>{node.outputType}</span>
                   </div>
                 </div>
               ) : isTextNote ? (
                 <>
-                  <div className={styles.nodeTitle}>
-                    <span>{node.label}</span>
-                    <span className={styles.statusBubble}>note</span>
-                  </div>
                   {isSelected ? (
                     <textarea
                       className={styles.textNoteEditor}
                       value={node.prompt}
+                      spellCheck={false}
+                      autoCorrect="off"
+                      autoCapitalize="off"
                       onPointerDown={(event) => {
                         event.stopPropagation();
                       }}
                       onClick={(event) => {
+                        event.stopPropagation();
+                      }}
+                      onKeyDown={(event) => {
                         event.stopPropagation();
                       }}
                       onChange={(event) => onUpdateTextNote(node.id, event.target.value)}
@@ -969,20 +1382,33 @@ export function InfiniteCanvas({
                   )}
                 </>
               ) : (
-                <>
-                  <div className={styles.nodeTitle}>
-                    <span>{node.label}</span>
-                    {showProcessingState ? (
-                      <span className={styles.statusBubble} data-state={node.processingState || undefined}>
-                        {node.processingState}
-                      </span>
+                isModelNode ? (
+                  <div
+                    className={`${styles.modelPill} ${
+                      showsCustomModelTitle ? styles.modelPillWithTitle : styles.modelPillSolo
+                    }`}
+                  >
+                    {showsCustomModelTitle ? (
+                      <div className={styles.modelPillTitle}>{node.label}</div>
                     ) : null}
+                    <div className={styles.modelPillName}>{node.displayModelName || node.modelId}</div>
                   </div>
-                  <div className={styles.nodeBody}>
-                    <span>{node.providerId}</span>
-                    <span>{node.outputType}</span>
-                  </div>
-                </>
+                ) : (
+                  <>
+                    <div className={styles.nodeTitle}>
+                      <span>{node.label}</span>
+                      {showProcessingState ? (
+                        <span className={styles.statusBubble} data-state={node.processingState || undefined}>
+                          {node.processingState}
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className={styles.nodeBody}>
+                      <span>{node.displayModelName || node.modelId}</span>
+                      <span>{node.outputType}</span>
+                    </div>
+                  </>
+                )
               )}
 
               {hasNonImageSource ? (

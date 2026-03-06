@@ -79,3 +79,8 @@
 - Decision: allow multiple canvas asset-source nodes to point at the same uploaded/generated asset, and persist streamed GPT Image 1.5 partial previews as separate durable job-preview records instead of normal assets.
 - Rationale: users need to reuse previous outputs/uploads freely on canvas without duplicating binaries, and progressive previews must survive refresh while remaining outside the review library.
 - Consequence: the insert picker now includes generated/uploaded asset library actions, generated pointer nodes retain source-call access through shared asset/job metadata, and `job_preview_frames` back the running-node preview UI until final assets are persisted.
+
+## 2026-03-05 - Canvas Wiring and Node Chrome Encode Media Semantics
+- Decision: make canvas visuals communicate media type and generation state directly through connection colors, semantic border treatments, and generated-image placeholder shells instead of generic provider styling.
+- Rationale: the canvas is a composition tool first, so users need to read prompt/image/video flow and in-progress outputs at a glance without opening the modal.
+- Consequence: prompt/text lines are solid neon pink, image lines are neon blue, video lines are neon orange, model output nipples and model-to-generated-output edges use citrus, generated output nodes reserve their final frame shape immediately, and image nodes use flatter image-first chrome with minimal overlay copy.

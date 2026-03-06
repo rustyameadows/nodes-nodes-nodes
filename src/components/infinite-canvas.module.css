@@ -1,4 +1,9 @@
 .canvasRoot {
+  --canvas-semantic-text: #ff4dc4;
+  --canvas-semantic-image: #3ea4ff;
+  --canvas-semantic-video: #ff8d34;
+  --canvas-placeholder-citrus: #d8ff3e;
+  --canvas-node-border-width: 4px;
   position: relative;
   width: 100%;
   height: 100%;
@@ -37,20 +42,26 @@
 
 .connection {
   fill: none;
-  stroke: rgba(255, 255, 255, 0.54);
-  stroke-width: 1.9;
+  stroke: var(--edge-color, rgba(255, 255, 255, 0.54));
+  stroke-width: 2.15;
   pointer-events: none;
+  filter: drop-shadow(0 0 4px var(--edge-glow, rgba(255, 255, 255, 0.18)));
 }
 
-.connectionPrompt {
-  stroke: rgba(216, 255, 62, 0.64);
-  stroke-dasharray: 9 5;
+.connectionDashed {
+  stroke-dasharray: 10 7;
+}
+
+.connectionSelectionHalo {
+  fill: none;
+  stroke: var(--canvas-selection-color);
+  stroke-width: 6.5;
+  opacity: 0.72;
+  filter: drop-shadow(0 0 12px rgba(216, 255, 62, 0.72));
 }
 
 .connectionSelected {
-  stroke: var(--canvas-selection-color);
-  stroke-width: 2.8;
-  filter: drop-shadow(0 0 8px rgba(216, 255, 62, 0.7));
+  stroke-width: 2.45;
 }
 
 .connectionHit {
@@ -63,54 +74,147 @@
 
 .connectionDraft {
   fill: none;
-  stroke: rgba(255, 255, 255, 0.88);
+  stroke: var(--edge-color, rgba(255, 255, 255, 0.9));
   stroke-width: 2.2;
-  stroke-dasharray: 7 5;
+  stroke-dasharray: 9 6;
+  filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.22));
 }
 
 .node {
   position: absolute;
-  width: 212px;
-  border: 1px solid rgba(255, 255, 255, 0.82);
-  border-radius: var(--canvas-corner-radius);
-  padding: 8px;
-  background: rgba(255, 255, 255, 0.94);
-  box-shadow:
-    0 14px 26px rgba(0, 0, 0, 0.26),
-    0 0 0 1px rgba(255, 255, 255, 0.65) inset;
+  width: 220px;
+  min-height: 76px;
+  border: var(--canvas-node-border-width) solid rgba(255, 255, 255, 0.9);
+  padding: 10px 11px;
+  background: #fff;
+  box-shadow: 0 10px 18px rgba(0, 0, 0, 0.2);
   color: #101010;
   text-align: left;
   cursor: move;
   user-select: none;
+  isolation: isolate;
+}
+
+.nodeModel {
+  width: auto;
+  min-width: 172px;
+  max-width: 232px;
+  min-height: 48px;
+  padding: 9px 18px 9px 14px;
+  border-color: transparent;
+  background-image:
+    linear-gradient(#fff, #fff),
+    var(--model-border-top, linear-gradient(90deg, rgba(255, 255, 255, 0.94), rgba(255, 255, 255, 0.94))),
+    var(--model-border-right, linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(255, 255, 255, 0.94))),
+    var(--model-border-bottom, linear-gradient(90deg, rgba(255, 255, 255, 0.94), rgba(255, 255, 255, 0.94))),
+    var(--model-border-left, linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(255, 255, 255, 0.94)));
+  background-repeat: no-repeat;
+  background-position:
+    center,
+    top,
+    right,
+    bottom,
+    left;
+  background-size:
+    auto,
+    100% var(--canvas-node-border-width),
+    var(--canvas-node-border-width) 100%,
+    100% var(--canvas-node-border-width),
+    var(--canvas-node-border-width) 100%;
+  background-origin:
+    padding-box,
+    border-box,
+    border-box,
+    border-box,
+    border-box;
+  background-clip:
+    padding-box,
+    border-box,
+    border-box,
+    border-box,
+    border-box;
 }
 
 .nodeWithImage {
-  padding: 4px;
+  width: 246px;
+  padding: 0;
+  background: transparent;
+  border: var(--canvas-node-border-width) solid rgba(255, 255, 255, 0.94);
+  box-shadow: 0 10px 16px rgba(0, 0, 0, 0.18);
+}
+
+.nodeGeneratedAsset {
+  border-color: transparent;
+  background:
+    linear-gradient(#fff, #fff) padding-box,
+    var(--node-border-gradient, linear-gradient(90deg, rgba(216, 255, 62, 0.96), rgba(62, 164, 255, 0.96)))
+      border-box;
+  box-shadow: 0 10px 16px rgba(0, 0, 0, 0.18);
+}
+
+.nodeUploadedAsset {
+  border-color: rgba(62, 164, 255, 0.96);
+  box-shadow: 0 10px 16px rgba(0, 0, 0, 0.18);
+}
+
+.nodeGeneratedProcessing {
+  border-color: transparent;
+  background:
+    linear-gradient(
+        180deg,
+        rgba(255, 255, 255, 0.14),
+        rgba(255, 255, 255, 0.02) 24%,
+        rgba(255, 255, 255, 0.08)
+      )
+      padding-box,
+    linear-gradient(
+        90deg,
+        var(--canvas-placeholder-citrus) 0%,
+        var(--canvas-placeholder-citrus) 22%,
+        color-mix(in srgb, var(--canvas-placeholder-citrus) 64%, var(--node-output-accent, #3ea4ff) 36%) 52%,
+        var(--node-output-accent, #3ea4ff) 100%
+      )
+      border-box;
+  box-shadow:
+    0 0 20px rgba(216, 255, 62, 0.38),
+    0 12px 18px rgba(0, 0, 0, 0.2);
 }
 
 .nodeTextNote {
   width: 244px;
   min-height: 152px;
+  border-color: rgba(255, 77, 196, 0.96);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  justify-content: stretch;
+  padding: 12px 14px;
+  box-shadow: 0 10px 18px rgba(0, 0, 0, 0.2);
 }
 
 .nodeSelected {
-  border-color: var(--canvas-selection-color);
-  box-shadow:
-    0 0 0 1px var(--canvas-selection-color),
-    0 0 24px rgba(216, 255, 62, 0.48),
-    0 18px 34px rgba(0, 0, 0, 0.34);
+  box-shadow: 0 18px 34px rgba(0, 0, 0, 0.34);
+  filter:
+    drop-shadow(-14px -10px 18px color-mix(in srgb, var(--node-glow-left-top, #ffffff) 42%, transparent))
+    drop-shadow(-14px 10px 18px color-mix(in srgb, var(--node-glow-left-bottom, #ffffff) 42%, transparent))
+    drop-shadow(14px 0 18px color-mix(in srgb, var(--node-glow-right, #ffffff) 42%, transparent))
+    drop-shadow(-18px -12px 34px color-mix(in srgb, var(--node-glow-left-top, #ffffff) 20%, transparent))
+    drop-shadow(-18px 12px 34px color-mix(in srgb, var(--node-glow-left-bottom, #ffffff) 20%, transparent))
+    drop-shadow(18px 0 34px color-mix(in srgb, var(--node-glow-right, #ffffff) 20%, transparent));
+}
+
+.nodeTitle,
+.nodeBody {
+  position: relative;
+  z-index: 1;
 }
 
 .nodeTitle {
   display: flex;
   justify-content: space-between;
-  gap: 6px;
-  font-size: 0.76rem;
+  gap: 8px;
+  font-size: 0.78rem;
   font-weight: 700;
-  margin-bottom: 5px;
+  margin-bottom: 6px;
 }
 
 .nodeTitle span:first-child {
@@ -123,25 +227,66 @@
 .nodeBody {
   display: flex;
   justify-content: space-between;
-  gap: 6px;
-  color: rgba(0, 0, 0, 0.66);
-  font-size: 0.67rem;
-  opacity: 0;
-  transform: translateY(2px);
-  transition: opacity 140ms ease, transform 140ms ease;
+  gap: 8px;
+  color: rgba(0, 0, 0, 0.68);
+  font-size: 0.68rem;
+}
+
+.modelPill {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  gap: 3px;
+}
+
+.modelPillWithTitle {
+  justify-content: flex-start;
+  gap: 4px;
+}
+
+.modelPillSolo {
+  justify-content: center;
+  min-height: 30px;
+}
+
+.modelPillTitle {
+  font-size: 0.54rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: rgba(0, 0, 0, 0.52);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.modelPillName {
+  font-size: 0.88rem;
+  line-height: 1;
+  font-weight: 700;
+  color: rgba(0, 0, 0, 0.94);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.modelPillSolo .modelPillName {
+  font-size: 0.92rem;
+  line-height: 1;
 }
 
 .textNotePreview,
 .textNoteEditor {
   width: 100%;
-  min-height: 96px;
-  border: 1px solid rgba(0, 0, 0, 0.14);
-  background: rgba(245, 247, 240, 0.94);
+  min-height: 100%;
+  flex: 1 1 auto;
+  border: 0;
+  background: transparent;
   color: #111;
   font: inherit;
   font-size: 0.76rem;
   line-height: 1.45;
-  padding: 8px 9px;
+  padding: 0;
   white-space: pre-wrap;
 }
 
@@ -151,64 +296,75 @@
 }
 
 .textNoteEditor {
-  resize: vertical;
+  resize: none;
   cursor: text;
+  appearance: none;
+  -webkit-appearance: none;
+  outline: none;
+  box-shadow: none;
+  border-radius: 0;
 }
 
-.nodeTextNote .nodeTitle,
-.nodeTextNote .nodeBody {
-  opacity: 1;
-  transform: translateY(0);
-}
-
-.node:hover .nodeBody,
-.node:focus-within .nodeBody,
-.nodeSelected .nodeBody {
-  opacity: 1;
-  transform: translateY(0);
+.textNoteEditor:focus,
+.textNoteEditor:focus-visible {
+  outline: none;
+  box-shadow: none;
 }
 
 .statusBubble {
-  border-radius: var(--canvas-corner-radius);
   padding: 2px 7px;
   font-size: 0.62rem;
   flex-shrink: 0;
-  border: 1px solid rgba(0, 0, 0, 0.22);
+  border: 1px solid rgba(0, 0, 0, 0.18);
   color: rgba(0, 0, 0, 0.82);
-  background: rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.82);
 }
 
 .statusBubble[data-state="queued"] {
-  border-color: rgba(138, 146, 255, 0.52);
-  background: rgba(234, 236, 255, 0.96);
-  color: rgba(32, 40, 126, 0.94);
+  border-color: rgba(216, 255, 62, 0.72);
+  background: rgba(240, 255, 189, 0.94);
+  color: rgba(82, 92, 0, 0.95);
 }
 
 .statusBubble[data-state="running"] {
-  border-color: rgba(40, 182, 126, 0.54);
-  background: rgba(227, 255, 245, 0.96);
-  color: rgba(7, 92, 61, 0.95);
+  border-color: rgba(62, 164, 255, 0.6);
+  background: rgba(225, 242, 255, 0.96);
+  color: rgba(17, 76, 130, 0.96);
 }
 
 .statusBubble[data-state="failed"] {
-  border-color: rgba(255, 104, 104, 0.54);
+  border-color: rgba(255, 104, 104, 0.6);
   background: rgba(255, 235, 235, 0.96);
   color: rgba(131, 19, 19, 0.96);
 }
 
 .sourcePreviewFrame {
-  margin-top: 0;
-  border-radius: var(--canvas-corner-radius);
-  overflow: hidden;
-  border: 1px solid rgba(0, 0, 0, 0.2);
-  background: #707070;
   width: 100%;
-  min-height: 100px;
-  max-height: 220px;
+  min-height: 104px;
+  max-height: 260px;
   display: flex;
-  align-items: center;
+  align-items: stretch;
   justify-content: center;
   position: relative;
+  overflow: hidden;
+  border: 0;
+  background: #fff;
+}
+
+.sourcePreviewFrameGenerated {
+  background: #fff;
+}
+
+.sourcePreviewFrameUploaded {
+  background: #fff;
+}
+
+.sourcePreviewFrameProcessing {
+  box-shadow: none;
+}
+
+.sourcePreviewFramePlaceholder {
+  background: var(--canvas-placeholder-citrus);
 }
 
 .sourcePreviewImage {
@@ -217,69 +373,59 @@
   display: block;
   object-fit: contain;
   object-position: center;
-  background: #7a7a7a;
+  background: #fff;
 }
 
-.imageNodeOverlay {
+.imagePlaceholderSurface {
   position: absolute;
   inset: 0;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  padding: 6px;
   background:
-    linear-gradient(to bottom, rgba(0, 0, 0, 0.68), rgba(0, 0, 0, 0) 34%),
-    linear-gradient(to top, rgba(0, 0, 0, 0.72), rgba(0, 0, 0, 0) 34%);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 120ms ease;
+    linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.04)),
+    var(--canvas-placeholder-citrus);
 }
 
-.nodeWithImage .nodeBody {
+.imageNodeStatus {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  z-index: 2;
+}
+
+.imageNodeFooter {
+  position: absolute;
+  inset: auto 0 0 0;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 10px 8px;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.7), rgba(0, 0, 0, 0));
   color: rgba(255, 255, 255, 0.96);
+  font-size: 0.67rem;
+  letter-spacing: 0.03em;
   opacity: 0;
-  transform: translateY(2px);
-}
-
-.nodeWithImage .nodeTitle {
-  margin-bottom: 0;
-  color: rgba(255, 255, 255, 0.98);
-  opacity: 0;
-  transform: translateY(-2px);
+  transform: translateY(4px);
   transition: opacity 120ms ease, transform 120ms ease;
+  pointer-events: none;
 }
 
-.nodeWithImage .statusBubble {
-  border-color: rgba(255, 255, 255, 0.44);
-  color: rgba(255, 255, 255, 0.95);
-  background: rgba(0, 0, 0, 0.38);
+.imageNodeFooter span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.nodeWithImage:hover .imageNodeOverlay,
-.nodeWithImage:focus-within .imageNodeOverlay,
-.nodeWithImage.nodeSelected .imageNodeOverlay {
-  opacity: 1;
-}
-
-.nodeWithImage:hover .nodeTitle,
-.nodeWithImage:focus-within .nodeTitle,
-.nodeWithImage.nodeSelected .nodeTitle {
-  opacity: 1;
-  transform: translateY(0);
-}
-
-.nodeWithImage:hover .nodeBody,
-.nodeWithImage:focus-within .nodeBody,
-.nodeWithImage.nodeSelected .nodeBody {
+.nodeWithImage:hover .imageNodeFooter,
+.nodeWithImage:focus-within .imageNodeFooter,
+.nodeWithImage.nodeSelected .imageNodeFooter {
   opacity: 1;
   transform: translateY(0);
 }
 
 .sourceBadge {
   margin-top: 5px;
-  border-radius: var(--canvas-corner-radius);
   border: 1px solid rgba(0, 0, 0, 0.2);
-  background: rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.76);
   color: rgba(0, 0, 0, 0.74);
   font-size: 0.61rem;
   letter-spacing: 0.08em;
@@ -300,13 +446,13 @@
 .port {
   position: absolute;
   top: 50%;
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   border: 0;
   background: transparent;
   cursor: crosshair;
   opacity: 0;
-  transform: translateY(-50%) scale(0.92);
+  transform: translateY(-50%) scale(0.9);
   transition: opacity 120ms ease, transform 120ms ease;
   padding: 0;
 }
@@ -319,14 +465,16 @@
   width: 12px;
   height: 12px;
   border-radius: 999px;
-  border: 1px solid rgba(0, 0, 0, 0.58);
-  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(0, 0, 0, 0.62);
+  background: var(--port-fill, rgba(255, 255, 255, 0.9));
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.82);
   transform: translate(-50%, -50%);
 }
 
 .node:hover .port,
 .node:focus-within .port,
-.nodeConnected .port {
+.nodeSelected .port,
+.nodePortActive .port {
   opacity: 1;
   transform: translateY(-50%) scale(1);
 }
@@ -335,16 +483,12 @@
   transform: translateY(-50%) scale(1.08) !important;
 }
 
-.port:hover::after {
-  background: #fff;
-}
-
 .inputPort {
-  left: -14px;
+  left: -15px;
 }
 
 .outputPort {
-  right: -14px;
+  right: -15px;
 }
 
 .marquee {
