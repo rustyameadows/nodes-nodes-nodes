@@ -6,25 +6,15 @@
   z-index: 39;
   display: flex;
   align-items: center;
-  gap: 12px;
-  min-height: 58px;
-  padding: 8px 10px;
+  gap: 8px;
+  min-height: 50px;
+  padding: 6px 8px;
   border: 1px solid rgba(255, 255, 255, 0.82);
   background: rgba(255, 255, 255, 0.9);
   backdrop-filter: blur(14px);
   box-shadow:
     0 18px 48px rgba(0, 0, 0, 0.34),
     0 0 0 1px rgba(255, 255, 255, 0.7) inset;
-}
-
-.barEmpty {
-  justify-content: space-between;
-}
-
-.emptySpacer {
-  flex: 1;
-  min-width: 0;
-  min-height: 40px;
 }
 
 .mainLane {
@@ -44,18 +34,18 @@
 .mainLaneScroll {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   min-width: 100%;
   width: max-content;
-  min-height: 40px;
+  min-height: 36px;
 }
 
 .actionLane {
   flex: none;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding-left: 12px;
+  gap: 6px;
+  padding-left: 10px;
   border-left: 1px solid rgba(0, 0, 0, 0.1);
 }
 
@@ -65,7 +55,7 @@
 .textField,
 .numberField,
 .actionButton {
-  height: 40px;
+  height: 36px;
   border: 1px solid rgba(0, 0, 0, 0.18);
   background: rgba(255, 255, 255, 0.82);
   color: #101010;
@@ -76,9 +66,9 @@
 .chip {
   display: inline-flex;
   align-items: center;
-  padding: 0 12px;
+  padding: 0 10px;
   white-space: nowrap;
-  font-size: 0.76rem;
+  font-size: 0.64rem;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -89,18 +79,18 @@
 .numberField {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 10px;
-  min-width: 156px;
+  gap: 6px;
+  padding: 0 8px;
+  min-width: 148px;
 }
 
 .numberField {
-  min-width: 118px;
+  min-width: 108px;
 }
 
 .fieldLabel {
   flex: none;
-  font-size: 0.64rem;
+  font-size: 0.58rem;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -116,7 +106,7 @@
   background: transparent;
   color: #111;
   font: inherit;
-  font-size: 0.82rem;
+  font-size: 0.7rem;
   font-weight: 600;
   padding: 0;
 }
@@ -136,8 +126,8 @@
 .trayButton {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
-  padding: 0 12px;
+  gap: 8px;
+  padding: 0 10px;
   font: inherit;
   cursor: pointer;
   white-space: nowrap;
@@ -160,16 +150,23 @@
 .controlText {
   display: flex;
   align-items: baseline;
-  gap: 6px;
+  gap: 4px;
   min-width: 0;
 }
 
 .controlLabel {
-  font-size: 0.64rem;
+  font-size: 0.58rem;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: rgba(0, 0, 0, 0.46);
+}
+
+.controlValueGroup {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
 }
 
 .controlValue {
@@ -177,13 +174,22 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 0.82rem;
+  font-size: 0.7rem;
   font-weight: 600;
   color: rgba(0, 0, 0, 0.84);
 }
 
+.controlMeta {
+  flex: none;
+  font-size: 0.56rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(0, 0, 0, 0.5);
+}
+
 .caret {
-  font-size: 0.8rem;
+  font-size: 0.72rem;
   color: rgba(0, 0, 0, 0.5);
 }
 
@@ -191,9 +197,9 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0 12px;
+  padding: 0 10px;
   font: inherit;
-  font-size: 0.78rem;
+  font-size: 0.7rem;
   font-weight: 700;
   cursor: pointer;
   white-space: nowrap;
@@ -215,8 +221,8 @@
   z-index: 44;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 12px;
+  gap: 8px;
+  padding: 10px;
   border: 1px solid rgba(255, 255, 255, 0.86);
   background: rgba(255, 255, 255, 0.95);
   backdrop-filter: blur(18px);
@@ -233,26 +239,26 @@
 }
 
 .popoverHeader strong {
-  font-size: 0.82rem;
+  font-size: 0.72rem;
   color: #101010;
 }
 
 .popoverHeader span {
-  font-size: 0.68rem;
+  font-size: 0.62rem;
   color: rgba(0, 0, 0, 0.5);
 }
 
 .popoverBody {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   min-width: 0;
 }
 
 .selectList {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
   overflow-y: auto;
 }
 
@@ -262,7 +268,7 @@
   gap: 2px;
   align-items: flex-start;
   width: 100%;
-  padding: 8px 10px;
+  padding: 7px 9px;
   border: 1px solid rgba(0, 0, 0, 0.14);
   background: rgba(255, 255, 255, 0.78);
   color: #111;
@@ -276,24 +282,41 @@
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.66) inset;
 }
 
+.selectOptionTopRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+}
+
 .selectOptionLabel {
-  font-size: 0.78rem;
+  font-size: 0.72rem;
   font-weight: 600;
 }
 
+.selectOptionMeta {
+  flex: none;
+  font-size: 0.56rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(0, 0, 0, 0.5);
+}
+
 .selectOptionDescription {
-  font-size: 0.68rem;
+  font-size: 0.62rem;
   color: rgba(0, 0, 0, 0.52);
 }
 
 .traySection {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 5px;
 }
 
 .traySectionLabel {
-  font-size: 0.66rem;
+  font-size: 0.62rem;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -316,7 +339,7 @@
 .trayInput,
 .trayNumberInput {
   width: 100%;
-  padding: 8px 10px;
+  padding: 7px 9px;
 }
 
 .trayTextarea {
@@ -326,7 +349,7 @@
 
 .trayInput,
 .trayNumberInput {
-  font-size: 0.8rem;
+  font-size: 0.72rem;
 }
 
 .trayInput:focus,
@@ -340,8 +363,8 @@
 }
 
 .traySummary {
-  padding: 8px 10px;
-  font-size: 0.72rem;
+  padding: 7px 9px;
+  font-size: 0.66rem;
   line-height: 1.35;
 }
 
@@ -361,8 +384,8 @@
   margin: 0;
   max-height: 320px;
   overflow: auto;
-  padding: 10px;
-  font-size: 0.68rem;
+  padding: 9px;
+  font-size: 0.62rem;
   line-height: 1.4;
   white-space: pre-wrap;
   word-break: break-word;
@@ -378,22 +401,22 @@
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px;
+  gap: 6px;
 }
 
 .trayGrid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+  gap: 6px;
 }
 
 @media (max-width: 900px) {
   .barRoot {
-    gap: 10px;
+    gap: 8px;
   }
 
   .actionLane {
-    padding-left: 10px;
+    padding-left: 8px;
   }
 
   .popover {

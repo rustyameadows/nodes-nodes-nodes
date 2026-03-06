@@ -424,16 +424,6 @@ export function CanvasView({ projectId }: Props) {
     );
   }, [providers, selectedNode, selectedNodeIsModel]);
 
-  const selectedNodeSupportedOutputs = useMemo(() => {
-    if (selectedNode && selectedNodeIsAssetSource) {
-      return [selectedNode.outputType];
-    }
-    if (selectedNode && selectedNodeIsTextNote) {
-      return ["text"] as WorkflowNode["outputType"][];
-    }
-    return getModelSupportedOutputs(selectedModel);
-  }, [selectedModel, selectedNode, selectedNodeIsAssetSource, selectedNodeIsTextNote]);
-
   const selectedNodeSourceJobId = useMemo(() => getNodeSourceJobId(selectedNode), [selectedNode]);
 
   const selectedGeneratedSourceJob = useMemo(() => {
@@ -1296,18 +1286,10 @@ export function CanvasView({ projectId }: Props) {
       selectedNode ? (groupedProviders[selectedNode.providerId] || []).map((model) => ({
         value: model.modelId,
         label: model.displayName,
+        statusLabel: model.capabilities.availability === "ready" ? undefined : "Coming soon",
         description: model.modelId,
       })) : [],
     [groupedProviders, selectedNode]
-  );
-
-  const outputOptions = useMemo(
-    () =>
-      selectedNodeSupportedOutputs.map((outputType) => ({
-        value: outputType,
-        label: outputType,
-      })),
-    [selectedNodeSupportedOutputs]
   );
 
   const handleSelectedNodeLabelChange = useCallback(
@@ -1371,20 +1353,6 @@ export function CanvasView({ projectId }: Props) {
       });
     },
     [groupedProviders, selectedNode, selectedNodeExecutionMode, selectedNodeIsModel, updateNode]
-  );
-
-  const handleSelectedNodeOutputTypeChange = useCallback(
-    (outputType: WorkflowNode["outputType"]) => {
-      if (!selectedNode || !selectedNodeIsModel) {
-        return;
-      }
-
-      updateNode(selectedNode.id, {
-        outputType,
-        nodeType: nodeTypeFromOutput(outputType),
-      });
-    },
-    [selectedNode, selectedNodeIsModel, updateNode]
   );
 
   const handleClearSelectedModelInputs = useCallback(() => {
@@ -2234,7 +2202,6 @@ export function CanvasView({ projectId }: Props) {
           selectedModel={selectedModel}
           selectedGeneratedSourceJob={selectedGeneratedSourceJob}
           selectedNodeSourceJobId={selectedNodeSourceJobId}
-          selectedNodeSupportedOutputs={selectedNodeSupportedOutputs}
           selectedNodeResolvedSettings={selectedNodeResolvedSettings}
           selectedCoreParameters={selectedCoreParameters}
           selectedAdvancedParameters={selectedAdvancedParameters}
@@ -2246,13 +2213,11 @@ export function CanvasView({ projectId }: Props) {
           selectedSingleImageAssetId={selectedSingleImageAssetId}
           providerOptions={providerOptions}
           modelOptions={modelOptions}
-          outputOptions={outputOptions}
           apiCallPreviewPayload={apiCallPreviewPayload}
           onLabelChange={handleSelectedNodeLabelChange}
           onPromptChange={handleSelectedNodePromptChange}
           onProviderChange={handleSelectedNodeProviderChange}
           onModelChange={handleSelectedNodeModelChange}
-          onOutputTypeChange={handleSelectedNodeOutputTypeChange}
           onParameterChange={updateSelectedModelParameter}
           onRun={() => {
             if (selectedNode) {

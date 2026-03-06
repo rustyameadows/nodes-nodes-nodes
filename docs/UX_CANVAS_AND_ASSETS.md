@@ -60,20 +60,19 @@
 
 ## Node Configuration UX
 - Node settings live in the fixed bottom settings bar.
-- The bottom bar is always mounted:
-  - empty selection => blank chrome shell with no placeholder copy
+- The bottom bar appears only when one or more nodes are selected:
   - single selection => compact node controls plus single-image view action when applicable
   - multi-selection => compare-focused actions only
+- Single-selection bars do not show a node-type chip; multi-selection uses a generic `N selected` chip.
 - Text notes are first-class canvas nodes with inline editing plus bottom-bar tray editing.
 - Connected text notes act as prompt-source nodes for model execution.
 - Single-selection node controls include:
   - provider selector
   - model selector
-  - output type
+  - prompt / note-body editing in an upward tray
   - schema-driven model parameter controls
     - core controls always visible inline in the bar
     - advanced controls in an upward tray
-  - prompt / note-body editing in an upward tray
   - connection and run-readiness detail in an upward tray
   - run controls
   - API call preview for the normalized request payload in an upward tray
@@ -100,6 +99,7 @@
 - Validation appears before run when required ports/settings are missing.
 - Model execution rules in this pass:
   - `openai / gpt-image-1.5` and `openai / gpt-image-1-mini` are the runnable OpenAI image models
+  - unavailable models remain selectable in the picker, show `Coming soon`, and still disable Run
   - connected text note overrides the model prompt field during execution
   - model prompt field remains as fallback when no text note is connected
   - OpenAI execution mode is inferred automatically from connected inputs
@@ -183,7 +183,7 @@
   - the model name is the primary canvas label
   - a title only appears when the node has a user-customized label
   - untitled model pills vertically center the model name to stay visually compact
-  - provider, output type, and other configuration details live in the bottom-bar controls rather than on the canvas
+  - provider, model status, and other configuration details live in the bottom-bar controls rather than on the canvas
   - left-edge border coloration mirrors the connected input media types
   - right-edge border and output nipple are citrus as soon as the model has a connected output node and remain white before that
   - generated-output edges from the model stay citrus while running and after completion

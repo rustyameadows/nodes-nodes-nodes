@@ -22,6 +22,7 @@ import styles from "./canvas-bottom-bar.module.css";
 type SelectOption = {
   value: string;
   label: string;
+  statusLabel?: string;
   description?: string;
 };
 
@@ -49,7 +50,6 @@ type Props = {
   selectedModel: ProviderModel | undefined;
   selectedGeneratedSourceJob: Job | null;
   selectedNodeSourceJobId: string | null;
-  selectedNodeSupportedOutputs: WorkflowNode["outputType"][];
   selectedNodeResolvedSettings: Record<string, unknown>;
   selectedCoreParameters: ModelParameterDefinition[];
   selectedAdvancedParameters: ModelParameterDefinition[];
@@ -61,13 +61,11 @@ type Props = {
   selectedSingleImageAssetId: string | null;
   providerOptions: SelectOption[];
   modelOptions: SelectOption[];
-  outputOptions: SelectOption[];
   apiCallPreviewPayload: unknown;
   onLabelChange: (value: string) => void;
   onPromptChange: (value: string) => void;
   onProviderChange: (providerId: ProviderId) => void;
   onModelChange: (modelId: string) => void;
-  onOutputTypeChange: (outputType: WorkflowNode["outputType"]) => void;
   onParameterChange: (parameterKey: string, value: string | number | null) => void;
   onRun: () => void;
   onDeleteSelection: () => void;
@@ -184,7 +182,10 @@ function CanvasBarSelect({
       >
         <span className={styles.controlText}>
           <span className={styles.controlLabel}>{label}</span>
-          <span className={styles.controlValue}>{activeOption?.label || value}</span>
+          <span className={styles.controlValueGroup}>
+            <span className={styles.controlValue}>{activeOption?.label || value}</span>
+            {activeOption?.statusLabel ? <span className={styles.controlMeta}>{activeOption.statusLabel}</span> : null}
+          </span>
         </span>
         <span className={styles.caret}>▴</span>
       </button>
@@ -214,7 +215,10 @@ function CanvasBarSelect({
                   onOpenPopoverChange(null);
                 }}
               >
-                <span className={styles.selectOptionLabel}>{option.label}</span>
+                <span className={styles.selectOptionTopRow}>
+                  <span className={styles.selectOptionLabel}>{option.label}</span>
+                  {option.statusLabel ? <span className={styles.selectOptionMeta}>{option.statusLabel}</span> : null}
+                </span>
                 {option.description ? (
                   <span className={styles.selectOptionDescription}>{option.description}</span>
                 ) : null}
@@ -346,23 +350,11 @@ function InlineParameterField({
   );
 }
 
-function selectionChipLabel(selectedNodeIds: string[], selectedNode: WorkflowNode | null) {
-  if (selectedNodeIds.length === 0) {
-    return "";
-  }
+function selectionChipLabel(selectedNodeIds: string[]) {
   if (selectedNodeIds.length > 1) {
     return `${selectedNodeIds.length} selected`;
   }
-  if (!selectedNode) {
-    return "1 selected";
-  }
-  if (selectedNode.kind === "model") {
-    return "1 model";
-  }
-  if (selectedNode.kind === "text-note") {
-    return "1 note";
-  }
-  return "1 asset";
+  return null;
 }
 
 function summarizePrompt(prompt: string) {
@@ -421,7 +413,6 @@ export function CanvasBottomBar({
   selectedModel,
   selectedGeneratedSourceJob,
   selectedNodeSourceJobId,
-  selectedNodeSupportedOutputs,
   selectedNodeResolvedSettings,
   selectedCoreParameters,
   selectedAdvancedParameters,
@@ -433,13 +424,11 @@ export function CanvasBottomBar({
   selectedSingleImageAssetId,
   providerOptions,
   modelOptions,
-  outputOptions,
   apiCallPreviewPayload,
   onLabelChange,
   onPromptChange,
   onProviderChange,
   onModelChange,
-  onOutputTypeChange,
   onParameterChange,
   onRun,
   onDeleteSelection,
@@ -462,6 +451,7 @@ export function CanvasBottomBar({
     () => `${selectedNodeIds.join(",")}:${selectedNode?.id || ""}`,
     [selectedNode?.id, selectedNodeIds]
   );
+  const selectionChip = selectionChipLabel(selectedNodeIds);
   const showCompareActions = selectedNodeIds.length > 1;
 
   useEffect(() => {
@@ -589,310 +579,294 @@ export function CanvasBottomBar({
     }
   };
 
+  if (selectedNodeIds.length === 0) {
+    return null;
+  }
+
   return (
-    <div
-      ref={rootRef}
-      className={`${styles.barRoot} ${selectedNodeIds.length === 0 ? styles.barEmpty : ""}`}
-    >
-      {selectedNodeIds.length === 0 ? (
-        <div className={styles.emptySpacer} aria-hidden="true" />
-      ) : (
-        <>
-          <div ref={mainLaneRef} className={styles.mainLane} onWheelCapture={handleMainLaneWheelCapture}>
-            <div className={styles.mainLaneScroll}>
-              <span className={styles.chip}>{selectionChipLabel(selectedNodeIds, selectedNode)}</span>
+    <div ref={rootRef} className={styles.barRoot}>
+      <div ref={mainLaneRef} className={styles.mainLane} onWheelCapture={handleMainLaneWheelCapture}>
+        <div className={styles.mainLaneScroll}>
+          {selectionChip ? <span className={styles.chip}>{selectionChip}</span> : null}
 
-              {selectedNode && selectedNodeIds.length === 1 ? (
-                <label className={styles.textField}>
-                  <span className={styles.fieldLabel}>Label</span>
-                  <input
-                    className={styles.textInput}
-                    value={selectedNode.label}
-                    onChange={(event) => onLabelChange(event.target.value)}
-                  />
-                </label>
-              ) : null}
+          {selectedNode && selectedNodeIds.length === 1 ? (
+            <label className={styles.textField}>
+              <span className={styles.fieldLabel}>Label</span>
+              <input
+                className={styles.textInput}
+                value={selectedNode.label}
+                onChange={(event) => onLabelChange(event.target.value)}
+              />
+            </label>
+          ) : null}
 
-              {selectedNode && selectedNodeIds.length === 1 && selectedNodeIsModel ? (
-                <>
-                  <CanvasBarSelect
-                    id="provider"
-                    label="Provider"
-                    value={selectedNode.providerId}
-                    options={providerOptions}
-                    openPopoverId={openPopoverId}
-                    onOpenPopoverChange={setOpenPopoverId}
-                    onSelect={(providerId) => onProviderChange(providerId as ProviderId)}
-                    triggerRefs={triggerRefs}
-                    popoverRef={popoverRef}
-                  />
+            {selectedNode && selectedNodeIds.length === 1 && selectedNodeIsModel ? (
+              <>
+                <CanvasBarSelect
+                  id="provider"
+                  label="Provider"
+                  value={selectedNode.providerId}
+                  options={providerOptions}
+                  openPopoverId={openPopoverId}
+                  onOpenPopoverChange={setOpenPopoverId}
+                  onSelect={(providerId) => onProviderChange(providerId as ProviderId)}
+                  triggerRefs={triggerRefs}
+                  popoverRef={popoverRef}
+                />
 
-                  <CanvasBarSelect
-                    id="model"
-                    label="Model"
-                    value={selectedNode.modelId}
-                    options={modelOptions}
-                    openPopoverId={openPopoverId}
-                    onOpenPopoverChange={setOpenPopoverId}
-                    onSelect={onModelChange}
-                    triggerRefs={triggerRefs}
-                    popoverRef={popoverRef}
-                  />
+                <CanvasBarSelect
+                  id="model"
+                  label="Model"
+                  value={selectedNode.modelId}
+                  options={modelOptions}
+                  openPopoverId={openPopoverId}
+                  onOpenPopoverChange={setOpenPopoverId}
+                  onSelect={onModelChange}
+                  triggerRefs={triggerRefs}
+                  popoverRef={popoverRef}
+                />
 
-                  <CanvasBarSelect
-                    id="output"
-                    label="Output"
-                    value={selectedNode.outputType}
-                    options={outputOptions}
-                    disabled={selectedNodeSupportedOutputs.length <= 1}
-                    openPopoverId={openPopoverId}
-                    onOpenPopoverChange={setOpenPopoverId}
-                    onSelect={(outputType) => onOutputTypeChange(outputType as WorkflowNode["outputType"])}
-                    triggerRefs={triggerRefs}
-                    popoverRef={popoverRef}
-                  />
-
-                  {selectedCoreParameters.map((parameter) => (
-                    <InlineParameterField
-                      key={parameter.key}
-                      parameter={parameter}
-                      value={selectedNodeResolvedSettings[parameter.key]}
-                      onChange={(value) => onParameterChange(parameter.key, value)}
-                      openPopoverId={openPopoverId}
-                      onOpenPopoverChange={setOpenPopoverId}
-                      triggerRefs={triggerRefs}
-                      popoverRef={popoverRef}
+                <CanvasBarTray
+                  id="prompt"
+                  label="Prompt"
+                  value={selectedPromptSourceNode ? "Fallback" : summarizePrompt(selectedNode.prompt)}
+                  openPopoverId={openPopoverId}
+                  onOpenPopoverChange={setOpenPopoverId}
+                  triggerRefs={triggerRefs}
+                  popoverRef={popoverRef}
+                  headerNote={selectedPromptSourceNode ? "Connected note overrides on run" : "Fallback prompt text"}
+                >
+                  <div className={styles.traySection}>
+                    <label className={styles.traySectionLabel} htmlFor="canvas-bar-prompt">
+                      Prompt
+                    </label>
+                    <textarea
+                      id="canvas-bar-prompt"
+                      className={styles.trayTextarea}
+                      value={selectedNode.prompt}
+                      onChange={(event) => onPromptChange(event.target.value)}
+                      placeholder="Describe what this node should generate"
                     />
-                  ))}
+                  </div>
+                  {selectedPromptSourceNode ? (
+                    <div className={styles.traySection}>
+                      <span className={styles.traySectionLabel}>Connected Prompt Note</span>
+                      <div className={styles.traySummary}>
+                        <strong>{selectedPromptSourceNode.label}</strong>
+                        {selectedPromptSourceNode.prompt.trim()
+                          ? `: ${selectedPromptSourceNode.prompt.trim()}`
+                          : ": Empty note"}
+                      </div>
+                    </div>
+                  ) : null}
+                </CanvasBarTray>
 
-                  <CanvasBarTray
-                    id="prompt"
-                    label="Prompt"
-                    value={selectedPromptSourceNode ? "Fallback" : summarizePrompt(selectedNode.prompt)}
+                {selectedCoreParameters.map((parameter) => (
+                  <InlineParameterField
+                    key={parameter.key}
+                    parameter={parameter}
+                    value={selectedNodeResolvedSettings[parameter.key]}
+                    onChange={(value) => onParameterChange(parameter.key, value)}
                     openPopoverId={openPopoverId}
                     onOpenPopoverChange={setOpenPopoverId}
                     triggerRefs={triggerRefs}
                     popoverRef={popoverRef}
-                    headerNote={selectedPromptSourceNode ? "Connected note overrides on run" : "Fallback prompt text"}
-                  >
-                    <div className={styles.traySection}>
-                      <label className={styles.traySectionLabel} htmlFor="canvas-bar-prompt">
-                        Prompt
-                      </label>
-                      <textarea
-                        id="canvas-bar-prompt"
-                        className={styles.trayTextarea}
-                        value={selectedNode.prompt}
-                        onChange={(event) => onPromptChange(event.target.value)}
-                        placeholder="Describe what this node should generate"
-                      />
-                    </div>
-                    {selectedPromptSourceNode ? (
-                      <div className={styles.traySection}>
-                        <span className={styles.traySectionLabel}>Connected Prompt Note</span>
-                        <div className={styles.traySummary}>
-                          <strong>{selectedPromptSourceNode.label}</strong>
-                          {selectedPromptSourceNode.prompt.trim()
-                            ? `: ${selectedPromptSourceNode.prompt.trim()}`
-                            : ": Empty note"}
-                        </div>
-                      </div>
-                    ) : null}
-                  </CanvasBarTray>
+                  />
+                ))}
 
-                  {selectedAdvancedParameters.length > 0 ? (
-                    <CanvasBarTray
-                      id="advanced"
-                      label="Advanced"
-                      value={renderAdvancedSummary(selectedAdvancedParameters)}
-                      width={380}
-                      maxWidth={540}
-                      openPopoverId={openPopoverId}
-                      onOpenPopoverChange={setOpenPopoverId}
-                      triggerRefs={triggerRefs}
-                      popoverRef={popoverRef}
-                    >
-                      <div className={styles.trayGrid}>
-                        {selectedAdvancedParameters.map((parameter) => (
-                          <div key={parameter.key} className={styles.traySection}>
-                            <span className={styles.traySectionLabel}>{parameter.label}</span>
-                            {parameter.control === "select" ? (
-                              <select
-                                className={styles.trayInput}
-                                value={String(selectedNodeResolvedSettings[parameter.key] ?? parameter.defaultValue ?? "")}
-                                onChange={(event) => onParameterChange(parameter.key, event.target.value)}
-                              >
-                                {(parameter.options || []).map((option) => (
-                                  <option key={String(option.value)} value={String(option.value)}>
-                                    {option.label}
-                                  </option>
-                                ))}
-                              </select>
-                            ) : (
-                              <input
-                                className={styles.trayNumberInput}
-                                type="number"
-                                inputMode="numeric"
-                                min={parameter.min}
-                                max={parameter.max}
-                                step={parameter.step}
-                                value={
-                                  selectedNodeResolvedSettings[parameter.key] === null ||
-                                  selectedNodeResolvedSettings[parameter.key] === undefined
-                                    ? ""
-                                    : String(selectedNodeResolvedSettings[parameter.key])
-                                }
-                                placeholder={parameter.placeholder}
-                                onChange={(event) =>
-                                  onParameterChange(
-                                    parameter.key,
-                                    event.target.value === "" ? null : Number(event.target.value)
-                                  )
-                                }
-                              />
-                            )}
-                          </div>
-                        ))}
+                {selectedAdvancedParameters.length > 0 ? (
+                  <CanvasBarTray
+                    id="advanced"
+                    label="Advanced"
+                    value={renderAdvancedSummary(selectedAdvancedParameters)}
+                    width={380}
+                    maxWidth={540}
+                    openPopoverId={openPopoverId}
+                    onOpenPopoverChange={setOpenPopoverId}
+                    triggerRefs={triggerRefs}
+                    popoverRef={popoverRef}
+                  >
+                    <div className={styles.trayGrid}>
+                      {selectedAdvancedParameters.map((parameter) => (
+                        <div key={parameter.key} className={styles.traySection}>
+                          <span className={styles.traySectionLabel}>{parameter.label}</span>
+                          {parameter.control === "select" ? (
+                            <select
+                              className={styles.trayInput}
+                              value={String(selectedNodeResolvedSettings[parameter.key] ?? parameter.defaultValue ?? "")}
+                              onChange={(event) => onParameterChange(parameter.key, event.target.value)}
+                            >
+                              {(parameter.options || []).map((option) => (
+                                <option key={String(option.value)} value={String(option.value)}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <input
+                              className={styles.trayNumberInput}
+                              type="number"
+                              inputMode="numeric"
+                              min={parameter.min}
+                              max={parameter.max}
+                              step={parameter.step}
+                              value={
+                                selectedNodeResolvedSettings[parameter.key] === null ||
+                                selectedNodeResolvedSettings[parameter.key] === undefined
+                                  ? ""
+                                  : String(selectedNodeResolvedSettings[parameter.key])
+                              }
+                              placeholder={parameter.placeholder}
+                              onChange={(event) =>
+                                onParameterChange(
+                                  parameter.key,
+                                  event.target.value === "" ? null : Number(event.target.value)
+                                )
+                              }
+                            />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </CanvasBarTray>
+                ) : null}
+
+                <CanvasBarTray
+                  id="details"
+                  label="Details"
+                  value={selectedNodeRunPreview?.disabledReason ? "Attention" : "Ready"}
+                  width={420}
+                  maxWidth={580}
+                  openPopoverId={openPopoverId}
+                  onOpenPopoverChange={setOpenPopoverId}
+                  triggerRefs={triggerRefs}
+                  popoverRef={popoverRef}
+                >
+                  {isRunnableOpenAiImageModel(selectedModel?.providerId, selectedModel?.modelId) && selectedNodeRunPreview ? (
+                    <div className={styles.traySection}>
+                      <span className={styles.traySectionLabel}>Execution</span>
+                      <div className={styles.traySummary}>
+                        {selectedNodeRunPreview.requestPayload.nodePayload.executionMode === "edit"
+                          ? `Reference-image generation from ${selectedNodeRunPreview.requestPayload.nodePayload.inputImageAssetIds.length} image input${
+                              selectedNodeRunPreview.requestPayload.nodePayload.inputImageAssetIds.length === 1 ? "" : "s"
+                            } to ${selectedNodeRunPreview.requestPayload.nodePayload.outputCount} output${
+                              selectedNodeRunPreview.requestPayload.nodePayload.outputCount === 1 ? "" : "s"
+                            }.`
+                          : `Prompt-only generation to ${selectedNodeRunPreview.requestPayload.nodePayload.outputCount} output${
+                              selectedNodeRunPreview.requestPayload.nodePayload.outputCount === 1 ? "" : "s"
+                            }.`}
                       </div>
-                    </CanvasBarTray>
+                    </div>
                   ) : null}
 
-                  <CanvasBarTray
-                    id="details"
-                    label="Details"
-                    value={selectedNodeRunPreview?.disabledReason ? "Attention" : "Ready"}
-                    width={420}
-                    maxWidth={580}
-                    openPopoverId={openPopoverId}
-                    onOpenPopoverChange={setOpenPopoverId}
-                    triggerRefs={triggerRefs}
-                    popoverRef={popoverRef}
-                  >
-                    {isRunnableOpenAiImageModel(selectedModel?.providerId, selectedModel?.modelId) && selectedNodeRunPreview ? (
-                      <div className={styles.traySection}>
-                        <span className={styles.traySectionLabel}>Execution</span>
-                        <div className={styles.traySummary}>
-                          {selectedNodeRunPreview.requestPayload.nodePayload.executionMode === "edit"
-                            ? `Reference-image generation from ${selectedNodeRunPreview.requestPayload.nodePayload.inputImageAssetIds.length} image input${
-                                selectedNodeRunPreview.requestPayload.nodePayload.inputImageAssetIds.length === 1 ? "" : "s"
-                              } to ${selectedNodeRunPreview.requestPayload.nodePayload.outputCount} output${
-                                selectedNodeRunPreview.requestPayload.nodePayload.outputCount === 1 ? "" : "s"
-                              }.`
-                            : `Prompt-only generation to ${selectedNodeRunPreview.requestPayload.nodePayload.outputCount} output${
-                                selectedNodeRunPreview.requestPayload.nodePayload.outputCount === 1 ? "" : "s"
-                              }.`}
-                        </div>
-                      </div>
-                    ) : null}
+                  <div className={styles.traySection}>
+                    <span className={styles.traySectionLabel}>Connected Inputs</span>
+                    <div className={styles.traySummary}>
+                      {selectedInputNodes.length > 0
+                        ? selectedInputNodes.map((node) => node.label).join(", ")
+                        : "No incoming node connections."}
+                    </div>
+                  </div>
 
+                  {selectedNodeRunPreview ? (
                     <div className={styles.traySection}>
-                      <span className={styles.traySectionLabel}>Connected Inputs</span>
-                      <div className={styles.traySummary}>
-                        {selectedInputNodes.length > 0
-                          ? selectedInputNodes.map((node) => node.label).join(", ")
-                          : "No incoming node connections."}
+                      <span className={styles.traySectionLabel}>Run Readiness</span>
+                      <div
+                        className={`${styles.traySummary} ${
+                          selectedNodeRunPreview.disabledReason
+                            ? styles.traySummaryWarning
+                            : styles.traySummaryReady
+                        }`}
+                      >
+                        {selectedNodeRunPreview.disabledReason
+                          ? selectedNodeRunPreview.disabledReason
+                          : `${selectedNodeRunPreview.readyMessage} via ${selectedNodeRunPreview.endpoint}.`}
                       </div>
                     </div>
-
-                    {selectedNodeRunPreview ? (
-                      <div className={styles.traySection}>
-                        <span className={styles.traySectionLabel}>Run Readiness</span>
-                        <div
-                          className={`${styles.traySummary} ${
-                            selectedNodeRunPreview.disabledReason
-                              ? styles.traySummaryWarning
-                              : styles.traySummaryReady
-                          }`}
-                        >
-                          {selectedNodeRunPreview.disabledReason
-                            ? selectedNodeRunPreview.disabledReason
-                            : `${selectedNodeRunPreview.readyMessage} via ${selectedNodeRunPreview.endpoint}.`}
-                        </div>
-                      </div>
-                    ) : null}
-
-                    <div className={styles.trayActions}>
-                      <button type="button" className={styles.actionButton} onClick={onClearInputs}>
-                        Clear Inputs
-                      </button>
-                    </div>
-                  </CanvasBarTray>
-
-                  {apiCallPreviewPayload ? (
-                    <CanvasBarTray
-                      id="api"
-                      label="API"
-                      value="Preview"
-                      width={460}
-                      maxWidth={640}
-                      openPopoverId={openPopoverId}
-                      onOpenPopoverChange={setOpenPopoverId}
-                      triggerRefs={triggerRefs}
-                      popoverRef={popoverRef}
-                    >
-                      <pre className={styles.trayCode}>{JSON.stringify(apiCallPreviewPayload, null, 2)}</pre>
-                    </CanvasBarTray>
                   ) : null}
-                </>
-              ) : null}
 
-              {selectedNode && selectedNodeIds.length === 1 && selectedNodeIsTextNote ? (
-                <>
+                  <div className={styles.trayActions}>
+                    <button type="button" className={styles.actionButton} onClick={onClearInputs}>
+                      Clear Inputs
+                    </button>
+                  </div>
+                </CanvasBarTray>
+
+                {apiCallPreviewPayload ? (
                   <CanvasBarTray
-                    id="note"
-                    label="Note"
-                    value={summarizePrompt(selectedNode.prompt)}
-                    width={420}
-                    maxWidth={560}
+                    id="api"
+                    label="API"
+                    value="Preview"
+                    width={460}
+                    maxWidth={640}
                     openPopoverId={openPopoverId}
                     onOpenPopoverChange={setOpenPopoverId}
                     triggerRefs={triggerRefs}
                     popoverRef={popoverRef}
                   >
-                    <div className={styles.traySection}>
-                      <span className={styles.traySectionLabel}>Note Text</span>
-                      <textarea
-                        className={styles.trayTextarea}
-                        value={selectedNode.prompt}
-                        spellCheck={false}
-                        autoCorrect="off"
-                        autoCapitalize="off"
-                        onChange={(event) => onPromptChange(event.target.value)}
-                        placeholder="Write prompt notes here"
-                      />
-                    </div>
+                    <pre className={styles.trayCode}>{JSON.stringify(apiCallPreviewPayload, null, 2)}</pre>
                   </CanvasBarTray>
+                ) : null}
+              </>
+            ) : null}
 
-                  <CanvasBarTray
-                    id="note-links"
-                    label="Details"
-                    value={summarizeConnections(selectedTextNoteTargets)}
-                    width={360}
-                    maxWidth={520}
-                    openPopoverId={openPopoverId}
-                    onOpenPopoverChange={setOpenPopoverId}
-                    triggerRefs={triggerRefs}
-                    popoverRef={popoverRef}
-                  >
-                    <div className={styles.traySection}>
-                      <span className={styles.traySectionLabel}>Connection State</span>
-                      <div className={styles.traySummary}>
-                        Text notes connect to model nodes as external prompt sources.
-                      </div>
-                    </div>
-                    <div className={styles.traySection}>
-                      <span className={styles.traySectionLabel}>Connected Targets</span>
-                      <div className={styles.traySummary}>
-                        {selectedTextNoteTargets.length > 0
-                          ? selectedTextNoteTargets.map((node) => node.label).join(", ")
-                          : "No model nodes are using this note yet."}
-                      </div>
-                    </div>
-                  </CanvasBarTray>
-                </>
-              ) : null}
+            {selectedNode && selectedNodeIds.length === 1 && selectedNodeIsTextNote ? (
+              <>
+                <CanvasBarTray
+                  id="note"
+                  label="Note"
+                  value={summarizePrompt(selectedNode.prompt)}
+                  width={420}
+                  maxWidth={560}
+                  openPopoverId={openPopoverId}
+                  onOpenPopoverChange={setOpenPopoverId}
+                  triggerRefs={triggerRefs}
+                  popoverRef={popoverRef}
+                >
+                  <div className={styles.traySection}>
+                    <span className={styles.traySectionLabel}>Note Text</span>
+                    <textarea
+                      className={styles.trayTextarea}
+                      value={selectedNode.prompt}
+                      spellCheck={false}
+                      autoCorrect="off"
+                      autoCapitalize="off"
+                      onChange={(event) => onPromptChange(event.target.value)}
+                      placeholder="Write prompt notes here"
+                    />
+                  </div>
+                </CanvasBarTray>
 
-              {selectedNode && selectedNodeIds.length === 1 && selectedNodeIsAssetSource ? (
+                <CanvasBarTray
+                  id="note-links"
+                  label="Details"
+                  value={summarizeConnections(selectedTextNoteTargets)}
+                  width={360}
+                  maxWidth={520}
+                  openPopoverId={openPopoverId}
+                  onOpenPopoverChange={setOpenPopoverId}
+                  triggerRefs={triggerRefs}
+                  popoverRef={popoverRef}
+                >
+                  <div className={styles.traySection}>
+                    <span className={styles.traySectionLabel}>Connection State</span>
+                    <div className={styles.traySummary}>
+                      Text notes connect to model nodes as external prompt sources.
+                    </div>
+                  </div>
+                  <div className={styles.traySection}>
+                    <span className={styles.traySectionLabel}>Connected Targets</span>
+                    <div className={styles.traySummary}>
+                      {selectedTextNoteTargets.length > 0
+                        ? selectedTextNoteTargets.map((node) => node.label).join(", ")
+                        : "No model nodes are using this note yet."}
+                    </div>
+                  </div>
+                </CanvasBarTray>
+              </>
+            ) : null}
+
+            {selectedNode && selectedNodeIds.length === 1 && selectedNodeIsAssetSource ? (
                 <>
                   <CanvasBarTray
                     id="asset-details"
@@ -980,73 +954,71 @@ export function CanvasBottomBar({
                     </CanvasBarTray>
                   ) : null}
                 </>
-              ) : null}
-            </div>
-          </div>
-
-          <div className={styles.actionLane}>
-            {selectedNode && selectedNodeIds.length === 1 && selectedNodeIsGeneratedAsset && selectedNodeSourceJobId ? (
-              <button
-                type="button"
-                className={styles.actionButton}
-                onClick={() => onOpenQueueInspect(selectedNodeSourceJobId)}
-              >
-                Queue
-              </button>
             ) : null}
+        </div>
+      </div>
 
-            {selectedNode && selectedNodeIds.length === 1 && selectedSingleImageAssetId ? (
-              <button
-                type="button"
-                className={styles.actionButton}
-                onClick={() => onOpenAssetViewer(selectedSingleImageAssetId)}
-              >
-                View Image
-              </button>
-            ) : null}
+      <div className={styles.actionLane}>
+        {selectedNode && selectedNodeIds.length === 1 && selectedNodeIsGeneratedAsset && selectedNodeSourceJobId ? (
+          <button
+            type="button"
+            className={styles.actionButton}
+            onClick={() => onOpenQueueInspect(selectedNodeSourceJobId)}
+          >
+            Queue
+          </button>
+        ) : null}
 
-            {selectedNode && selectedNodeIds.length === 1 && selectedNodeIsModel ? (
-              <button
-                type="button"
-                className={`${styles.actionButton} ${styles.actionButtonPrimary}`}
-                disabled={Boolean(selectedNodeRunPreview?.disabledReason)}
-                onClick={onRun}
-              >
-                Run Node
-              </button>
-            ) : null}
-
+          {selectedNode && selectedNodeIds.length === 1 && selectedSingleImageAssetId ? (
             <button
               type="button"
-              className={`${styles.actionButton} ${styles.actionButtonDanger}`}
-              onClick={onDeleteSelection}
+              className={styles.actionButton}
+              onClick={() => onOpenAssetViewer(selectedSingleImageAssetId)}
             >
-              {selectedNodeIds.length === 1 ? "Delete Node" : "Delete Selected"}
+              View Image
             </button>
+          ) : null}
 
-            {showCompareActions ? (
-              <>
-                <button
-                  type="button"
-                  className={styles.actionButton}
-                  disabled={selectedImageAssetIds.length !== 2}
-                  onClick={() => onOpenCompare("compare_2", 2)}
-                >
-                  Compare 2
-                </button>
-                <button
-                  type="button"
-                  className={styles.actionButton}
-                  disabled={selectedImageAssetIds.length !== 4}
-                  onClick={() => onOpenCompare("compare_4", 4)}
-                >
-                  Compare 4
-                </button>
-              </>
-            ) : null}
-          </div>
-        </>
-      )}
+          {selectedNode && selectedNodeIds.length === 1 && selectedNodeIsModel ? (
+            <button
+              type="button"
+              className={`${styles.actionButton} ${styles.actionButtonPrimary}`}
+              disabled={Boolean(selectedNodeRunPreview?.disabledReason)}
+              onClick={onRun}
+            >
+              Run Node
+            </button>
+          ) : null}
+
+          <button
+            type="button"
+            className={`${styles.actionButton} ${styles.actionButtonDanger}`}
+            onClick={onDeleteSelection}
+          >
+            {selectedNodeIds.length === 1 ? "Delete Node" : "Delete Selected"}
+          </button>
+
+        {showCompareActions ? (
+          <>
+            <button
+              type="button"
+              className={styles.actionButton}
+              disabled={selectedImageAssetIds.length !== 2}
+              onClick={() => onOpenCompare("compare_2", 2)}
+            >
+              Compare 2
+            </button>
+            <button
+              type="button"
+              className={styles.actionButton}
+              disabled={selectedImageAssetIds.length !== 4}
+              onClick={() => onOpenCompare("compare_4", 4)}
+            >
+              Compare 4
+            </button>
+          </>
+        ) : null}
+      </div>
     </div>
   );
 }

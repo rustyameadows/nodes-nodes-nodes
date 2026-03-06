@@ -94,3 +94,8 @@
 - Decision: move single-node configuration and compare actions into one fixed full-width bottom bar, keep the bar mounted in an empty state, and move the queue pill to the top-right.
 - Rationale: the canvas should keep its chrome short and consistent, with settings, compare actions, and image viewing accessible from one predictable edge instead of splitting interaction between a selection bar and a draggable modal.
 - Consequence: the floating upload CTA is removed, upload remains available from the insert menu, core node controls stay inline in the bar, and verbose content now opens in upward trays/popovers from that bar.
+
+## 2026-03-06 - Tighten the Bottom Bar and Remove Manual Output Selection
+- Decision: hide the bottom bar completely when nothing is selected, remove the manual output picker from the bar, and make model availability explicit inside the model picker with `Coming soon` status.
+- Rationale: the idle shell adds chrome without helping canvas work, output type is provider-driven rather than a user-facing decision in this pass, and unavailable models need clearer visibility before users try to run them.
+- Consequence: single-selection bars no longer show node-type copy, multi-selection uses only a generic count chip, provider/model changes still resolve `outputType` internally, and the bar/popover chrome is tighter overall.
