@@ -9,10 +9,9 @@
   - `/projects/[projectId]/settings`
 - Canvas route keeps only minimal floating chrome:
   - top-left `Menu`
-  - bottom-right queue pill
-  - upload CTA above queue pill
-  - bottom selection bar when one or more nodes are selected
-  - draggable node settings modal when exactly one node is selected
+  - top-right queue pill
+  - full-width bottom settings bar inset from the viewport edges by the same 14px chrome spacing as the menu pill
+  - upload remains available from the insert menu rather than a dedicated floating button
 
 ## Project-Aware Behavior
 - Exactly one project open at any time.
@@ -25,7 +24,7 @@
   - open insert picker by double-clicking empty canvas
   - add model node
   - add text note
-  - upload assets from insert picker or upload CTA
+  - upload assets from the insert picker
   - add previous generated assets from project library
   - add previous uploaded assets from project library
   - drag/move node cards
@@ -36,7 +35,7 @@
   - delete the selected connection with `Delete` / `Backspace`
   - delete the active node selection with `Delete`/`Backspace`
   - duplicate exactly one selected node with `Cmd/Ctrl + D`
-  - run from node modal
+  - run from the bottom settings bar
 - Selection behavior:
   - click selects one node
   - `Shift`/`Cmd`/`Ctrl` click toggles node membership in the current selection
@@ -60,20 +59,26 @@
 - Port hit targets are intentionally larger than the visible nipple so connector drags are easy without visually bloating the node.
 
 ## Node Configuration UX
-- Node settings live in the draggable canvas modal and only appear for a single selected node.
-- Text notes are first-class canvas nodes with inline editing plus modal editing.
+- Node settings live in the fixed bottom settings bar.
+- The bottom bar is always mounted:
+  - empty selection => blank chrome shell with no placeholder copy
+  - single selection => compact node controls plus single-image view action when applicable
+  - multi-selection => compare-focused actions only
+- Text notes are first-class canvas nodes with inline editing plus bottom-bar tray editing.
 - Connected text notes act as prompt-source nodes for model execution.
-- Node modal includes:
+- Single-selection node controls include:
   - provider selector
   - model selector
   - output type
   - schema-driven model parameter controls
-    - core controls always visible
-    - advanced controls behind a toggle
-  - prompt
-  - run-state helper that explains why the node is or is not runnable
+    - core controls always visible inline in the bar
+    - advanced controls in an upward tray
+  - prompt / note-body editing in an upward tray
+  - connection and run-readiness detail in an upward tray
   - run controls
-  - API call preview for the normalized request payload
+  - API call preview for the normalized request payload in an upward tray
+  - generated-asset source-call inspection in an upward tray plus a Queue deep link
+- All select-like controls in the canvas bar use custom upward-opening popovers rather than native browser selects.
 - Input/output ports display supported media types.
 - Text notes expose output-only prompt-source connections into model nodes.
 - Image-backed nodes preserve original asset aspect ratio inside the canvas preview.
@@ -113,7 +118,7 @@
   - all placeholder models/providers remain selectable but show `Coming soon` and disable Run
 
 ## Job Feedback UX
-- Queue summary remains visible from canvas via the bottom-right queue pill.
+- Queue summary remains visible from canvas via the top-right queue pill.
 - Run action creates a project job entry with state and timestamps in the queue view.
 - Run also inserts one or more generated output placeholder nodes immediately to the right of the model node.
 - Job-state badge lives on that output node, not on the model node.
@@ -143,7 +148,7 @@
 ## Selection and Compare Rules
 - Selection is project-scoped.
 - Compare entry points:
-  - from canvas selection bar when selected nodes resolve to image assets
+  - from canvas bottom settings bar when selected nodes resolve to image assets
   - from asset grid selection
   - choose exactly 2 assets for 2-up
   - choose exactly 4 assets for 4-up
@@ -172,13 +177,13 @@
   - generated image nodes keep the citrus-to-output-color border treatment until generation completes
   - uploaded asset nodes use a pure image-blue frame
 - Text notes use a solid neon-pink frame so prompt inputs are distinct even before reading their connection lines.
-  - on-canvas text notes only show the note body/value; label and note metadata stay in the modal
+  - on-canvas text notes only show the note body/value; label and note metadata stay in the bottom-bar tray system
 - Model cards are slightly taller, bright white, and visually reflect data flow:
 - Model nodes render as compact semantic pills rather than large content cards:
   - the model name is the primary canvas label
   - a title only appears when the node has a user-customized label
   - untitled model pills vertically center the model name to stay visually compact
-  - provider, output type, and other configuration details live in the settings modal rather than on the canvas
+  - provider, output type, and other configuration details live in the bottom-bar controls rather than on the canvas
   - left-edge border coloration mirrors the connected input media types
   - right-edge border and output nipple are citrus as soon as the model has a connected output node and remain white before that
   - generated-output edges from the model stay citrus while running and after completion

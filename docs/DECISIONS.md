@@ -58,7 +58,7 @@
 ## 2026-03-05 - Replace TLDraw with Custom Canvas UI
 - Decision: remove TLDraw and use a custom React infinite canvas so layout and interaction design are fully controlled in-app.
 - Rationale: product direction requires tighter visual control and a full-viewport workspace with floating overlays.
-- Consequence: canvas behavior is now owned in local components (pan/zoom/node drag/drop/modal), with project-persisted viewport and node coordinates.
+- Consequence: canvas behavior is now owned in local components (pan/zoom/node drag/drop/settings chrome), with project-persisted viewport and node coordinates.
 
 ## 2026-03-05 - OpenAI Is the First Real Provider Path
 - Decision: make `openai / gpt-image-1.5` the only live provider execution path for now, and keep Gemini/Topaz plus other OpenAI models visible as `Coming soon`.
@@ -72,7 +72,7 @@
 
 ## 2026-03-05 - Model Parameters Are Schema-Driven and GPT Image 1.5 Uses the Fuller Images API Surface
 - Decision: move model controls to declarative provider metadata and expose GPT Image 1.5 aspect ratio, resolution, transparency, format, output count, and advanced controls from that schema.
-- Rationale: future model expansion should not require hard-coded modal rewrites, and GPT Image 1.5 needs more of its real Images API surface than a fixed square/medium default.
+- Rationale: future model expansion should not require hard-coded settings-surface rewrites, and GPT Image 1.5 needs more of its real Images API surface than a fixed square/medium default.
 - Consequence: provider capabilities now include parameter definitions, OpenAI defaults shift to `auto` where supported, generated outputs can fan out to multiple placeholders, and generated assets persist `outputIndex` so canvas reconciliation remains deterministic.
 
 ## 2026-03-05 - Asset Nodes Are Peer Pointers and OpenAI Previews Are Durable
@@ -82,5 +82,10 @@
 
 ## 2026-03-05 - Canvas Wiring and Node Chrome Encode Media Semantics
 - Decision: make canvas visuals communicate media type and generation state directly through connection colors, semantic border treatments, and generated-image placeholder shells instead of generic provider styling.
-- Rationale: the canvas is a composition tool first, so users need to read prompt/image/video flow and in-progress outputs at a glance without opening the modal.
+- Rationale: the canvas is a composition tool first, so users need to read prompt/image/video flow and in-progress outputs at a glance without opening secondary chrome.
 - Consequence: prompt/text lines are solid neon pink, image lines are neon blue, video lines are neon orange, model output nipples and model-to-generated-output edges use citrus, generated output nodes reserve their final frame shape immediately, and image nodes use flatter image-first chrome with minimal overlay copy.
+
+## 2026-03-06 - Replace the Draggable Node Modal with a Bottom Settings Bar
+- Decision: move single-node configuration and compare actions into one fixed full-width bottom bar, keep the bar mounted in an empty state, and move the queue pill to the top-right.
+- Rationale: the canvas should keep its chrome short and consistent, with settings, compare actions, and image viewing accessible from one predictable edge instead of splitting interaction between a selection bar and a draggable modal.
+- Consequence: the floating upload CTA is removed, upload remains available from the insert menu, core node controls stay inline in the bar, and verbose content now opens in upward trays/popovers from that bar.

@@ -1,0 +1,403 @@
+.barRoot {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 14px;
+  z-index: 39;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 58px;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.82);
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(14px);
+  box-shadow:
+    0 18px 48px rgba(0, 0, 0, 0.34),
+    0 0 0 1px rgba(255, 255, 255, 0.7) inset;
+}
+
+.barEmpty {
+  justify-content: space-between;
+}
+
+.emptySpacer {
+  flex: 1;
+  min-width: 0;
+  min-height: 40px;
+}
+
+.mainLane {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  touch-action: pan-x;
+  scrollbar-width: none;
+}
+
+.mainLane::-webkit-scrollbar {
+  display: none;
+}
+
+.mainLaneScroll {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 100%;
+  width: max-content;
+  min-height: 40px;
+}
+
+.actionLane {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 12px;
+  border-left: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.chip,
+.trayButton,
+.selectButton,
+.textField,
+.numberField,
+.actionButton {
+  height: 40px;
+  border: 1px solid rgba(0, 0, 0, 0.18);
+  background: rgba(255, 255, 255, 0.82);
+  color: #101010;
+  border-radius: 0;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.52) inset;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 12px;
+  white-space: nowrap;
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(0, 0, 0, 0.72);
+}
+
+.textField,
+.numberField {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  min-width: 156px;
+}
+
+.numberField {
+  min-width: 118px;
+}
+
+.fieldLabel {
+  flex: none;
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(0, 0, 0, 0.46);
+  white-space: nowrap;
+}
+
+.textInput,
+.numberInput {
+  width: 100%;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: #111;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 0;
+}
+
+.textInput:focus,
+.textInput:focus-visible,
+.numberInput:focus,
+.numberInput:focus-visible {
+  outline: none;
+}
+
+.numberInput {
+  text-align: right;
+}
+
+.selectButton,
+.trayButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  font: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.selectButton:disabled,
+.trayButton:disabled,
+.actionButton:disabled,
+.selectOption:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.selectButtonOpen,
+.trayButtonOpen {
+  border-color: rgba(0, 0, 0, 0.4);
+  background: rgba(255, 255, 255, 0.96);
+}
+
+.controlText {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+.controlLabel {
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(0, 0, 0, 0.46);
+}
+
+.controlValue {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.84);
+}
+
+.caret {
+  font-size: 0.8rem;
+  color: rgba(0, 0, 0, 0.5);
+}
+
+.actionButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.actionButtonPrimary {
+  background: #101010;
+  color: rgba(255, 255, 255, 0.96);
+  border-color: #101010;
+  box-shadow: none;
+}
+
+.actionButtonDanger {
+  color: #631c1c;
+}
+
+.popover {
+  position: fixed;
+  z-index: 44;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.86);
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(18px);
+  box-shadow:
+    0 24px 56px rgba(0, 0, 0, 0.36),
+    0 0 0 1px rgba(255, 255, 255, 0.72) inset;
+}
+
+.popoverHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.popoverHeader strong {
+  font-size: 0.82rem;
+  color: #101010;
+}
+
+.popoverHeader span {
+  font-size: 0.68rem;
+  color: rgba(0, 0, 0, 0.5);
+}
+
+.popoverBody {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.selectList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+}
+
+.selectOption {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-start;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid rgba(0, 0, 0, 0.14);
+  background: rgba(255, 255, 255, 0.78);
+  color: #111;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.selectOptionActive {
+  border-color: rgba(0, 0, 0, 0.48);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.66) inset;
+}
+
+.selectOptionLabel {
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.selectOptionDescription {
+  font-size: 0.68rem;
+  color: rgba(0, 0, 0, 0.52);
+}
+
+.traySection {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.traySectionLabel {
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(0, 0, 0, 0.5);
+}
+
+.trayTextarea,
+.trayInput,
+.trayNumberInput,
+.traySummary,
+.trayCode {
+  border: 1px solid rgba(0, 0, 0, 0.18);
+  background: rgba(255, 255, 255, 0.84);
+  color: #111;
+  border-radius: 0;
+  font: inherit;
+}
+
+.trayTextarea,
+.trayInput,
+.trayNumberInput {
+  width: 100%;
+  padding: 8px 10px;
+}
+
+.trayTextarea {
+  min-height: 120px;
+  resize: vertical;
+}
+
+.trayInput,
+.trayNumberInput {
+  font-size: 0.8rem;
+}
+
+.trayInput:focus,
+.trayInput:focus-visible,
+.trayNumberInput:focus,
+.trayNumberInput:focus-visible,
+.trayTextarea:focus,
+.trayTextarea:focus-visible {
+  outline: none;
+  border-color: rgba(0, 0, 0, 0.32);
+}
+
+.traySummary {
+  padding: 8px 10px;
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+.traySummaryReady {
+  border-color: rgba(98, 195, 123, 0.45);
+  background: rgba(236, 255, 237, 0.92);
+  color: rgba(18, 67, 27, 0.92);
+}
+
+.traySummaryWarning {
+  border-color: rgba(255, 188, 16, 0.5);
+  background: rgba(255, 248, 221, 0.92);
+  color: rgba(102, 55, 0, 0.94);
+}
+
+.trayCode {
+  margin: 0;
+  max-height: 320px;
+  overflow: auto;
+  padding: 10px;
+  font-size: 0.68rem;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family:
+    ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    monospace;
+}
+
+.trayActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.trayGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+@media (max-width: 900px) {
+  .barRoot {
+    gap: 10px;
+  }
+
+  .actionLane {
+    padding-left: 10px;
+  }
+
+  .popover {
+    width: min(420px, calc(100vw - 28px)) !important;
+    left: 14px !important;
+  }
+}

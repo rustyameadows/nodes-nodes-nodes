@@ -3,6 +3,7 @@
   width: 100vw;
   height: 100vh;
   overflow: hidden;
+  overscroll-behavior-x: none;
   --workspace-shell-corner-radius: 14px;
   background: #060606;
   color: #111;
@@ -112,8 +113,6 @@
 
 .queuePill {
   position: absolute;
-  right: 14px;
-  bottom: 14px;
   z-index: 40;
   border-radius: var(--workspace-shell-corner-radius);
   padding: 10px 12px;
@@ -125,6 +124,16 @@
   min-width: 136px;
   text-align: left;
   cursor: pointer;
+}
+
+.queuePillBottomRight {
+  right: 14px;
+  bottom: 14px;
+}
+
+.queuePillTopRight {
+  top: 14px;
+  right: 14px;
 }
 
 .queuePill span {

@@ -7,10 +7,9 @@ import {
   useRef,
   useState,
   type ChangeEvent,
-  type ChangeEvent as ReactChangeEvent,
-  type PointerEvent as ReactPointerEvent,
 } from "react";
 import { useRouter } from "next/navigation";
+import { CanvasBottomBar } from "@/components/workspace/views/canvas-bottom-bar";
 import { InfiniteCanvas, type CanvasConnection, type CanvasInsertRequest } from "@/components/infinite-canvas";
 import { WorkspaceShell } from "@/components/workspace/workspace-shell";
 import { isModelParameterVisible } from "@/lib/model-parameters";
@@ -32,7 +31,6 @@ import {
   createJobFromRequest,
   getCanvasWorkspace,
   getAssetPointers,
-  getJobDebug,
   getJobs,
   getProviders,
   normalizeNode,
@@ -46,16 +44,10 @@ import {
   type Asset,
   type CanvasDocument,
   type Job,
-  type JobDebugResponse,
   type ProviderModel,
   type WorkflowNode,
 } from "@/components/workspace/types";
 import styles from "./canvas-view.module.css";
-
-const defaultNodeModalPosition = {
-  x: 24,
-  y: 92,
-};
 
 const supportedOutputOrder = ["image", "video", "text"] as const;
 const generatedNodeBaseOffsetX = 328;
@@ -381,13 +373,6 @@ export function CanvasView({ projectId }: Props) {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [modalPosition, setModalPosition] = useState(defaultNodeModalPosition);
-  const [isUploading, setIsUploading] = useState(false);
-  const [isApiPreviewOpen, setIsApiPreviewOpen] = useState(false);
-  const [isSourceCallOpen, setIsSourceCallOpen] = useState(false);
-  const [sourceCallDebug, setSourceCallDebug] = useState<JobDebugResponse | null>(null);
-  const [sourceCallLoading, setSourceCallLoading] = useState(false);
-  const [sourceCallError, setSourceCallError] = useState<string | null>(null);
   const [insertMenu, setInsertMenu] = useState<CanvasInsertMenuState | null>(null);
   const [assetPicker, setAssetPicker] = useState<AssetPickerState | null>(null);
   const [assetPickerQuery, setAssetPickerQuery] = useState("");
@@ -396,28 +381,12 @@ export function CanvasView({ projectId }: Props) {
   const [assetPickerLoading, setAssetPickerLoading] = useState(false);
   const [assetPickerError, setAssetPickerError] = useState<string | null>(null);
   const [selectedConnection, setSelectedConnection] = useState<CanvasConnection | null>(null);
-  const [showAdvancedParameters, setShowAdvancedParameters] = useState(false);
 
   const saveTimer = useRef<NodeJS.Timeout | null>(null);
-  const nodeModalRef = useRef<HTMLElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const insertMenuRef = useRef<HTMLDivElement | null>(null);
   const assetPickerRef = useRef<HTMLDivElement | null>(null);
   const pendingUploadAnchorRef = useRef<{ x: number; y: number; connectToModelNodeId?: string } | null>(null);
-
-  const modalDragStateRef = useRef<{
-    active: boolean;
-    startMouseX: number;
-    startMouseY: number;
-    startX: number;
-    startY: number;
-  }>({
-    active: false,
-    startMouseX: 0,
-    startMouseY: 0,
-    startX: 0,
-    startY: 0,
-  });
 
   const groupedProviders = useMemo(() => {
     return providers.reduce<Record<string, ProviderModel[]>>((acc, model) => {
@@ -473,7 +442,7 @@ export function CanvasView({ projectId }: Props) {
       return [selectedNode.outputType];
     }
     if (selectedNode && selectedNodeIsTextNote) {
-      return ["text"];
+      return ["text"] as WorkflowNode["outputType"][];
     }
     return getModelSupportedOutputs(selectedModel);
   }, [selectedModel, selectedNode, selectedNodeIsAssetSource, selectedNodeIsTextNote]);
@@ -942,47 +911,6 @@ export function CanvasView({ projectId }: Props) {
   }, [fetchJobs, jobs]);
 
   useEffect(() => {
-    setIsApiPreviewOpen(false);
-    setIsSourceCallOpen(false);
-    setSourceCallDebug(null);
-    setSourceCallError(null);
-    setShowAdvancedParameters(false);
-  }, [primarySelectedNodeId]);
-
-  useEffect(() => {
-    if (!isSourceCallOpen || !selectedNodeSourceJobId) {
-      return;
-    }
-
-    let canceled = false;
-    setSourceCallLoading(true);
-    getJobDebug(projectId, selectedNodeSourceJobId)
-      .then((response) => {
-        if (canceled) {
-          return;
-        }
-        setSourceCallDebug(response);
-        setSourceCallError(null);
-      })
-      .catch((error) => {
-        if (canceled) {
-          return;
-        }
-        setSourceCallDebug(null);
-        setSourceCallError(error instanceof Error ? error.message : "Failed to load source call.");
-      })
-      .finally(() => {
-        if (!canceled) {
-          setSourceCallLoading(false);
-        }
-      });
-
-    return () => {
-      canceled = true;
-    };
-  }, [isSourceCallOpen, projectId, selectedNodeSourceJobId]);
-
-  useEffect(() => {
     if (!selectedConnection) {
       return;
     }
@@ -1211,43 +1139,6 @@ export function CanvasView({ projectId }: Props) {
   }, [assetPicker, assetPickerQuery, projectId]);
 
   useEffect(() => {
-    const onPointerMove = (event: PointerEvent) => {
-      if (!modalDragStateRef.current.active) {
-        return;
-      }
-
-      const modalRect = nodeModalRef.current?.getBoundingClientRect();
-      const modalWidth = modalRect?.width || 420;
-      const modalHeight = modalRect?.height || 520;
-      const maxX = Math.max(10, window.innerWidth - modalWidth - 10);
-      const maxY = Math.max(10, window.innerHeight - modalHeight - 10);
-
-      setModalPosition({
-        x: Math.min(
-          maxX,
-          Math.max(10, modalDragStateRef.current.startX + (event.clientX - modalDragStateRef.current.startMouseX))
-        ),
-        y: Math.min(
-          maxY,
-          Math.max(10, modalDragStateRef.current.startY + (event.clientY - modalDragStateRef.current.startMouseY))
-        ),
-      });
-    };
-
-    const onPointerUp = () => {
-      modalDragStateRef.current.active = false;
-    };
-
-    window.addEventListener("pointermove", onPointerMove);
-    window.addEventListener("pointerup", onPointerUp);
-
-    return () => {
-      window.removeEventListener("pointermove", onPointerMove);
-      window.removeEventListener("pointerup", onPointerUp);
-    };
-  }, []);
-
-  useEffect(() => {
     return () => {
       if (saveTimer.current) {
         clearTimeout(saveTimer.current);
@@ -1405,13 +1296,130 @@ export function CanvasView({ projectId }: Props) {
     [selectedModel, selectedNode, selectedNodeExecutionMode, selectedNodeIsModel, updateNode]
   );
 
+  const providerOptions = useMemo(
+    () =>
+      Object.entries(groupedProviders).map(([providerId, providerModels]) => ({
+        value: providerId,
+        label: providerId,
+        description: `${providerModels.length} model${providerModels.length === 1 ? "" : "s"}`,
+      })),
+    [groupedProviders]
+  );
+
+  const modelOptions = useMemo(
+    () =>
+      selectedNode ? (groupedProviders[selectedNode.providerId] || []).map((model) => ({
+        value: model.modelId,
+        label: model.displayName,
+        description: model.modelId,
+      })) : [],
+    [groupedProviders, selectedNode]
+  );
+
+  const outputOptions = useMemo(
+    () =>
+      selectedNodeSupportedOutputs.map((outputType) => ({
+        value: outputType,
+        label: outputType,
+      })),
+    [selectedNodeSupportedOutputs]
+  );
+
+  const handleSelectedNodeLabelChange = useCallback(
+    (label: string) => {
+      if (!selectedNode) {
+        return;
+      }
+      updateNode(selectedNode.id, { label });
+    },
+    [selectedNode, updateNode]
+  );
+
+  const handleSelectedNodePromptChange = useCallback(
+    (prompt: string) => {
+      if (!selectedNode) {
+        return;
+      }
+      updateNode(selectedNode.id, { prompt });
+    },
+    [selectedNode, updateNode]
+  );
+
+  const handleSelectedNodeProviderChange = useCallback(
+    (providerId: WorkflowNode["providerId"]) => {
+      if (!selectedNode || !selectedNodeIsModel) {
+        return;
+      }
+
+      const model = (groupedProviders[providerId] || [])[0];
+      const supportedOutputs = getModelSupportedOutputs(model);
+      const outputType = resolveOutputType(selectedNode.outputType, supportedOutputs);
+
+      updateNode(selectedNode.id, {
+        providerId,
+        modelId: model?.modelId || "",
+        outputType,
+        nodeType: nodeTypeFromOutput(outputType),
+        settings: resolveModelSettings(model, selectedNode.settings, selectedNodeExecutionMode),
+      });
+    },
+    [groupedProviders, selectedNode, selectedNodeExecutionMode, selectedNodeIsModel, updateNode]
+  );
+
+  const handleSelectedNodeModelChange = useCallback(
+    (modelId: string) => {
+      if (!selectedNode || !selectedNodeIsModel) {
+        return;
+      }
+
+      const model = (groupedProviders[selectedNode.providerId] || []).find(
+        (providerModel) => providerModel.modelId === modelId
+      );
+      const supportedOutputs = getModelSupportedOutputs(model);
+      const outputType = resolveOutputType(selectedNode.outputType, supportedOutputs);
+
+      updateNode(selectedNode.id, {
+        modelId,
+        outputType,
+        nodeType: nodeTypeFromOutput(outputType),
+        settings: resolveModelSettings(model, selectedNode.settings, selectedNodeExecutionMode),
+      });
+    },
+    [groupedProviders, selectedNode, selectedNodeExecutionMode, selectedNodeIsModel, updateNode]
+  );
+
+  const handleSelectedNodeOutputTypeChange = useCallback(
+    (outputType: WorkflowNode["outputType"]) => {
+      if (!selectedNode || !selectedNodeIsModel) {
+        return;
+      }
+
+      updateNode(selectedNode.id, {
+        outputType,
+        nodeType: nodeTypeFromOutput(outputType),
+      });
+    },
+    [selectedNode, selectedNodeIsModel, updateNode]
+  );
+
+  const handleClearSelectedModelInputs = useCallback(() => {
+    if (!selectedNode || !selectedNodeIsModel) {
+      return;
+    }
+
+    updateNode(selectedNode.id, {
+      upstreamNodeIds: [],
+      upstreamAssetIds: [],
+      promptSourceNodeId: null,
+    });
+  }, [selectedNode, selectedNodeIsModel, updateNode]);
+
   const uploadFilesToCanvas = useCallback(
     async (files: File[], position?: { x: number; y: number }, options?: { connectToModelNodeId?: string }) => {
       if (files.length === 0) {
         return;
       }
 
-      setIsUploading(true);
       try {
         const uploaded = await Promise.all(
           files.map(async (file) => ({
@@ -1483,7 +1491,6 @@ export function CanvasView({ projectId }: Props) {
       } catch (error) {
         console.error(error);
       } finally {
-        setIsUploading(false);
         pendingUploadAnchorRef.current = null;
       }
     },
@@ -1809,6 +1816,13 @@ export function CanvasView({ projectId }: Props) {
     [queueCanvasSave]
   );
 
+  const handleDeleteSelected = useCallback(() => {
+    if (selectedNodeIds.length === 0) {
+      return;
+    }
+    removeNodes(selectedNodeIds);
+  }, [removeNodes, selectedNodeIds]);
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "d") {
@@ -1959,21 +1973,8 @@ export function CanvasView({ projectId }: Props) {
     [buildNodeRunRequest, fetchJobs, insertGeneratedOutputPlaceholder, projectId]
   );
 
-  const startDraggingModal = useCallback(
-    (event: ReactPointerEvent<HTMLDivElement>) => {
-      modalDragStateRef.current = {
-        active: true,
-        startMouseX: event.clientX,
-        startMouseY: event.clientY,
-        startX: modalPosition.x,
-        startY: modalPosition.y,
-      };
-    },
-    [modalPosition.x, modalPosition.y]
-  );
-
   const onFilePickerChange = useCallback(
-    (event: ReactChangeEvent<HTMLInputElement>) => {
+    (event: ChangeEvent<HTMLInputElement>) => {
       const files = Array.from(event.target.files || []);
       event.target.value = "";
       uploadFilesToCanvas(
@@ -1998,10 +1999,11 @@ export function CanvasView({ projectId }: Props) {
 
   const openCompare = useCallback(
     (mode: "compare_2" | "compare_4", count: number) => {
-      const assetIds = selectedImageAssetIds.slice(0, count);
-      if (assetIds.length < count) {
+      if (selectedImageAssetIds.length !== count) {
         return;
       }
+
+      const assetIds = selectedImageAssetIds.slice(0, count);
       const params = new URLSearchParams({
         layout: mode,
         assetIds: assetIds.join(","),
@@ -2025,10 +2027,22 @@ export function CanvasView({ projectId }: Props) {
       request: selectedNodeRunPreview.requestPayload,
     };
   }, [selectedNodeRunPreview]);
-  const sourceCallLatestAttempt = sourceCallDebug?.attempts[0] || null;
+
+  const openQueueInspect = useCallback(
+    (jobId: string) => {
+      router.push(`/projects/${projectId}/queue?inspectJobId=${jobId}`);
+    },
+    [projectId, router]
+  );
 
   return (
-    <WorkspaceShell projectId={projectId} view="canvas" jobs={jobs} showQueuePill>
+    <WorkspaceShell
+      projectId={projectId}
+      view="canvas"
+      jobs={jobs}
+      showQueuePill
+      queuePillPlacement="top-right"
+    >
       <div className={styles.page}>
         {isLoading ? (
           <div className={styles.loading}>Loading canvas...</div>
@@ -2153,7 +2167,7 @@ export function CanvasView({ projectId }: Props) {
                 </div>
               </div>
 
-              {assetPickerError ? <div className={styles.connectionSummaryWarning}>{assetPickerError}</div> : null}
+              {assetPickerError ? <div className={styles.assetPickerError}>{assetPickerError}</div> : null}
 
               <div className={styles.assetPickerList}>
                 {assetPickerAssets.map((asset, index) => {
@@ -2216,40 +2230,6 @@ export function CanvasView({ projectId }: Props) {
           </div>
         ) : null}
 
-        {selectedNodeIds.length > 0 ? (
-          <div className={styles.selectionBar}>
-            <span className={styles.selectionCount}>
-              {`${selectedNodeIds.length} node${selectedNodeIds.length === 1 ? "" : "s"} selected`}
-            </span>
-
-            {selectedSingleImageAssetId ? (
-              <button type="button" onClick={() => openAssetViewer(selectedSingleImageAssetId)}>
-                View Image
-              </button>
-            ) : null}
-
-            <button
-              type="button"
-              onClick={() => openCompare("compare_2", 2)}
-              disabled={selectedImageAssetIds.length < 2}
-            >
-              Compare 2
-            </button>
-
-            <button
-              type="button"
-              onClick={() => openCompare("compare_4", 4)}
-              disabled={selectedImageAssetIds.length < 4}
-            >
-              Compare 4
-            </button>
-
-            <button type="button" onClick={() => removeNodes(selectedNodeIds)}>
-              Delete Selected
-            </button>
-          </div>
-        ) : null}
-
         <input
           ref={fileInputRef}
           className={styles.fileInput}
@@ -2258,466 +2238,48 @@ export function CanvasView({ projectId }: Props) {
           onChange={onFilePickerChange}
         />
 
-        <button
-          type="button"
-          className={styles.uploadCta}
-          disabled={isUploading}
-          onClick={() => {
-            pendingUploadAnchorRef.current = null;
-            fileInputRef.current?.click();
+        <CanvasBottomBar
+          projectId={projectId}
+          selectedNodeIds={selectedNodeIds}
+          selectedNode={selectedNode}
+          selectedNodeIsModel={selectedNodeIsModel}
+          selectedNodeIsTextNote={selectedNodeIsTextNote}
+          selectedNodeIsAssetSource={selectedNodeIsAssetSource}
+          selectedNodeIsGeneratedAsset={selectedNodeIsGeneratedAsset}
+          selectedModel={selectedModel}
+          selectedGeneratedSourceJob={selectedGeneratedSourceJob}
+          selectedNodeSourceJobId={selectedNodeSourceJobId}
+          selectedNodeSupportedOutputs={selectedNodeSupportedOutputs}
+          selectedNodeResolvedSettings={selectedNodeResolvedSettings}
+          selectedCoreParameters={selectedCoreParameters}
+          selectedAdvancedParameters={selectedAdvancedParameters}
+          selectedTextNoteTargets={selectedTextNoteTargets}
+          selectedInputNodes={selectedInputNodes}
+          selectedPromptSourceNode={selectedPromptSourceNode}
+          selectedNodeRunPreview={selectedNodeRunPreview}
+          selectedImageAssetIds={selectedImageAssetIds}
+          selectedSingleImageAssetId={selectedSingleImageAssetId}
+          providerOptions={providerOptions}
+          modelOptions={modelOptions}
+          outputOptions={outputOptions}
+          apiCallPreviewPayload={apiCallPreviewPayload}
+          onLabelChange={handleSelectedNodeLabelChange}
+          onPromptChange={handleSelectedNodePromptChange}
+          onProviderChange={handleSelectedNodeProviderChange}
+          onModelChange={handleSelectedNodeModelChange}
+          onOutputTypeChange={handleSelectedNodeOutputTypeChange}
+          onParameterChange={updateSelectedModelParameter}
+          onRun={() => {
+            if (selectedNode) {
+              runNode(selectedNode).catch(console.error);
+            }
           }}
-        >
-          {isUploading ? "Uploading..." : "Upload Assets"}
-        </button>
-
-        {selectedNode && selectedNodeIds.length === 1 ? (
-          <section
-            ref={(node) => {
-              nodeModalRef.current = node;
-            }}
-            className={styles.nodeModal}
-            style={{ left: modalPosition.x, top: modalPosition.y }}
-          >
-            <header className={styles.nodeModalHeader} onPointerDown={startDraggingModal}>
-              <strong>Node Settings</strong>
-              <span>Drag me</span>
-            </header>
-
-            <div className={styles.nodeModalBody}>
-              <input
-                className={styles.nodeInput}
-                value={selectedNode.label}
-                onChange={(event) => updateNode(selectedNode.id, { label: event.target.value })}
-              />
-
-              {selectedNodeIsAssetSource ? (
-                <>
-                  <label>
-                    {selectedNodeIsGeneratedAsset ? "Generated Output Node" : "Uploaded Source Asset"}
-                    <div className={styles.connectionSummary}>
-                      {selectedNode.sourceAssetId || "Waiting for generated image output."}
-                    </div>
-                  </label>
-
-                  {selectedNodeIsGeneratedAsset ? (
-                    <label>
-                      Generation Origin
-                      <div className={styles.connectionSummary}>
-                        <strong>{selectedNode.providerId}</strong>
-                        {` / ${selectedNode.modelId} · `}
-                        {selectedGeneratedSourceJob?.state ||
-                          selectedNode.processingState ||
-                          (selectedNode.sourceAssetId ? "succeeded" : "pending")}
-                        {typeof getNodeSourceOutputIndex(selectedNode) === "number"
-                          ? ` · variant ${getNodeSourceOutputIndex(selectedNode)! + 1}`
-                          : ""}
-                        {selectedNodeSourceJobId ? ` · ${selectedNodeSourceJobId}` : ""}
-                      </div>
-                    </label>
-                  ) : null}
-                </>
-              ) : selectedNodeIsTextNote ? (
-                <>
-                  <label>
-                    Note Text
-                    <textarea
-                      className={styles.nodePrompt}
-                      value={selectedNode.prompt}
-                      spellCheck={false}
-                      autoCorrect="off"
-                      autoCapitalize="off"
-                      onChange={(event) => updateNode(selectedNode.id, { prompt: event.target.value })}
-                      placeholder="Write prompt notes here"
-                    />
-                  </label>
-
-                  <label>
-                    Connected Targets
-                    <div className={styles.connectionSummary}>
-                      {selectedTextNoteTargets.length > 0
-                        ? selectedTextNoteTargets.map((node) => node.label).join(", ")
-                        : "No model nodes are using this note yet."}
-                    </div>
-                  </label>
-                </>
-              ) : (
-                <div className={styles.nodeGrid}>
-                  <label>
-                    Provider
-                    <select
-                      value={selectedNode.providerId}
-                      onChange={(event) => {
-                        const providerId = event.target.value as WorkflowNode["providerId"];
-                        const model = (groupedProviders[providerId] || [])[0];
-                        const supportedOutputs = getModelSupportedOutputs(model);
-                        const outputType = resolveOutputType(selectedNode.outputType, supportedOutputs);
-
-                        updateNode(selectedNode.id, {
-                          providerId,
-                          modelId: model?.modelId || "",
-                          outputType,
-                          nodeType: nodeTypeFromOutput(outputType),
-                          settings: resolveModelSettings(model, selectedNode.settings, selectedNodeExecutionMode),
-                        });
-                      }}
-                    >
-                      {Object.keys(groupedProviders).map((providerId) => (
-                        <option key={providerId} value={providerId}>
-                          {providerId}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <label>
-                    Model
-                    <select
-                      value={selectedNode.modelId}
-                      onChange={(event) => {
-                        const modelId = event.target.value;
-                        const model = (groupedProviders[selectedNode.providerId] || []).find(
-                          (providerModel) => providerModel.modelId === modelId
-                        );
-                        const supportedOutputs = getModelSupportedOutputs(model);
-                        const outputType = resolveOutputType(selectedNode.outputType, supportedOutputs);
-
-                        updateNode(selectedNode.id, {
-                          modelId,
-                          outputType,
-                          nodeType: nodeTypeFromOutput(outputType),
-                          settings: resolveModelSettings(model, selectedNode.settings, selectedNodeExecutionMode),
-                        });
-                      }}
-                    >
-                      {(groupedProviders[selectedNode.providerId] || []).map((model) => (
-                        <option key={model.modelId} value={model.modelId}>
-                          {model.displayName}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <label>
-                    Node Type
-                    <select
-                      value={selectedNode.nodeType}
-                      onChange={(event) =>
-                        updateNode(selectedNode.id, {
-                          nodeType: event.target.value as WorkflowNode["nodeType"],
-                        })
-                      }
-                    >
-                      <option value="text-gen">text-gen</option>
-                      <option value="image-gen">image-gen</option>
-                      <option value="video-gen">video-gen</option>
-                      <option value="transform">transform</option>
-                    </select>
-                  </label>
-
-                  <label>
-                    Output
-                    <select
-                      value={selectedNode.outputType}
-                      disabled={selectedNodeSupportedOutputs.length <= 1}
-                      onChange={(event) => {
-                        const outputType = event.target.value as WorkflowNode["outputType"];
-                        updateNode(selectedNode.id, {
-                          outputType,
-                          nodeType: nodeTypeFromOutput(outputType),
-                        });
-                      }}
-                    >
-                      {selectedNodeSupportedOutputs.map((outputType) => (
-                        <option key={outputType} value={outputType}>
-                          {outputType}
-                        </option>
-                      ))}
-                    </select>
-                    <small className={styles.helperText}>
-                      {selectedNodeSupportedOutputs.length <= 1
-                        ? "Output locked by selected model."
-                        : "Output options based on selected model."}
-                    </small>
-                  </label>
-
-                  {selectedModel?.providerId === "openai" && selectedModel.modelId === "gpt-image-1.5" ? (
-                    <label>
-                      Execution
-                      <div className={styles.connectionSummary}>
-                        {selectedNodeRunPreview?.requestPayload.nodePayload.executionMode === "edit"
-                          ? `Reference-image generation from ${selectedNodeRunPreview.requestPayload.nodePayload.inputImageAssetIds.length} image input${
-                              selectedNodeRunPreview.requestPayload.nodePayload.inputImageAssetIds.length === 1 ? "" : "s"
-                            } to ${selectedNodeRunPreview.requestPayload.nodePayload.outputCount} output${
-                              selectedNodeRunPreview.requestPayload.nodePayload.outputCount === 1 ? "" : "s"
-                            }.`
-                          : `Prompt-only generation to ${selectedNodeRunPreview?.requestPayload.nodePayload.outputCount || 1} output${
-                              (selectedNodeRunPreview?.requestPayload.nodePayload.outputCount || 1) === 1 ? "" : "s"
-                            }.`}
-                      </div>
-                      <small className={styles.helperText}>
-                        Inferred automatically from whether supported image inputs are connected.
-                      </small>
-                    </label>
-                  ) : null}
-                </div>
-              )}
-
-              {selectedNodeIsModel && selectedCoreParameters.length > 0 ? (
-                <section className={styles.parameterSection}>
-                  <div className={styles.parameterSectionHeader}>
-                    <strong>Core Controls</strong>
-                    <span>{selectedModel?.displayName || "Model"}</span>
-                  </div>
-                  <div className={styles.nodeGrid}>
-                    {selectedCoreParameters.map((parameter) => {
-                      const currentValue = selectedNodeResolvedSettings[parameter.key];
-                      return (
-                        <label key={parameter.key}>
-                          {parameter.label}
-                          {parameter.control === "select" ? (
-                            <select
-                              value={String(currentValue ?? parameter.defaultValue ?? "")}
-                              onChange={(event) => updateSelectedModelParameter(parameter.key, event.target.value)}
-                            >
-                              {(parameter.options || []).map((option) => (
-                                <option key={String(option.value)} value={String(option.value)}>
-                                  {option.label}
-                                </option>
-                              ))}
-                            </select>
-                          ) : (
-                            <input
-                              className={styles.nodeInput}
-                              type="number"
-                              inputMode="numeric"
-                              min={parameter.min}
-                              max={parameter.max}
-                              step={parameter.step}
-                              value={currentValue === null || currentValue === undefined ? "" : String(currentValue)}
-                              placeholder={parameter.placeholder}
-                              onChange={(event: ChangeEvent<HTMLInputElement>) =>
-                                updateSelectedModelParameter(
-                                  parameter.key,
-                                  event.target.value === "" ? null : Number(event.target.value)
-                                )
-                              }
-                            />
-                          )}
-                          {parameter.helpText ? <small className={styles.helperText}>{parameter.helpText}</small> : null}
-                        </label>
-                      );
-                    })}
-                  </div>
-                </section>
-              ) : null}
-
-              {selectedNodeIsModel && selectedAdvancedParameters.length > 0 ? (
-                <section className={styles.parameterSection}>
-                  <button
-                    type="button"
-                    className={styles.parameterToggle}
-                    onClick={() => setShowAdvancedParameters((value) => !value)}
-                  >
-                    {showAdvancedParameters ? "Hide Advanced Controls" : "Show Advanced Controls"}
-                  </button>
-                  {showAdvancedParameters ? (
-                    <div className={styles.nodeGrid}>
-                      {selectedAdvancedParameters.map((parameter) => {
-                        const currentValue = selectedNodeResolvedSettings[parameter.key];
-                        return (
-                          <label key={parameter.key}>
-                            {parameter.label}
-                            {parameter.control === "select" ? (
-                              <select
-                                value={String(currentValue ?? parameter.defaultValue ?? "")}
-                                onChange={(event) => updateSelectedModelParameter(parameter.key, event.target.value)}
-                              >
-                                {(parameter.options || []).map((option) => (
-                                  <option key={String(option.value)} value={String(option.value)}>
-                                    {option.label}
-                                  </option>
-                                ))}
-                              </select>
-                            ) : (
-                              <input
-                                className={styles.nodeInput}
-                                type="number"
-                                inputMode="numeric"
-                                min={parameter.min}
-                                max={parameter.max}
-                                step={parameter.step}
-                                value={currentValue === null || currentValue === undefined ? "" : String(currentValue)}
-                                placeholder={parameter.placeholder}
-                                onChange={(event: ChangeEvent<HTMLInputElement>) =>
-                                  updateSelectedModelParameter(
-                                    parameter.key,
-                                    event.target.value === "" ? null : Number(event.target.value)
-                                  )
-                                }
-                              />
-                            )}
-                            {parameter.helpText ? <small className={styles.helperText}>{parameter.helpText}</small> : null}
-                          </label>
-                        );
-                      })}
-                    </div>
-                  ) : null}
-                </section>
-              ) : null}
-
-              {selectedNodeIsModel ? (
-                <label>
-                  Prompt
-                  <textarea
-                    className={styles.nodePrompt}
-                    value={selectedNode.prompt}
-                    onChange={(event) => updateNode(selectedNode.id, { prompt: event.target.value })}
-                    placeholder="Describe what this node should generate"
-                  />
-                  <small className={styles.helperText}>
-                    {selectedPromptSourceNode
-                      ? "A connected text note overrides this field at run time. This stays as fallback."
-                      : "Used when no prompt note is connected."}
-                  </small>
-                </label>
-              ) : null}
-
-              <label>
-                {selectedNodeIsTextNote ? "Connection State" : "Connected Inputs"}
-                <div className={styles.connectionSummary}>
-                  {selectedNodeIsTextNote
-                    ? "Text notes connect to model nodes as external prompt sources."
-                    : selectedInputNodes.length > 0
-                    ? selectedInputNodes.map((node) => node.label).join(", ")
-                    : "No incoming node connections."}
-                </div>
-              </label>
-
-              {selectedNodeIsModel && selectedPromptSourceNode ? (
-                <label>
-                  Prompt Source
-                  <div className={styles.connectionSummary}>
-                    <strong>{selectedPromptSourceNode.label}</strong>
-                    {selectedPromptSourceNode.prompt.trim()
-                      ? `: ${selectedPromptSourceNode.prompt.trim()}`
-                      : ": Empty note"}
-                  </div>
-                </label>
-              ) : null}
-
-              {selectedNodeIsModel && selectedNodeRunPreview ? (
-                <label>
-                  Run Readiness
-                  <div
-                    className={`${styles.connectionSummary} ${
-                      selectedNodeRunPreview.disabledReason ? styles.connectionSummaryWarning : styles.connectionSummaryReady
-                    }`}
-                  >
-                    {selectedNodeRunPreview.disabledReason
-                      ? selectedNodeRunPreview.disabledReason
-                      : `${selectedNodeRunPreview.readyMessage} via ${selectedNodeRunPreview.endpoint}.`}
-                  </div>
-                </label>
-              ) : null}
-
-              {selectedNodeIsModel ? (
-                <div className={styles.debuggerBlock}>
-                  <button
-                    type="button"
-                    className={styles.debuggerToggle}
-                    onClick={() => setIsApiPreviewOpen((value) => !value)}
-                  >
-                    {isApiPreviewOpen ? "Hide API Call Preview" : "Show API Call Preview"}
-                  </button>
-                  {isApiPreviewOpen && apiCallPreviewPayload ? (
-                    <pre className={styles.debuggerPreview}>
-                      {JSON.stringify(apiCallPreviewPayload, null, 2)}
-                    </pre>
-                  ) : null}
-                </div>
-              ) : null}
-
-              {selectedNodeIsGeneratedAsset && selectedNodeSourceJobId ? (
-                <div className={styles.debuggerBlock}>
-                  <button
-                    type="button"
-                    className={styles.debuggerToggle}
-                    onClick={() => setIsSourceCallOpen((value) => !value)}
-                  >
-                    {isSourceCallOpen ? "Hide Source Call" : "Show Source Call"}
-                  </button>
-                  {isSourceCallOpen ? (
-                    sourceCallLoading ? (
-                      <div className={styles.connectionSummary}>Loading source call…</div>
-                    ) : sourceCallError ? (
-                      <div className={`${styles.connectionSummary} ${styles.connectionSummaryWarning}`}>
-                        {sourceCallError}
-                      </div>
-                    ) : sourceCallDebug ? (
-                      <>
-                        <div className={styles.connectionSummary}>
-                          {`Job ${sourceCallDebug.job.id} · ${sourceCallDebug.job.state} · ${sourceCallDebug.attempts.length} attempt${
-                            sourceCallDebug.attempts.length === 1 ? "" : "s"
-                          }`}
-                        </div>
-                        <pre className={styles.debuggerPreview}>
-                          {JSON.stringify(
-                            {
-                              request: sourceCallLatestAttempt?.providerRequest || null,
-                              response: sourceCallLatestAttempt?.providerResponse || null,
-                              error:
-                                sourceCallLatestAttempt?.errorCode || sourceCallLatestAttempt?.errorMessage
-                                  ? {
-                                      code: sourceCallLatestAttempt?.errorCode || "ERROR",
-                                      message: sourceCallLatestAttempt?.errorMessage || "Unknown error",
-                                    }
-                                  : null,
-                            },
-                            null,
-                            2
-                          )}
-                        </pre>
-                      </>
-                    ) : (
-                      <div className={styles.connectionSummary}>No source call details found.</div>
-                    )
-                  ) : null}
-                </div>
-              ) : null}
-
-              <div className={styles.nodeModalActions}>
-                {selectedNodeIsModel ? (
-                  <button
-                    onClick={() => runNode(selectedNode)}
-                    disabled={Boolean(selectedNodeRunPreview?.disabledReason)}
-                  >
-                    Run Node
-                  </button>
-                ) : null}
-                {selectedNodeIsModel ? (
-                  <button
-                    onClick={() =>
-                      updateNode(selectedNode.id, {
-                        upstreamNodeIds: [],
-                        upstreamAssetIds: [],
-                        promptSourceNodeId: null,
-                      })
-                    }
-                  >
-                    Clear Inputs
-                  </button>
-                ) : null}
-                {selectedNodeIsGeneratedAsset && selectedNodeSourceJobId ? (
-                  <button onClick={() => router.push(`/projects/${projectId}/queue?inspectJobId=${selectedNodeSourceJobId}`)}>
-                    View Source Call
-                  </button>
-                ) : null}
-                <button onClick={() => removeNodes([selectedNode.id])}>Delete Node</button>
-                <button onClick={() => setSelectedNodeIds([])}>Close</button>
-              </div>
-            </div>
-          </section>
-        ) : null}
+          onDeleteSelection={handleDeleteSelected}
+          onClearInputs={handleClearSelectedModelInputs}
+          onOpenAssetViewer={openAssetViewer}
+          onOpenCompare={openCompare}
+          onOpenQueueInspect={openQueueInspect}
+        />
       </div>
     </WorkspaceShell>
   );

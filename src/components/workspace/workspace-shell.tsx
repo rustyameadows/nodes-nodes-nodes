@@ -11,6 +11,7 @@ type Props = {
   view: WorkspaceView;
   jobs?: Job[];
   showQueuePill?: boolean;
+  queuePillPlacement?: "bottom-right" | "top-right";
   children: React.ReactNode;
 };
 
@@ -18,7 +19,14 @@ function buildProjectRoute(projectId: string, view: WorkspaceView) {
   return `/projects/${projectId}/${view}`;
 }
 
-export function WorkspaceShell({ projectId, view, jobs = [], showQueuePill = false, children }: Props) {
+export function WorkspaceShell({
+  projectId,
+  view,
+  jobs = [],
+  showQueuePill = false,
+  queuePillPlacement = "bottom-right",
+  children,
+}: Props) {
   const router = useRouter();
   const [projects, setProjects] = useState<Project[]>([]);
   const [menuState, setMenuState] = useState<MenuFlyoutState>({
@@ -264,7 +272,9 @@ export function WorkspaceShell({ projectId, view, jobs = [], showQueuePill = fal
       {showQueuePill && (
         <button
           type="button"
-          className={styles.queuePill}
+          className={`${styles.queuePill} ${
+            queuePillPlacement === "top-right" ? styles.queuePillTopRight : styles.queuePillBottomRight
+          }`}
           onClick={() => {
             router.push(buildProjectRoute(projectId, "queue"));
           }}
