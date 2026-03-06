@@ -6,12 +6,12 @@
 - Normalize binary outputs so generated assets land in local storage and the asset viewer without provider-specific UI code.
 
 ## Current Provider Status
-- `openai / gpt-image-1.5`: real image generation path with both prompt-only (`generate`) and image-edit/reference (`edit`) modes.
-- `openai / gpt-image-1`, `openai / gpt-image-1-mini`, `openai / gpt-4.1-mini`: visible in UI, `Coming soon`, not runnable.
+- `openai / gpt-image-1.5`, `openai / gpt-image-1-mini`: real OpenAI image generation paths with both prompt-only (`generate`) and image-edit/reference (`edit`) modes.
+- `openai / gpt-image-1`, `openai / gpt-4.1-mini`: visible in UI, `Coming soon`, not runnable.
 - `google-gemini / gemini-3.1-flash` (`Nano Banana 2`): visible in UI, `Coming soon`, not runnable.
 - `topaz / topaz-studio-main`: visible in UI, `Coming soon`, not runnable.
 
-The dropdowns still expose the future catalog so node IDs and routing stay stable, but only `gpt-image-1.5` executes real provider calls in this pass.
+The dropdowns still expose the future catalog so node IDs and routing stay stable, but only the runnable OpenAI image-model family executes real provider calls in this pass.
 
 ## Runtime Contract
 
@@ -89,7 +89,7 @@ This keeps the browser truthful about whether a node can run without inventing c
 ## OpenAI (`openai`)
 
 ### Supported Flow
-- One model node targeting `gpt-image-1.5`
+- One model node targeting `gpt-image-1.5` or `gpt-image-1-mini`
 - Prompt comes from:
   - connected text note when present
   - otherwise the model node prompt textarea
@@ -109,7 +109,9 @@ This keeps the browser truthful about whether a node can run without inventing c
 - API path:
   - `generate`: `client.images.generate(...)`
   - `edit`: `client.images.edit(...)`
-- Model: `gpt-image-1.5`
+- Models:
+  - `gpt-image-1.5`
+  - `gpt-image-1-mini`
 - Defaults used in this pass:
   - `output_format = png`
   - `quality = auto`
@@ -126,9 +128,12 @@ This keeps the browser truthful about whether a node can run without inventing c
   - format (`output_format`): `png`, `jpeg`, `webp`
   - outputs (`n`): `1..4`
 - Advanced controls exposed in node UI:
-  - `input_fidelity` (`edit` only)
+  - `input_fidelity` (`edit` only, model-specific supported values)
   - `output_compression` (`jpeg` / `webp` only)
   - `moderation` (`generate` only in the current Node SDK surface)
+  - current model-specific rule:
+    - `gpt-image-1.5`: `high` or `low`
+    - `gpt-image-1-mini`: `low` only
 - Input constraints enforced in app:
   - `generate`: zero image inputs
   - `edit`: only image inputs, first 5 connected images in stable connection order

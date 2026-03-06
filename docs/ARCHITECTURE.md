@@ -72,7 +72,7 @@
 - UI display names are configurable and may differ from IDs.
 - Gemini 3.1 Flash is displayed as `Nano Banana 2`.
 - Current runtime status:
-  - `openai / gpt-image-1.5`: real execution path for prompt-only generation and image edit/reference flow
+  - `openai / gpt-image-1.5` and `openai / gpt-image-1-mini`: real execution paths for prompt-only generation and image edit/reference flow
   - other OpenAI models, Gemini, and Topaz: visible in model pickers as `Coming soon`, not runnable
 
 ## Configuration (Expected Env Vars)

@@ -65,6 +65,11 @@
 - Rationale: ship a real end-to-end prompt-note + image-reference generation loop without pretending the rest of the provider catalog is production-ready.
 - Consequence: UI gating now comes from provider-model capability metadata, job payloads snapshot resolved prompt/image inputs, and generated OpenAI outputs are materialized back onto the canvas as image nodes.
 
+## 2026-03-06 - OpenAI Image Support Is Model-Family Based
+- Decision: promote `openai / gpt-image-1-mini` to a full runnable peer of `openai / gpt-image-1.5`, while keeping `gpt-image-1.5` as the default new-node selection.
+- Rationale: the OpenAI Images integration is already architected as a family path, so leaving mini behind `Coming soon` only adds brittle model-ID branching without product benefit.
+- Consequence: canvas settings, job creation, validation, placeholder/output reconciliation, preview streaming, and source-call inspection now treat runnable OpenAI image models through one shared helper instead of hard-coding `gpt-image-1.5`, and model-specific supported values such as `input_fidelity` can diverge without forking the whole UI path.
+
 ## 2026-03-05 - OpenAI Infers Generate vs Edit from Connected Inputs
 - Decision: remove the explicit `generate` / `edit` control from the `gpt-image-1.5` node UI, infer the execution mode from whether supported image inputs are connected, and keep runtime job-state visibility on the immediately-created generated output node.
 - Rationale: users think in terms of prompt-only vs reference-image generation, not OpenAI endpoint names. The manual toggle adds API vocabulary without adding product value.

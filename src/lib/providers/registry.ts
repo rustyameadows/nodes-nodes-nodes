@@ -1,15 +1,9 @@
 import OpenAI, { toFile } from "openai";
 import {
-  OPENAI_DEFAULT_BACKGROUND,
-  OPENAI_DEFAULT_INPUT_FIDELITY,
-  OPENAI_DEFAULT_MODERATION,
-  OPENAI_DEFAULT_OUTPUT_COUNT,
-  OPENAI_DEFAULT_OUTPUT_FORMAT,
-  OPENAI_DEFAULT_QUALITY,
-  OPENAI_DEFAULT_SIZE,
   OPENAI_IMAGE_INPUT_MIME_TYPES,
-  OPENAI_IMAGE_PARAMETER_DEFINITIONS,
   OPENAI_MAX_INPUT_IMAGES,
+  getOpenAiImageDefaultSettings,
+  getOpenAiImageParameterDefinitions,
   parseImageSize,
   resolveOpenAiImageSettings,
 } from "@/lib/openai-image-settings";
@@ -85,8 +79,8 @@ function buildCapabilities({
   };
 }
 
-function buildProviderCatalog(): Record<ProviderId, ProviderModelDescriptor[]> {
-  const openAiCapabilities = buildCapabilities({
+function createOpenAiImageCapabilities(modelId: string) {
+  return buildCapabilities({
     text: false,
     image: true,
     video: false,
@@ -96,17 +90,14 @@ function buildProviderCatalog(): Record<ProviderId, ProviderModelDescriptor[]> {
     executionModes: ["generate", "edit"],
     acceptedInputMimeTypes: OPENAI_IMAGE_INPUT_MIME_TYPES,
     maxInputImages: OPENAI_MAX_INPUT_IMAGES,
-    parameters: OPENAI_IMAGE_PARAMETER_DEFINITIONS,
-    defaults: {
-      outputFormat: OPENAI_DEFAULT_OUTPUT_FORMAT,
-      quality: OPENAI_DEFAULT_QUALITY,
-      size: OPENAI_DEFAULT_SIZE,
-      background: OPENAI_DEFAULT_BACKGROUND,
-      moderation: OPENAI_DEFAULT_MODERATION,
-      inputFidelity: OPENAI_DEFAULT_INPUT_FIDELITY,
-      n: OPENAI_DEFAULT_OUTPUT_COUNT,
-    },
+    parameters: getOpenAiImageParameterDefinitions(modelId),
+    defaults: getOpenAiImageDefaultSettings(modelId),
   });
+}
+
+function buildProviderCatalog(): Record<ProviderId, ProviderModelDescriptor[]> {
+  const openAi15Capabilities = createOpenAiImageCapabilities("gpt-image-1.5");
+  const openAiMiniCapabilities = createOpenAiImageCapabilities("gpt-image-1-mini");
 
   const comingSoonImageCapabilities = buildCapabilities({
     text: false,
@@ -144,8 +135,8 @@ function buildProviderCatalog(): Record<ProviderId, ProviderModelDescriptor[]> {
         providerId: "openai",
         modelId: "gpt-image-1.5",
         displayName: "GPT Image 1.5",
-        capabilities: openAiCapabilities,
-        defaultSettings: { ...openAiCapabilities.defaults },
+        capabilities: openAi15Capabilities,
+        defaultSettings: { ...openAi15Capabilities.defaults },
       },
       {
         providerId: "openai",
@@ -158,8 +149,8 @@ function buildProviderCatalog(): Record<ProviderId, ProviderModelDescriptor[]> {
         providerId: "openai",
         modelId: "gpt-image-1-mini",
         displayName: "GPT Image 1 Mini",
-        capabilities: comingSoonImageCapabilities,
-        defaultSettings: {},
+        capabilities: openAiMiniCapabilities,
+        defaultSettings: { ...openAiMiniCapabilities.defaults },
       },
       {
         providerId: "openai",
@@ -341,7 +332,7 @@ async function submitOpenAiImage(input: ProviderJobInput): Promise<NormalizedOut
     );
   }
 
-  const resolvedSettings = resolveOpenAiImageSettings(input.payload.settings, executionMode);
+  const resolvedSettings = resolveOpenAiImageSettings(input.payload.settings, executionMode, input.modelId);
   const {
     outputFormat,
     quality,
@@ -387,10 +378,10 @@ async function submitOpenAiImage(input: ProviderJobInput): Promise<NormalizedOut
           quality,
           background,
           output_format: outputFormat,
-          input_fidelity: inputFidelity || OPENAI_DEFAULT_INPUT_FIDELITY,
           n: outputCount,
           stream: true,
           partial_images: 2,
+          ...(inputFidelity ? { input_fidelity: inputFidelity } : {}),
           ...(outputCompression !== null ? { output_compression: outputCompression } : {}),
         });
 

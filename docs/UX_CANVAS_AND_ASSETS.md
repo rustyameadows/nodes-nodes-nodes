@@ -99,20 +99,20 @@
 - Model nodes only expose their output nipple after that model has started at least one job; before first run they are input-only.
 - Validation appears before run when required ports/settings are missing.
 - Model execution rules in this pass:
-  - `openai / gpt-image-1.5` is the only runnable model
+  - `openai / gpt-image-1.5` and `openai / gpt-image-1-mini` are the runnable OpenAI image models
   - connected text note overrides the model prompt field during execution
   - model prompt field remains as fallback when no text note is connected
   - OpenAI execution mode is inferred automatically from connected inputs
   - no connected image inputs => prompt-only generation
   - one or more supported connected image inputs => reference-image generation
-  - GPT Image 1.5 core controls:
+  - OpenAI image-model core controls:
     - aspect ratio (`Auto`, `Square`, `Portrait`, `Landscape`)
     - resolution (`Auto`, `Low`, `Medium`, `High`)
     - transparency (`Auto`, `Opaque`, `Transparent`)
     - format (`PNG`, `JPEG`, `WebP`)
     - outputs (`1..4`)
-  - GPT Image 1.5 advanced controls:
-    - input fidelity (`edit` only)
+  - OpenAI image-model advanced controls:
+    - input fidelity (`edit` only, values vary by selected model)
     - compression (`jpeg` / `webp` only)
     - moderation (`generate` only)
   - all placeholder models/providers remain selectable but show `Coming soon` and disable Run

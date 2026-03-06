@@ -1,4 +1,4 @@
-import { resolveOpenAiImageSettings } from "@/lib/openai-image-settings";
+import { isRunnableOpenAiImageModel, resolveOpenAiImageSettings } from "@/lib/openai-image-settings";
 import type {
   Asset,
   AssetFilterState,
@@ -125,10 +125,9 @@ export async function uploadProjectAsset(projectId: string, file: File) {
 
 export async function createJob(projectId: string, node: WorkflowNode) {
   const executionMode: OpenAIImageMode = node.upstreamAssetIds.length > 0 ? "edit" : "generate";
-  const outputCount =
-    node.providerId === "openai" && node.modelId === "gpt-image-1.5"
-      ? resolveOpenAiImageSettings(node.settings, executionMode).outputCount
-      : 1;
+  const outputCount = isRunnableOpenAiImageModel(node.providerId, node.modelId)
+    ? resolveOpenAiImageSettings(node.settings, executionMode, node.modelId).outputCount
+    : 1;
   return createJobFromRequest(projectId, {
     providerId: node.providerId,
     modelId: node.modelId,

@@ -15,15 +15,10 @@ import { WorkspaceShell } from "@/components/workspace/workspace-shell";
 import { isModelParameterVisible } from "@/lib/model-parameters";
 import {
   buildOpenAiImageDebugRequest,
-  OPENAI_DEFAULT_BACKGROUND,
-  OPENAI_DEFAULT_INPUT_FIDELITY,
-  OPENAI_DEFAULT_MODERATION,
-  OPENAI_DEFAULT_OUTPUT_COUNT,
-  OPENAI_DEFAULT_OUTPUT_FORMAT,
-  OPENAI_DEFAULT_QUALITY,
-  OPENAI_DEFAULT_SIZE,
+  getOpenAiImageDefaultSettings,
+  getOpenAiImageParameterDefinitions,
+  isRunnableOpenAiImageModel,
   OPENAI_IMAGE_INPUT_MIME_TYPES,
-  OPENAI_IMAGE_PARAMETER_DEFINITIONS,
   OPENAI_MAX_INPUT_IMAGES,
   resolveOpenAiImageSettings,
 } from "@/lib/openai-image-settings";
@@ -96,8 +91,8 @@ function resolveModelSettings(
     ...settings,
   };
 
-  if (model?.providerId === "openai" && model.modelId === "gpt-image-1.5") {
-    return resolveOpenAiImageSettings(mergedSettings, executionMode).effectiveSettings;
+  if (isRunnableOpenAiImageModel(model?.providerId, model?.modelId)) {
+    return resolveOpenAiImageSettings(mergedSettings, executionMode, model?.modelId).effectiveSettings;
   }
 
   return mergedSettings;
@@ -189,16 +184,8 @@ function fallbackProviderModel(providers: ProviderModel[]): ProviderModel {
       executionModes: ["generate", "edit"],
       acceptedInputMimeTypes: OPENAI_IMAGE_INPUT_MIME_TYPES,
       maxInputImages: OPENAI_MAX_INPUT_IMAGES,
-      parameters: OPENAI_IMAGE_PARAMETER_DEFINITIONS,
-      defaults: {
-        outputFormat: OPENAI_DEFAULT_OUTPUT_FORMAT,
-        quality: OPENAI_DEFAULT_QUALITY,
-        size: OPENAI_DEFAULT_SIZE,
-        background: OPENAI_DEFAULT_BACKGROUND,
-        moderation: OPENAI_DEFAULT_MODERATION,
-        inputFidelity: OPENAI_DEFAULT_INPUT_FIDELITY,
-        n: OPENAI_DEFAULT_OUTPUT_COUNT,
-      },
+      parameters: getOpenAiImageParameterDefinitions("gpt-image-1.5"),
+      defaults: getOpenAiImageDefaultSettings("gpt-image-1.5"),
     },
   };
 }
@@ -805,10 +792,9 @@ export function CanvasView({ projectId }: Props) {
         .slice(0, maxInputImages || undefined);
       const executionMode = inputImageAssetIds.length > 0 ? "edit" : "generate";
       const effectiveSettings = resolveModelSettings(model, node.settings, executionMode);
-      const outputCount =
-        model?.providerId === "openai" && model.modelId === "gpt-image-1.5"
-          ? resolveOpenAiImageSettings(effectiveSettings, executionMode).outputCount
-          : 1;
+      const outputCount = isRunnableOpenAiImageModel(model?.providerId, model?.modelId)
+        ? resolveOpenAiImageSettings(effectiveSettings, executionMode, model?.modelId).outputCount
+        : 1;
 
       const requestPayload = {
         providerId: node.providerId,
@@ -856,16 +842,15 @@ export function CanvasView({ projectId }: Props) {
               } and ${outputCount} output${outputCount === 1 ? "" : "s"}.`;
       }
 
-      const debugRequest =
-        node.providerId === "openai" && node.modelId === "gpt-image-1.5"
-          ? buildOpenAiImageDebugRequest({
-              modelId: node.modelId,
-              prompt: requestPayload.nodePayload.prompt,
-              executionMode,
-              rawSettings: requestPayload.nodePayload.settings,
-              inputImageAssetIds,
-            })
-          : null;
+      const debugRequest = isRunnableOpenAiImageModel(node.providerId, node.modelId)
+        ? buildOpenAiImageDebugRequest({
+            modelId: node.modelId,
+            prompt: requestPayload.nodePayload.prompt,
+            executionMode,
+            rawSettings: requestPayload.nodePayload.settings,
+            inputImageAssetIds,
+          })
+        : null;
 
       return {
         requestPayload,

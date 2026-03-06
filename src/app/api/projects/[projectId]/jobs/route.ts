@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
-import { resolveOpenAiImageSettings } from "@/lib/openai-image-settings";
+import { isRunnableOpenAiImageModel, resolveOpenAiImageSettings } from "@/lib/openai-image-settings";
 import { prisma } from "@/lib/prisma";
 import { getProviderModel } from "@/lib/providers/registry";
 import { badRequest, internalError } from "@/lib/server/http";
@@ -62,8 +62,8 @@ function getSubmissionError(input: z.infer<typeof createJobSchema>) {
     return "Connect at least one supported image input before running.";
   }
 
-  if (input.providerId === "openai" && input.modelId === "gpt-image-1.5") {
-    const resolved = resolveOpenAiImageSettings(input.nodePayload.settings, executionMode);
+  if (isRunnableOpenAiImageModel(input.providerId, input.modelId)) {
+    const resolved = resolveOpenAiImageSettings(input.nodePayload.settings, executionMode, input.modelId);
     if (resolved.outputCount !== input.nodePayload.outputCount) {
       return "Output count is outside the supported range.";
     }

@@ -11,7 +11,7 @@ import {
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import { parseImageSize } from "@/lib/openai-image-settings";
+import { isRunnableOpenAiImageModel, parseImageSize } from "@/lib/openai-image-settings";
 import styles from "./infinite-canvas.module.css";
 
 type CanvasViewport = {
@@ -241,7 +241,7 @@ function getImageFrameAspectRatio(
     return 1;
   }
 
-  if (sourceModelNode.providerId === "openai" && sourceModelNode.modelId === "gpt-image-1.5") {
+  if (isRunnableOpenAiImageModel(sourceModelNode.providerId, sourceModelNode.modelId)) {
     const sizeSetting = sourceModelNode.settings.size;
     const parsedSize =
       sizeSetting === "1024x1024" || sizeSetting === "1536x1024" || sizeSetting === "1024x1536" || sizeSetting === "auto"

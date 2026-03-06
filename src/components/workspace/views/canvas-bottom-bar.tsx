@@ -16,6 +16,7 @@ import { createPortal } from "react-dom";
 import { getJobDebug } from "@/components/workspace/client-api";
 import type { Job, JobDebugResponse, ProviderId, ProviderModel, WorkflowNode } from "@/components/workspace/types";
 import type { ModelParameterDefinition } from "@/lib/model-parameters";
+import { isRunnableOpenAiImageModel } from "@/lib/openai-image-settings";
 import styles from "./canvas-bottom-bar.module.css";
 
 type SelectOption = {
@@ -767,7 +768,7 @@ export function CanvasBottomBar({
                     triggerRefs={triggerRefs}
                     popoverRef={popoverRef}
                   >
-                    {selectedModel?.providerId === "openai" && selectedModel.modelId === "gpt-image-1.5" && selectedNodeRunPreview ? (
+                    {isRunnableOpenAiImageModel(selectedModel?.providerId, selectedModel?.modelId) && selectedNodeRunPreview ? (
                       <div className={styles.traySection}>
                         <span className={styles.traySectionLabel}>Execution</span>
                         <div className={styles.traySummary}>
