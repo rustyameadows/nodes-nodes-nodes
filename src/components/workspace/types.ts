@@ -37,6 +37,45 @@ export type ProviderModel = {
   capabilities: ProviderModelCapabilities;
 };
 
+export type WorkflowNodeKind = "model" | "asset-source" | "text-note" | "list" | "text-template";
+export type WorkflowNodeType = "text-gen" | "image-gen" | "video-gen" | "transform" | "text-note" | "list" | "text-template";
+export type RunnableWorkflowNodeType = "text-gen" | "image-gen" | "video-gen" | "transform";
+
+export type ListColumn = {
+  id: string;
+  label: string;
+};
+
+export type ListRow = {
+  id: string;
+  values: Record<string, string>;
+};
+
+export type ListNodeSettings = {
+  source: "list";
+  columns: ListColumn[];
+  rows: ListRow[];
+};
+
+export type TextTemplateNodeSettings = {
+  source: "text-template";
+};
+
+export type TextNoteSettings = {
+  source: "text-note";
+};
+
+export type GeneratedTextNoteSettings = {
+  source: "template-output";
+  sourceTemplateNodeId: string;
+  sourceListNodeId: string;
+  batchId: string;
+  rowId: string;
+  rowIndex: number;
+};
+
+export type WorkflowNodeSettings = Record<string, unknown>;
+
 export type Project = {
   id: string;
   name: string;
@@ -66,11 +105,11 @@ export type WorkflowNode = {
   label: string;
   providerId: ProviderId;
   modelId: string;
-  kind: "model" | "asset-source" | "text-note";
-  nodeType: "text-gen" | "image-gen" | "video-gen" | "transform" | "text-note";
+  kind: WorkflowNodeKind;
+  nodeType: WorkflowNodeType;
   outputType: "text" | "image" | "video";
   prompt: string;
-  settings: Record<string, unknown>;
+  settings: WorkflowNodeSettings;
   sourceAssetId: string | null;
   sourceAssetMimeType: string | null;
   sourceJobId: string | null;

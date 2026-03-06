@@ -14,9 +14,18 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { getJobDebug } from "@/components/workspace/client-api";
-import type { Job, JobDebugResponse, ProviderId, ProviderModel, WorkflowNode } from "@/components/workspace/types";
+import type {
+  GeneratedTextNoteSettings,
+  Job,
+  JobDebugResponse,
+  ListNodeSettings,
+  ProviderId,
+  ProviderModel,
+  WorkflowNode,
+} from "@/components/workspace/types";
 import type { ModelParameterDefinition } from "@/lib/model-parameters";
 import { isRunnableOpenAiImageModel } from "@/lib/openai-image-settings";
+import type { TextTemplatePreview } from "@/lib/list-template";
 import styles from "./canvas-bottom-bar.module.css";
 
 type SelectOption = {
@@ -45,8 +54,11 @@ type Props = {
   selectedNode: WorkflowNode | null;
   selectedNodeIsModel: boolean;
   selectedNodeIsTextNote: boolean;
+  selectedNodeIsList: boolean;
+  selectedNodeIsTextTemplate: boolean;
   selectedNodeIsAssetSource: boolean;
   selectedNodeIsGeneratedAsset: boolean;
+  selectedNodeIsGeneratedTextNote: boolean;
   selectedModel: ProviderModel | undefined;
   selectedGeneratedSourceJob: Job | null;
   selectedNodeSourceJobId: string | null;
@@ -57,6 +69,12 @@ type Props = {
   selectedInputNodes: WorkflowNode[];
   selectedPromptSourceNode: WorkflowNode | null;
   selectedNodeRunPreview: NodeRunPreview | null;
+  selectedListSettings: ListNodeSettings | null;
+  selectedTemplatePreview: TextTemplatePreview | null;
+  selectedTemplateListNode: WorkflowNode | null;
+  selectedGeneratedTextSettings: GeneratedTextNoteSettings | null;
+  selectedGeneratedTextTemplateNode: WorkflowNode | null;
+  selectedGeneratedTextListNode: WorkflowNode | null;
   selectedImageAssetIds: string[];
   selectedSingleImageAssetId: string | null;
   providerOptions: SelectOption[];
@@ -67,6 +85,12 @@ type Props = {
   onProviderChange: (providerId: ProviderId) => void;
   onModelChange: (modelId: string) => void;
   onParameterChange: (parameterKey: string, value: string | number | null) => void;
+  onUpdateListColumnLabel: (columnId: string, value: string) => void;
+  onUpdateListCell: (rowId: string, columnId: string, value: string) => void;
+  onAddListColumn: () => void;
+  onRemoveListColumn: (columnId: string) => void;
+  onAddListRow: () => void;
+  onRemoveListRow: (rowId: string) => void;
   onRun: () => void;
   onDeleteSelection: () => void;
   onClearInputs: () => void;
@@ -350,11 +374,26 @@ function InlineParameterField({
   );
 }
 
-function selectionChipLabel(selectedNodeIds: string[]) {
+function selectionChipLabel(selectedNodeIds: string[], selectedNode: WorkflowNode | null) {
   if (selectedNodeIds.length > 1) {
     return `${selectedNodeIds.length} selected`;
   }
-  return null;
+  if (!selectedNode) {
+    return null;
+  }
+  if (selectedNode.kind === "model") {
+    return "1 model";
+  }
+  if (selectedNode.kind === "text-note") {
+    return "1 note";
+  }
+  if (selectedNode.kind === "list") {
+    return "1 list";
+  }
+  if (selectedNode.kind === "text-template") {
+    return "1 template";
+  }
+  return "1 asset";
 }
 
 function summarizePrompt(prompt: string) {
@@ -373,6 +412,13 @@ function summarizeConnections(nodes: WorkflowNode[]) {
     return nodes[0].label;
   }
   return `${nodes.length} linked`;
+}
+
+function summarizeList(settings: ListNodeSettings | null) {
+  if (!settings) {
+    return "0 × 0";
+  }
+  return `${settings.columns.length} × ${settings.rows.length}`;
 }
 
 function renderAdvancedSummary(parameters: ModelParameterDefinition[]) {
@@ -408,8 +454,11 @@ export function CanvasBottomBar({
   selectedNode,
   selectedNodeIsModel,
   selectedNodeIsTextNote,
+  selectedNodeIsList,
+  selectedNodeIsTextTemplate,
   selectedNodeIsAssetSource,
   selectedNodeIsGeneratedAsset,
+  selectedNodeIsGeneratedTextNote,
   selectedModel,
   selectedGeneratedSourceJob,
   selectedNodeSourceJobId,
@@ -420,6 +469,12 @@ export function CanvasBottomBar({
   selectedInputNodes,
   selectedPromptSourceNode,
   selectedNodeRunPreview,
+  selectedListSettings,
+  selectedTemplatePreview,
+  selectedTemplateListNode,
+  selectedGeneratedTextSettings,
+  selectedGeneratedTextTemplateNode,
+  selectedGeneratedTextListNode,
   selectedImageAssetIds,
   selectedSingleImageAssetId,
   providerOptions,
@@ -430,6 +485,12 @@ export function CanvasBottomBar({
   onProviderChange,
   onModelChange,
   onParameterChange,
+  onUpdateListColumnLabel,
+  onUpdateListCell,
+  onAddListColumn,
+  onRemoveListColumn,
+  onAddListRow,
+  onRemoveListRow,
   onRun,
   onDeleteSelection,
   onClearInputs,
@@ -451,7 +512,7 @@ export function CanvasBottomBar({
     () => `${selectedNodeIds.join(",")}:${selectedNode?.id || ""}`,
     [selectedNode?.id, selectedNodeIds]
   );
-  const selectionChip = selectionChipLabel(selectedNodeIds);
+  const selectionChip = selectionChipLabel(selectedNodeIds, selectedNode);
   const showCompareActions = selectedNodeIds.length > 1;
 
   useEffect(() => {
@@ -810,6 +871,160 @@ export function CanvasBottomBar({
               </>
             ) : null}
 
+            {selectedNode && selectedNodeIds.length === 1 && selectedNodeIsList ? (
+              <>
+                <CanvasBarTray
+                  id="list"
+                  label="List"
+                  value={summarizeList(selectedListSettings)}
+                  width={680}
+                  maxWidth={860}
+                  openPopoverId={openPopoverId}
+                  onOpenPopoverChange={setOpenPopoverId}
+                  triggerRefs={triggerRefs}
+                  popoverRef={popoverRef}
+                >
+                  <div className={styles.traySection}>
+                    <span className={styles.traySectionLabel}>Columns and Rows</span>
+                    <div className={styles.listEditor}>
+                      <div className={styles.listEditorHeader}>
+                        {(selectedListSettings?.columns || []).map((column) => (
+                          <div key={column.id} className={styles.listEditorColumn}>
+                            <input
+                              className={styles.trayInput}
+                              value={column.label}
+                              onChange={(event) => onUpdateListColumnLabel(column.id, event.target.value)}
+                              placeholder="Column name"
+                            />
+                            <button
+                              type="button"
+                              className={styles.inlineActionButton}
+                              onClick={() => onRemoveListColumn(column.id)}
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className={styles.listEditorRows}>
+                        {(selectedListSettings?.rows || []).map((row, rowIndex) => (
+                          <div key={row.id} className={styles.listEditorRow}>
+                            <span className={styles.listEditorRowLabel}>{`Row ${rowIndex + 1}`}</span>
+                            {(selectedListSettings?.columns || []).map((column) => (
+                              <input
+                                key={`${row.id}:${column.id}`}
+                                className={styles.trayInput}
+                                value={row.values[column.id] ?? ""}
+                                onChange={(event) => onUpdateListCell(row.id, column.id, event.target.value)}
+                                placeholder={column.label.trim() || "Value"}
+                              />
+                            ))}
+                            <button
+                              type="button"
+                              className={styles.inlineActionButton}
+                              onClick={() => onRemoveListRow(row.id)}
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  <div className={styles.trayActions}>
+                    <button type="button" className={styles.actionButton} onClick={onAddListColumn}>
+                      Add Column
+                    </button>
+                    <button type="button" className={styles.actionButton} onClick={onAddListRow}>
+                      Add Row
+                    </button>
+                  </div>
+                </CanvasBarTray>
+              </>
+            ) : null}
+
+            {selectedNode && selectedNodeIds.length === 1 && selectedNodeIsTextTemplate ? (
+              <>
+                <CanvasBarTray
+                  id="template"
+                  label="Template"
+                  value={summarizePrompt(selectedNode.prompt)}
+                  width={460}
+                  maxWidth={620}
+                  openPopoverId={openPopoverId}
+                  onOpenPopoverChange={setOpenPopoverId}
+                  triggerRefs={triggerRefs}
+                  popoverRef={popoverRef}
+                >
+                  <div className={styles.traySection}>
+                    <span className={styles.traySectionLabel}>Template Text</span>
+                    <textarea
+                      className={styles.trayTextarea}
+                      value={selectedNode.prompt}
+                      spellCheck={false}
+                      autoCorrect="off"
+                      autoCapitalize="off"
+                      onChange={(event) => onPromptChange(event.target.value)}
+                      placeholder="Write merge text with [[column]] placeholders"
+                    />
+                  </div>
+                </CanvasBarTray>
+
+                <CanvasBarTray
+                  id="template-details"
+                  label="Details"
+                  value={selectedTemplatePreview?.disabledReason ? "Attention" : "Ready"}
+                  width={420}
+                  maxWidth={600}
+                  openPopoverId={openPopoverId}
+                  onOpenPopoverChange={setOpenPopoverId}
+                  triggerRefs={triggerRefs}
+                  popoverRef={popoverRef}
+                >
+                  <div className={styles.traySection}>
+                    <span className={styles.traySectionLabel}>Connected List</span>
+                    <div className={styles.traySummary}>
+                      {selectedTemplateListNode ? selectedTemplateListNode.label : "No list connected."}
+                    </div>
+                  </div>
+                  <div className={styles.traySection}>
+                    <span className={styles.traySectionLabel}>Registered Columns</span>
+                    <div className={styles.traySummary}>
+                      {selectedTemplatePreview && selectedTemplatePreview.columns.length > 0
+                        ? selectedTemplatePreview.columns.map((column) => column.label.trim() || "Untitled").join(", ")
+                        : "No columns registered yet."}
+                    </div>
+                  </div>
+                  {selectedTemplatePreview?.unresolvedTokens.length ? (
+                    <div className={styles.traySection}>
+                      <span className={styles.traySectionLabel}>Unresolved Placeholders</span>
+                      <div className={`${styles.traySummary} ${styles.traySummaryWarning}`}>
+                        {selectedTemplatePreview.unresolvedTokens.map((token) => token.label).join(", ")}
+                      </div>
+                    </div>
+                  ) : null}
+                  <div className={styles.traySection}>
+                    <span className={styles.traySectionLabel}>Run Readiness</span>
+                    <div
+                      className={`${styles.traySummary} ${
+                        selectedTemplatePreview?.disabledReason ? styles.traySummaryWarning : styles.traySummaryReady
+                      }`}
+                    >
+                      {selectedTemplatePreview?.disabledReason ||
+                        selectedTemplatePreview?.readyMessage ||
+                        "Connect a list to generate rows."}
+                    </div>
+                  </div>
+                  <div className={styles.trayActions}>
+                    <button type="button" className={styles.actionButton} onClick={onClearInputs}>
+                      Clear List
+                    </button>
+                  </div>
+                </CanvasBarTray>
+              </>
+            ) : null}
+
             {selectedNode && selectedNodeIds.length === 1 && selectedNodeIsTextNote ? (
               <>
                 <CanvasBarTray
@@ -840,7 +1055,7 @@ export function CanvasBottomBar({
                 <CanvasBarTray
                   id="note-links"
                   label="Details"
-                  value={summarizeConnections(selectedTextNoteTargets)}
+                  value={selectedNodeIsGeneratedTextNote ? "Generated" : summarizeConnections(selectedTextNoteTargets)}
                   width={360}
                   maxWidth={520}
                   openPopoverId={openPopoverId}
@@ -851,7 +1066,9 @@ export function CanvasBottomBar({
                   <div className={styles.traySection}>
                     <span className={styles.traySectionLabel}>Connection State</span>
                     <div className={styles.traySummary}>
-                      Text notes connect to model nodes as external prompt sources.
+                      {selectedNodeIsGeneratedTextNote
+                        ? "Generated notes are editable prompt sources."
+                        : "Text notes connect to model nodes as external prompt sources."}
                     </div>
                   </div>
                   <div className={styles.traySection}>
@@ -862,6 +1079,24 @@ export function CanvasBottomBar({
                         : "No model nodes are using this note yet."}
                     </div>
                   </div>
+                  {selectedNodeIsGeneratedTextNote && selectedGeneratedTextSettings ? (
+                    <>
+                      <div className={styles.traySection}>
+                        <span className={styles.traySectionLabel}>Generated From</span>
+                        <div className={styles.traySummary}>
+                          {selectedGeneratedTextTemplateNode?.label || selectedGeneratedTextSettings.sourceTemplateNodeId}
+                          {" via "}
+                          {selectedGeneratedTextListNode?.label || selectedGeneratedTextSettings.sourceListNodeId}
+                        </div>
+                      </div>
+                      <div className={styles.traySection}>
+                        <span className={styles.traySectionLabel}>Batch Metadata</span>
+                        <div className={styles.traySummary}>
+                          {`Batch ${selectedGeneratedTextSettings.batchId} · Row ${selectedGeneratedTextSettings.rowIndex + 1}`}
+                        </div>
+                      </div>
+                    </>
+                  ) : null}
                 </CanvasBarTray>
               </>
             ) : null}
@@ -979,14 +1214,14 @@ export function CanvasBottomBar({
             </button>
           ) : null}
 
-          {selectedNode && selectedNodeIds.length === 1 && selectedNodeIsModel ? (
+          {selectedNode && selectedNodeIds.length === 1 && (selectedNodeIsModel || selectedNodeIsTextTemplate) ? (
             <button
               type="button"
               className={`${styles.actionButton} ${styles.actionButtonPrimary}`}
-              disabled={Boolean(selectedNodeRunPreview?.disabledReason)}
+              disabled={selectedNodeIsTextTemplate ? Boolean(selectedTemplatePreview?.disabledReason) : Boolean(selectedNodeRunPreview?.disabledReason)}
               onClick={onRun}
             >
-              Run Node
+              {selectedNodeIsTextTemplate ? "Generate Rows" : "Run Node"}
             </button>
           ) : null}
 

@@ -7,6 +7,7 @@
     "dev": "bash scripts/dev-web.sh",
     "worker": "bash scripts/dev-worker.sh",
     "dev:all": "concurrently -k -n web,worker \"npm run dev\" \"JOB_EXECUTION_MODE=queue npm run worker\"",
+    "test:unit": "node --import tsx --test src/lib/list-template.test.ts",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",

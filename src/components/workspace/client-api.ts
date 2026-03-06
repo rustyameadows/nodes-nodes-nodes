@@ -1,4 +1,10 @@
 import { isRunnableOpenAiImageModel, resolveOpenAiImageSettings } from "@/lib/openai-image-settings";
+import {
+  createTextNoteSettings,
+  getListNodeSettings,
+  getTextTemplateNodeSettings,
+  TEXT_NOTE_SOURCE,
+} from "@/lib/list-template";
 import type {
   Asset,
   AssetFilterState,
@@ -9,6 +15,7 @@ import type {
   Project,
   ProviderModel,
   ProviderId,
+  RunnableWorkflowNodeType,
   WorkflowNode,
 } from "@/components/workspace/types";
 
@@ -133,7 +140,7 @@ export async function createJob(projectId: string, node: WorkflowNode) {
     modelId: node.modelId,
     nodePayload: {
       nodeId: node.id,
-      nodeType: node.nodeType === "text-note" ? "text-gen" : node.nodeType,
+      nodeType: node.nodeType as RunnableWorkflowNodeType,
       prompt: node.prompt,
       settings: node.settings,
       outputType: node.outputType,
@@ -154,7 +161,7 @@ export async function createJobFromRequest(
     modelId: string;
     nodePayload: {
       nodeId: string;
-      nodeType: Exclude<WorkflowNode["nodeType"], "text-note">;
+      nodeType: RunnableWorkflowNodeType;
       prompt: string;
       settings: Record<string, unknown>;
       outputType: WorkflowNode["outputType"];
@@ -286,16 +293,29 @@ export function normalizeNode(raw: Record<string, unknown>, index: number): Work
     : upstreamNodeIdsFromAssets;
 
   const inferredKind =
-    raw.kind === "model" || raw.kind === "asset-source" || raw.kind === "text-note"
+    raw.kind === "model" ||
+    raw.kind === "asset-source" ||
+    raw.kind === "text-note" ||
+    raw.kind === "list" ||
+    raw.kind === "text-template"
       ? (raw.kind as WorkflowNode["kind"])
       : raw.sourceAssetId
         ? "asset-source"
         : "model";
-  const normalizedSettings =
+  const baseSettings =
     raw.settings && typeof raw.settings === "object"
       ? ({ ...(raw.settings as Record<string, unknown>) } as Record<string, unknown>)
       : {};
-  delete normalizedSettings.openaiImageMode;
+  delete baseSettings.openaiImageMode;
+
+  const normalizedSettings =
+    inferredKind === "list"
+      ? getListNodeSettings(baseSettings)
+      : inferredKind === "text-template"
+        ? getTextTemplateNodeSettings(baseSettings)
+        : inferredKind === "text-note" && baseSettings.source !== TEXT_NOTE_SOURCE
+          ? createTextNoteSettings()
+          : baseSettings;
 
   return {
     id: String(raw.id || uid()),
@@ -304,8 +324,17 @@ export function normalizeNode(raw: Record<string, unknown>, index: number): Work
     modelId: String(raw.modelId || "gpt-image-1.5"),
     kind: inferredKind,
     nodeType:
-      ((raw.nodeType as WorkflowNode["nodeType"]) || (inferredKind === "text-note" ? "text-note" : "image-gen")),
-    outputType: (raw.outputType as WorkflowNode["outputType"]) || "image",
+      ((raw.nodeType as WorkflowNode["nodeType"]) ||
+        (inferredKind === "text-note"
+          ? "text-note"
+          : inferredKind === "list"
+            ? "list"
+            : inferredKind === "text-template"
+              ? "text-template"
+              : "image-gen")),
+    outputType:
+      (raw.outputType as WorkflowNode["outputType"]) ||
+      (inferredKind === "list" || inferredKind === "text-template" || inferredKind === "text-note" ? "text" : "image"),
     prompt: String(raw.prompt || ""),
     sourceAssetId: raw.sourceAssetId ? String(raw.sourceAssetId) : null,
     sourceAssetMimeType: raw.sourceAssetMimeType ? String(raw.sourceAssetMimeType) : null,

@@ -46,12 +46,26 @@
   - `running/queued` -> `failed` keeps the placeholder
   - `succeeded` attaches the final image asset and clears the processing badge
 
+## Data Flow: Template Text Generation
+1. User triggers `Generate Rows` from a `text-template` node on the active canvas.
+2. Canvas client resolves the connected `list` node locally:
+  - requires exactly one connected list
+  - normalizes column labels by trim + whitespace collapse + case fold
+  - validates unique/non-empty column labels and placeholder coverage
+  - skips fully blank rows and substitutes blank cells with empty strings
+3. Client creates a new batch id and materializes one new text-note node per nonblank row directly in canvas state.
+4. Generated notes persist the source template/list/batch/row metadata inside node settings and remain editable prompt-source nodes for downstream model runs.
+5. No `job`, `asset`, `job_preview_frames`, provider adapter, or queue path is involved in this flow.
+
 ## Canvas Graph Semantics
 - Wire creation can start from either port.
 - Dragging from an input to an output is normalized into the same persisted `source -> target` relationship as output-to-input wiring.
 - Prompt-note connections are stored separately from standard upstream media inputs:
   - text note -> model sets `promptSourceNodeId`
   - media/image inputs accumulate in `upstreamNodeIds`
+- List-template connections use standard upstream node relationships:
+  - list -> text-template stores the list node id in `upstreamNodeIds`
+  - text-template nodes do not emit prompt-source links directly; their generated text-note outputs do
 - Asset-source nodes are peer pointers to one `asset` record:
   - uploaded asset pointers resolve `jobId = null`
   - generated asset pointers resolve `jobId != null`

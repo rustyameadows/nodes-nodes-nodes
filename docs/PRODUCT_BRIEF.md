@@ -19,7 +19,7 @@ Ship a local-first, node-based generation app where one user can run multiple mo
 
 ## Core User Flows
 1. Create Project -> Open Project -> Start Empty Canvas.
-2. Double-click canvas -> choose insert action -> add model nodes, text notes, or uploaded assets.
+2. Double-click canvas -> choose insert action -> add model nodes, text notes, list nodes, text templates, or uploaded assets.
 3. Connect nodes -> Configure settings -> Run graph.
 4. Watch job progress -> Inspect outputs -> Save as assets.
 5. Open asset viewer -> switch Grid / 2-up / 4-up -> rate/flag/filter.
@@ -36,6 +36,7 @@ Ship a local-first, node-based generation app where one user can run multiple mo
 - One open project workspace at a time.
 - One canvas per project.
 - Canvas prompt-note nodes for writing reusable prompt text and connecting it visually to model nodes.
+- Canvas list nodes plus text-template nodes for local mail-merge style text expansion into per-row prompt notes.
 - Async job execution with durable queueing.
 - Local filesystem-backed asset binaries and Postgres metadata.
 - Asset viewer modes: grid, 2-up, 4-up.

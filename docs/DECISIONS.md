@@ -99,3 +99,8 @@
 - Decision: hide the bottom bar completely when nothing is selected, remove the manual output picker from the bar, and make model availability explicit inside the model picker with `Coming soon` status.
 - Rationale: the idle shell adds chrome without helping canvas work, output type is provider-driven rather than a user-facing decision in this pass, and unavailable models need clearer visibility before users try to run them.
 - Consequence: single-selection bars no longer show node-type copy, multi-selection uses only a generic count chip, provider/model changes still resolve `outputType` internally, and the bar/popover chrome is tighter overall.
+
+## 2026-03-06 - List-to-Template Text Expansion Stays Canvas-Local
+- Decision: add `list` and `text-template` canvas nodes, and keep row expansion as a synchronous local canvas transform rather than a queued provider job.
+- Rationale: mail-merge style text expansion is deterministic local data shaping, so pushing it through jobs/assets/queueing adds latency and product noise without adding resilience.
+- Consequence: generated row outputs are materialized as new editable text-note nodes with provenance metadata in canvas JSON, the queue/assets views stay unchanged, and future server-side batch history would require a separate execution record instead of reusing provider jobs.

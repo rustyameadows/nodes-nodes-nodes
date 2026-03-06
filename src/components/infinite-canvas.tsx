@@ -23,10 +23,10 @@ type CanvasViewport = {
 type CanvasNode = {
   id: string;
   label: string;
-  kind: "model" | "asset-source" | "text-note";
+  kind: "model" | "asset-source" | "text-note" | "list" | "text-template";
   providerId: "openai" | "google-gemini" | "topaz";
   modelId: string;
-  nodeType: "text-gen" | "image-gen" | "video-gen" | "transform" | "text-note";
+  nodeType: "text-gen" | "image-gen" | "video-gen" | "transform" | "text-note" | "list" | "text-template";
   outputType: "image" | "video" | "text";
   prompt: string;
   settings: Record<string, unknown>;
@@ -46,6 +46,13 @@ type CanvasNode = {
   outputSemanticType?: "text" | "image" | "video";
   previewImageUrl?: string | null;
   hasStartedJob?: boolean;
+  listPreviewColumns?: string[];
+  listPreviewRows?: string[][];
+  listRowCount?: number;
+  listColumnCount?: number;
+  templateRegisteredColumnCount?: number;
+  templateUnresolvedCount?: number;
+  templateReady?: boolean;
   x: number;
   y: number;
 };
@@ -415,7 +422,7 @@ function getSelectionHaloColors(
   kind: CanvasNode["kind"],
   assetOrigin?: CanvasNode["assetOrigin"]
 ) {
-  if (kind === "text-note") {
+  if (kind === "text-note" || kind === "list" || kind === "text-template") {
     const color = semanticColor("text");
     return {
       leftTop: color,
@@ -1232,6 +1239,8 @@ export function InfiniteCanvas({
 
         {nodes.map((node) => {
           const isTextNote = node.kind === "text-note";
+          const isListNode = node.kind === "list";
+          const isTextTemplateNode = node.kind === "text-template";
           const isModelNode = node.kind === "model";
           const isGeneratedAsset = isGeneratedAssetNode(node);
           const isUploadedAsset = node.kind === "asset-source" && node.assetOrigin === "uploaded";
@@ -1245,8 +1254,9 @@ export function InfiniteCanvas({
           const shouldRenderImageFrame = node.kind === "asset-source" && node.outputType === "image";
           const hasNonImageSource = Boolean(node.sourceAssetId && node.outputType !== "image");
           const isSelected = selectedNodeIds.includes(node.id);
-          const showInputPort = !isTextNote;
-          const showOutputPort = !isModelNode || Boolean(node.hasStartedJob);
+          const showInputPort = !isTextNote && !isListNode;
+          const showOutputPort =
+            isListNode || isTextNote || (node.kind === "asset-source" && !isModelNode) || (isModelNode && Boolean(node.hasStartedJob));
           const showProcessingState = Boolean(node.processingState);
           const showsProcessingShell = isGeneratedAsset && (node.processingState === "queued" || node.processingState === "running");
           const inputAccentGradient = getInputAccentGradient(node.inputSemanticTypes);
@@ -1320,7 +1330,7 @@ export function InfiniteCanvas({
               }}
               role="button"
               tabIndex={0}
-              className={`${styles.node} ${isSelected ? styles.nodeSelected : ""} ${shouldRenderImageFrame ? styles.nodeWithImage : ""} ${isGeneratedAsset ? styles.nodeGeneratedAsset : ""} ${isUploadedAsset ? styles.nodeUploadedAsset : ""} ${isTextNote ? styles.nodeTextNote : ""} ${isModelNode ? styles.nodeModel : ""} ${activeConnectionNodeIds.has(node.id) ? styles.nodePortActive : ""} ${showsProcessingShell ? styles.nodeGeneratedProcessing : ""}`}
+              className={`${styles.node} ${isSelected ? styles.nodeSelected : ""} ${shouldRenderImageFrame ? styles.nodeWithImage : ""} ${isGeneratedAsset ? styles.nodeGeneratedAsset : ""} ${isUploadedAsset ? styles.nodeUploadedAsset : ""} ${isTextNote ? styles.nodeTextNote : ""} ${isListNode ? styles.nodeList : ""} ${isTextTemplateNode ? styles.nodeTextTemplate : ""} ${isModelNode ? styles.nodeModel : ""} ${activeConnectionNodeIds.has(node.id) ? styles.nodePortActive : ""} ${showsProcessingShell ? styles.nodeGeneratedProcessing : ""}`}
               style={nodeStyle}
               onClick={(event) => {
                 event.stopPropagation();
@@ -1442,6 +1452,54 @@ export function InfiniteCanvas({
                     </div>
                   )}
                 </>
+              ) : isListNode ? (
+                <div className={styles.listNodeBody}>
+                  <div className={styles.listNodeHeader}>
+                    <span>{node.label}</span>
+                    <span>{`${node.listColumnCount || 0} × ${node.listRowCount || 0}`}</span>
+                  </div>
+                  <div className={styles.listNodeTable}>
+                    <div className={styles.listNodeColumns}>
+                      {(node.listPreviewColumns && node.listPreviewColumns.length > 0
+                        ? node.listPreviewColumns
+                        : ["No columns"]
+                      ).map((columnLabel, index) => (
+                        <span key={`${node.id}-column-${index}`}>{columnLabel}</span>
+                      ))}
+                    </div>
+                    <div className={styles.listNodeRows}>
+                      {(node.listPreviewRows && node.listPreviewRows.length > 0 ? node.listPreviewRows : [["Add values"]]).map(
+                        (row, rowIndex) => (
+                          <div key={`${node.id}-row-${rowIndex}`} className={styles.listNodeRow}>
+                            {row.map((cell, cellIndex) => (
+                              <span key={`${node.id}-cell-${rowIndex}-${cellIndex}`}>{cell}</span>
+                            ))}
+                          </div>
+                        )
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ) : isTextTemplateNode ? (
+                <div className={styles.templateNodeBody}>
+                  <div className={styles.templateNodeHeader}>
+                    <span>{node.label}</span>
+                    <span>{node.templateReady ? "Ready" : "Needs list"}</span>
+                  </div>
+                  <div className={styles.templateNodePreview}>
+                    {node.prompt.trim() || "Write merge text with [[column]] placeholders"}
+                  </div>
+                  <div className={styles.templateNodeMeta}>
+                    <span>{`${node.templateRegisteredColumnCount || 0} columns`}</span>
+                    <span>
+                      {node.templateUnresolvedCount
+                        ? `${node.templateUnresolvedCount} unresolved`
+                        : node.templateReady
+                          ? "Merge ready"
+                          : "Waiting for input"}
+                    </span>
+                  </div>
+                </div>
               ) : (
                 isModelNode ? (
                   <div

@@ -41,11 +41,11 @@ type Canvas = {
 
 type WorkflowNode = {
   id: string;
-  kind: "model" | "asset-source" | "text-note";
+  kind: "model" | "asset-source" | "text-note" | "list" | "text-template";
   label: string;
   providerId: string;
   modelId: string;
-  nodeType: "text-gen" | "image-gen" | "video-gen" | "transform" | "text-note";
+  nodeType: "text-gen" | "image-gen" | "video-gen" | "transform" | "text-note" | "list" | "text-template";
   outputType: AssetType;
   prompt: string; // model prompt or text-note body
   settings: Record<string, unknown>;
@@ -103,6 +103,29 @@ type JobPreviewFrame = {
   width: number | null;
   height: number | null;
   createdAt: Date;
+};
+```
+
+### Canvas JSON Node Settings
+
+```ts
+type ListNodeSettings = {
+  source: "list";
+  columns: Array<{ id: string; label: string }>;
+  rows: Array<{ id: string; values: Record<string, string> }>;
+};
+
+type TextTemplateNodeSettings = {
+  source: "text-template";
+};
+
+type GeneratedTextNoteSettings = {
+  source: "template-output";
+  sourceTemplateNodeId: string;
+  sourceListNodeId: string;
+  batchId: string;
+  rowId: string;
+  rowIndex: number; // original source-row index
 };
 ```
 
@@ -255,6 +278,8 @@ type JobPreviewFrame = {
 - Multiple canvas asset-source nodes may legally point at the same `asset.id`.
 - Canvas nodes/edges cannot cross project boundaries.
 - Text-note prompt-source links live inside canvas JSON and are project-scoped like other node relationships.
+- List data and text-template metadata live inside canvas JSON only; no relational schema changes are required for this feature.
+- Template-generated text notes are persisted as regular canvas text-note nodes with provenance stored in settings.
 - Deleting a project cascades to canvas, jobs, assets, and tags.
 - Archived projects remain readable but are excluded from default active list.
 

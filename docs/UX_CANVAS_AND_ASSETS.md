@@ -24,13 +24,17 @@
   - open insert picker by double-clicking empty canvas
   - add model node
   - add text note
+  - add list node
+  - add text template
   - upload assets from the insert picker
   - add previous generated assets from project library
   - add previous uploaded assets from project library
   - drag/move node cards
   - connect nodes from either port direction; canvas normalizes the final source/target relationship
   - drag a text-note or asset output onto empty canvas to create a new model node already connected to that source
+  - drag a list output onto empty canvas to create a new text-template node already connected to that list
   - drag a model input onto empty canvas to open an input-scoped insert menu (`text note`, `upload`, `generated asset`, `uploaded asset`) that auto-connects the chosen source into that model
+  - drag a text-template input onto empty canvas to open an input-scoped insert menu (`list`) that auto-connects the chosen source into that template
   - click a connection line to select it
   - delete the selected connection with `Delete` / `Backspace`
   - delete the active node selection with `Delete`/`Backspace`
@@ -65,6 +69,8 @@
   - multi-selection => compare-focused actions only
 - Single-selection bars do not show a node-type chip; multi-selection uses a generic `N selected` chip.
 - Text notes are first-class canvas nodes with inline editing plus bottom-bar tray editing.
+- List nodes are first-class canvas nodes with on-canvas table preview plus bottom-bar table editing.
+- Text-template nodes are first-class canvas nodes with on-canvas merge summary plus bottom-bar template editing.
 - Connected text notes act as prompt-source nodes for model execution.
 - Single-selection node controls include:
   - provider selector
@@ -80,6 +86,8 @@
 - All select-like controls in the canvas bar use custom upward-opening popovers rather than native browser selects.
 - Input/output ports display supported media types.
 - Text notes expose output-only prompt-source connections into model nodes.
+- List nodes expose output-only list/text connections into text-template nodes.
+- Text-template nodes expose input-only list connections, then materialize new text-note outputs on run.
 - Image-backed nodes preserve original asset aspect ratio inside the canvas preview.
 - Image-backed nodes size the entire card from the image ratio itself rather than letterboxing into a shared card shape.
 - Generated output nodes can show a streamed partial preview before the final asset lands.
@@ -116,11 +124,20 @@
     - compression (`jpeg` / `webp` only)
     - moderation (`generate` only)
   - all placeholder models/providers remain selectable but show `Coming soon` and disable Run
+- Text-template execution rules in this pass:
+  - exactly one connected list node
+  - placeholder syntax is `[[column label]]`
+  - column matching is case-insensitive after trimming/collapsing whitespace
+  - missing columns block generation
+  - blank cells render as empty strings
+  - fully blank rows are skipped
+  - generation is local/canvas-only and creates new text-note nodes, not queue jobs
 
 ## Job Feedback UX
 - Queue summary remains visible from canvas via the top-right queue pill.
 - Run action creates a project job entry with state and timestamps in the queue view.
 - Run also inserts one or more generated output placeholder nodes immediately to the right of the model node.
+- Text-template generation does not create queue rows; it appends new text-note outputs directly on the canvas.
 - Job-state badge lives on that output node, not on the model node.
 - Completed generated outputs clear their badge; failed outputs stay on canvas with failed state.
 - Generated model->output edges are dashed only while the output node is processing, then become solid once the output completes.
@@ -178,6 +195,8 @@
   - uploaded asset nodes use a pure image-blue frame
 - Text notes use a solid neon-pink frame so prompt inputs are distinct even before reading their connection lines.
   - on-canvas text notes only show the note body/value; label and note metadata stay in the bottom-bar tray system
+- List nodes use the same text-pink semantic family, with a compact header-plus-grid preview.
+- Text-template nodes use the same text-pink semantic family, with a short merge-text preview and readiness summary.
 - Model cards are slightly taller, bright white, and visually reflect data flow:
 - Model nodes render as compact semantic pills rather than large content cards:
   - the model name is the primary canvas label
