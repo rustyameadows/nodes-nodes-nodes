@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { buildOpenAiImageDebugRequest } from "@/lib/openai-image-settings";
+import { buildTopazGigapixelDebugRequest } from "@/lib/topaz-gigapixel-settings";
 import { prisma } from "@/lib/prisma";
 import { getProviderAdapter } from "@/lib/providers/registry";
 import { readAssetContent, saveBufferAsAsset, saveContentAsAsset } from "@/lib/storage/local-storage";
@@ -33,11 +34,15 @@ function asNodePayload(value: unknown): NodePayload {
   };
 }
 
-function toErrorMessage(error: unknown): { code: string; message: string } {
+function toErrorMessage(error: unknown): { code: string; message: string; details?: Record<string, unknown> } {
   if (error && typeof error === "object" && "code" in error && typeof error.code === "string") {
     return {
       code: error.code,
       message: error instanceof Error ? error.message : "Provider execution error",
+      details:
+        "details" in error && error.details && typeof error.details === "object"
+          ? (error.details as Record<string, unknown>)
+          : undefined,
     };
   }
 
@@ -97,6 +102,19 @@ function buildProviderRequest(
           rawSettings: payload.settings,
           inputImageAssetIds: payload.inputImageAssetIds,
         })
+      : providerId === "topaz"
+        ? buildTopazGigapixelDebugRequest({
+            modelId,
+            prompt: payload.prompt,
+            rawSettings: payload.settings,
+            inputImageAssetIds: payload.inputImageAssetIds,
+            inputAssets: inputAssets.map((asset) => ({
+              assetId: asset.assetId,
+              mimeType: asset.mimeType,
+              width: asset.width ?? null,
+              height: asset.height ?? null,
+            })),
+          })
       : null;
 
   return {
@@ -203,6 +221,20 @@ export async function processJobById(jobId: string) {
       },
     });
 
+    const topazApiMetadata =
+      providerId === "topaz" && outputs[0]?.metadata && typeof outputs[0].metadata === "object"
+        ? {
+            request:
+              "topazApiRequest" in outputs[0].metadata
+                ? (outputs[0].metadata.topazApiRequest as Record<string, unknown>)
+                : null,
+            response:
+              "topazApiResponse" in outputs[0].metadata
+                ? (outputs[0].metadata.topazApiResponse as Record<string, unknown>)
+                : null,
+          }
+        : null;
+
     await prisma.jobAttempt.create({
       data: {
         jobId,
@@ -225,6 +257,11 @@ export async function processJobById(jobId: string) {
             mimeType: previewFrame.mimeType,
             createdAt: previewFrame.createdAt,
           })),
+          ...(topazApiMetadata
+            ? {
+                topazApi: topazApiMetadata,
+              }
+            : {}),
         } as Prisma.InputJsonValue,
         durationMs: Date.now() - start,
       },
@@ -270,7 +307,7 @@ export async function processJobById(jobId: string) {
       },
     });
   } catch (error) {
-    const { code, message } = toErrorMessage(error);
+    const { code, message, details } = toErrorMessage(error);
 
     await prisma.jobAttempt.create({
       data: {
@@ -288,8 +325,15 @@ export async function processJobById(jobId: string) {
                   mimeType: previewFrame.mimeType,
                   createdAt: previewFrame.createdAt,
                 })),
+                ...(details
+                  ? {
+                      errorDetails: details,
+                    }
+                  : {}),
               } as Prisma.InputJsonValue)
-            : undefined,
+            : details
+              ? ({ errorDetails: details } as Prisma.InputJsonValue)
+              : undefined,
         errorCode: code,
         errorMessage: message,
         durationMs: Date.now() - start,

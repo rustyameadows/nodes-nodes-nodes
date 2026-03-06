@@ -12,6 +12,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { isRunnableOpenAiImageModel, parseImageSize } from "@/lib/openai-image-settings";
+import { isRunnableTopazGigapixelModel } from "@/lib/topaz-gigapixel-settings";
 import styles from "./infinite-canvas.module.css";
 
 type CanvasViewport = {
@@ -258,6 +259,20 @@ function getImageFrameAspectRatio(
       return parsedSize.width / parsedSize.height;
     }
 
+    for (const upstreamNodeId of sourceModelNode.upstreamNodeIds) {
+      const inputNode = nodesById[upstreamNodeId];
+      if (!inputNode || inputNode.outputType !== "image") {
+        continue;
+      }
+
+      const inputRatio = imageAspectRatios[inputNode.id];
+      if (inputRatio) {
+        return inputRatio;
+      }
+    }
+  }
+
+  if (isRunnableTopazGigapixelModel(sourceModelNode.providerId, sourceModelNode.modelId)) {
     for (const upstreamNodeId of sourceModelNode.upstreamNodeIds) {
       const inputNode = nodesById[upstreamNodeId];
       if (!inputNode || inputNode.outputType !== "image") {

@@ -70,6 +70,16 @@
 - Rationale: the OpenAI Images integration is already architected as a family path, so leaving mini behind `Coming soon` only adds brittle model-ID branching without product benefit.
 - Consequence: canvas settings, job creation, validation, placeholder/output reconciliation, preview streaming, and source-call inspection now treat runnable OpenAI image models through one shared helper instead of hard-coding `gpt-image-1.5`, and model-specific supported values such as `input_fidelity` can diverge without forking the whole UI path.
 
+## 2026-03-06 - Topaz Ships as a Hosted Image API Family
+- Decision: replace the Topaz placeholder with the hosted Topaz Image API and launch `topaz / high_fidelity_v2` plus `topaz / redefine` as the first live Topaz models.
+- Rationale: this app is provider-API driven, so Topaz needs to match the OpenAI integration pattern: API key, async submit/status/download, no local binary requirement.
+- Consequence: provider readiness is modeled through `TOPAZ_API_KEY`, saved legacy `topaz-studio-main` and temporary `gigapixel-*` ids normalize into the real API models, `High Fidelity V2` runs synchronously on `/image/v1/enhance`, `Redefine` runs asynchronously on `/image/v1/enhance-gen/async`, and queue/source-call inspection stores Topaz endpoint/request/response metadata through the existing job-attempt pipeline.
+
+## 2026-03-06 - Canvas Saves Must Wait for Initial Hydration
+- Decision: block all client canvas persistence until the current project's saved canvas document has been fetched and applied.
+- Rationale: the default in-memory canvas document is empty, so any early viewport or reconciliation save before hydration can overwrite a real project graph with `workflow.nodes = []`.
+- Consequence: the canvas view now holds pending saves until the initial fetch completes, which prevents empty-document overwrites on reload while preserving normal debounced saves after hydration.
+
 ## 2026-03-05 - OpenAI Infers Generate vs Edit from Connected Inputs
 - Decision: remove the explicit `generate` / `edit` control from the `gpt-image-1.5` node UI, infer the execution mode from whether supported image inputs are connected, and keep runtime job-state visibility on the immediately-created generated output node.
 - Rationale: users think in terms of prompt-only vs reference-image generation, not OpenAI endpoint names. The manual toggle adds API vocabulary without adding product value.

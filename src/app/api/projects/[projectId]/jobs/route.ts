@@ -2,11 +2,13 @@ import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { isRunnableOpenAiImageModel, resolveOpenAiImageSettings } from "@/lib/openai-image-settings";
+import { formatProviderRequirementMessage, getFirstUnconfiguredRequirement } from "@/lib/provider-readiness";
 import { prisma } from "@/lib/prisma";
 import { getProviderModel } from "@/lib/providers/registry";
 import { badRequest, internalError } from "@/lib/server/http";
 import { dispatchJob } from "@/lib/server/job-dispatch";
 import { syncProviderModels } from "@/lib/server/provider-models";
+import { isRunnableTopazGigapixelModel, resolveTopazGigapixelSettings } from "@/lib/topaz-gigapixel-settings";
 import type { OpenAIImageMode } from "@/lib/types";
 
 const createJobSchema = z.object({
@@ -37,8 +39,9 @@ function getSubmissionError(input: z.infer<typeof createJobSchema>) {
     return `${model.displayName} is coming soon.`;
   }
 
-  if (model.capabilities.requiresApiKeyEnv && !model.capabilities.apiKeyConfigured) {
-    return `Set ${model.capabilities.requiresApiKeyEnv} in .env.local and restart npm run dev.`;
+  const missingRequirement = getFirstUnconfiguredRequirement(model.capabilities);
+  if (missingRequirement) {
+    return formatProviderRequirementMessage(missingRequirement) || `${model.displayName} is not runnable right now.`;
   }
 
   if (!model.capabilities.runnable) {
@@ -50,8 +53,12 @@ function getSubmissionError(input: z.infer<typeof createJobSchema>) {
     return `${model.displayName} does not support ${executionMode} mode.`;
   }
 
-  if (!input.nodePayload.prompt.trim()) {
+  if (model.capabilities.promptMode === "required" && !input.nodePayload.prompt.trim()) {
     return "Connect a prompt note or enter a prompt before running.";
+  }
+
+  if (model.capabilities.promptMode === "unsupported" && input.nodePayload.prompt.trim()) {
+    return `${model.displayName} does not support prompt input.`;
   }
 
   if (executionMode === "generate" && input.nodePayload.inputImageAssetIds.length > 0) {
@@ -67,6 +74,22 @@ function getSubmissionError(input: z.infer<typeof createJobSchema>) {
     if (resolved.outputCount !== input.nodePayload.outputCount) {
       return "Output count is outside the supported range.";
     }
+  }
+
+  if (isRunnableTopazGigapixelModel(input.providerId, input.modelId)) {
+    if (input.nodePayload.executionMode !== "edit") {
+      return `${model.displayName} only supports edit mode.`;
+    }
+
+    if (input.nodePayload.inputImageAssetIds.length !== 1) {
+      return `${model.displayName} requires exactly one connected image input.`;
+    }
+
+    if (input.nodePayload.outputCount !== 1) {
+      return `${model.displayName} produces exactly one output.`;
+    }
+
+    resolveTopazGigapixelSettings(input.nodePayload.settings, input.modelId);
   }
 
   return null;

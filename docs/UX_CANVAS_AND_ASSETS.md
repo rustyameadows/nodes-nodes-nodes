@@ -107,6 +107,7 @@
 - Validation appears before run when required ports/settings are missing.
 - Model execution rules in this pass:
   - `openai / gpt-image-1.5` and `openai / gpt-image-1-mini` are the runnable OpenAI image models
+  - `topaz / high_fidelity_v2` and `topaz / redefine` are the runnable Topaz image-transform models
   - unavailable models remain selectable in the picker, show `Coming soon`, and still disable Run
   - connected text note overrides the model prompt field during execution
   - model prompt field remains as fallback when no text note is connected
@@ -123,6 +124,14 @@
     - input fidelity (`edit` only, values vary by selected model)
     - compression (`jpeg` / `webp` only)
     - moderation (`generate` only)
+  - Topaz model rules:
+    - always require exactly one connected image input
+    - always produce exactly one output image
+    - `high_fidelity_v2` disables Run if any prompt input is connected or typed
+    - `redefine` accepts an optional text note / prompt field
+    - Topaz image inputs are limited to PNG, JPEG, or TIFF
+    - shared Topaz control: `Scale`
+    - `redefine` advanced controls: `Creativity`, `Texture`
   - all placeholder models/providers remain selectable but show `Coming soon` and disable Run
 - Text-template execution rules in this pass:
   - exactly one connected list node
@@ -146,6 +155,7 @@
 - Queue rows support source-call inspection for provider request/response debugging.
 - Generated output nodes expose inline `Show Source Call` inspection plus a Queue deep link.
 - Successful OpenAI image jobs update the existing placeholder output nodes in place rather than creating second nodes on completion.
+- Successful Topaz jobs update the existing placeholder output node in place and do not use partial-preview frames in v1.
 - While a job is `running`, output nodes render the latest durable preview frame available for that `(jobId, outputIndex)`.
 - Reloading during a run restores those preview frames from durable job-preview records.
 

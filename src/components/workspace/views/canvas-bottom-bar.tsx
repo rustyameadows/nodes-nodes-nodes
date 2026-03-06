@@ -803,19 +803,21 @@ export function CanvasBottomBar({
                   triggerRefs={triggerRefs}
                   popoverRef={popoverRef}
                 >
-                  {isRunnableOpenAiImageModel(selectedModel?.providerId, selectedModel?.modelId) && selectedNodeRunPreview ? (
+                  {selectedNodeRunPreview ? (
                     <div className={styles.traySection}>
                       <span className={styles.traySectionLabel}>Execution</span>
                       <div className={styles.traySummary}>
-                        {selectedNodeRunPreview.requestPayload.nodePayload.executionMode === "edit"
-                          ? `Reference-image generation from ${selectedNodeRunPreview.requestPayload.nodePayload.inputImageAssetIds.length} image input${
-                              selectedNodeRunPreview.requestPayload.nodePayload.inputImageAssetIds.length === 1 ? "" : "s"
-                            } to ${selectedNodeRunPreview.requestPayload.nodePayload.outputCount} output${
-                              selectedNodeRunPreview.requestPayload.nodePayload.outputCount === 1 ? "" : "s"
-                            }.`
-                          : `Prompt-only generation to ${selectedNodeRunPreview.requestPayload.nodePayload.outputCount} output${
-                              selectedNodeRunPreview.requestPayload.nodePayload.outputCount === 1 ? "" : "s"
-                            }.`}
+                        {isRunnableOpenAiImageModel(selectedModel?.providerId, selectedModel?.modelId)
+                          ? selectedNodeRunPreview.requestPayload.nodePayload.executionMode === "edit"
+                            ? `Reference-image generation from ${selectedNodeRunPreview.requestPayload.nodePayload.inputImageAssetIds.length} image input${
+                                selectedNodeRunPreview.requestPayload.nodePayload.inputImageAssetIds.length === 1 ? "" : "s"
+                              } to ${selectedNodeRunPreview.requestPayload.nodePayload.outputCount} output${
+                                selectedNodeRunPreview.requestPayload.nodePayload.outputCount === 1 ? "" : "s"
+                              }.`
+                            : `Prompt-only generation to ${selectedNodeRunPreview.requestPayload.nodePayload.outputCount} output${
+                                selectedNodeRunPreview.requestPayload.nodePayload.outputCount === 1 ? "" : "s"
+                              }.`
+                          : selectedNodeRunPreview.readyMessage || `Execution via ${selectedNodeRunPreview.endpoint}.`}
                       </div>
                     </div>
                   ) : null}

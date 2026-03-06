@@ -4,6 +4,15 @@ export type ProviderId = "openai" | "google-gemini" | "topaz";
 export type OpenAIImageMode = "generate" | "edit";
 export type ImageBackground = "auto" | "opaque" | "transparent";
 export type ImageModeration = "auto" | "low";
+export type ProviderRequirementKind = "env" | "executable";
+export type ProviderPromptMode = "required" | "optional" | "unsupported";
+
+export type ProviderRequirement = {
+  kind: ProviderRequirementKind;
+  key: string;
+  configured: boolean;
+  label: string;
+};
 
 export type WorkspaceView = "canvas" | "assets" | "queue" | "settings";
 
@@ -15,19 +24,13 @@ export type ProviderModelCapabilities = {
   availability: "ready" | "coming_soon";
   requiresApiKeyEnv: string | null;
   apiKeyConfigured: boolean;
+  requirements: ProviderRequirement[];
+  promptMode: ProviderPromptMode;
   executionModes: OpenAIImageMode[];
   acceptedInputMimeTypes: string[];
   maxInputImages: number;
   parameters: ModelParameterDefinition[];
-  defaults: {
-    outputFormat?: "png" | "jpeg" | "webp";
-    quality?: "low" | "medium" | "high" | "auto";
-    size?: "1024x1024" | "1536x1024" | "1024x1536" | "auto";
-    inputFidelity?: "high" | "low";
-    background?: ImageBackground;
-    moderation?: ImageModeration;
-    n?: number;
-  };
+  defaults: Record<string, unknown>;
 };
 
 export type ProviderModel = {

@@ -5,12 +5,21 @@ export type NodeKind = "text-gen" | "image-gen" | "video-gen" | "transform";
 export type OutputType = "text" | "image" | "video";
 export type ProviderModelAvailability = "ready" | "coming_soon";
 export type OpenAIImageMode = "generate" | "edit";
+export type ProviderRequirementKind = "env" | "executable";
+export type ProviderPromptMode = "required" | "optional" | "unsupported";
 export type ImageOutputFormat = "png" | "jpeg" | "webp";
 export type ImageSize = "1024x1024" | "1536x1024" | "1024x1536" | "auto";
 export type ImageQuality = "low" | "medium" | "high" | "auto";
 export type ImageInputFidelity = "high" | "low";
 export type ImageBackground = "auto" | "opaque" | "transparent";
 export type ImageModeration = "auto" | "low";
+
+export type ProviderRequirement = {
+  kind: ProviderRequirementKind;
+  key: string;
+  configured: boolean;
+  label: string;
+};
 
 export type ProviderModelCapabilities = {
   text: boolean;
@@ -20,19 +29,13 @@ export type ProviderModelCapabilities = {
   availability: ProviderModelAvailability;
   requiresApiKeyEnv: string | null;
   apiKeyConfigured: boolean;
+  requirements: ProviderRequirement[];
+  promptMode: ProviderPromptMode;
   executionModes: OpenAIImageMode[];
   acceptedInputMimeTypes: string[];
   maxInputImages: number;
   parameters: ModelParameterDefinition[];
-  defaults: {
-    outputFormat?: ImageOutputFormat;
-    quality?: ImageQuality;
-    size?: ImageSize;
-    inputFidelity?: ImageInputFidelity;
-    background?: ImageBackground;
-    moderation?: ImageModeration;
-    n?: number;
-  };
+  defaults: Record<string, unknown>;
 };
 
 export type NodePayload = {

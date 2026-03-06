@@ -22,6 +22,12 @@ import {
   OPENAI_MAX_INPUT_IMAGES,
   resolveOpenAiImageSettings,
 } from "@/lib/openai-image-settings";
+import { formatProviderRequirementMessage, getFirstUnconfiguredRequirement } from "@/lib/provider-readiness";
+import {
+  buildTopazGigapixelDebugRequest,
+  isRunnableTopazGigapixelModel,
+  resolveTopazGigapixelSettings,
+} from "@/lib/topaz-gigapixel-settings";
 import {
   createJobFromRequest,
   getCanvasWorkspace,
@@ -107,6 +113,10 @@ function resolveModelSettings(
 
   if (isRunnableOpenAiImageModel(model?.providerId, model?.modelId)) {
     return resolveOpenAiImageSettings(mergedSettings, executionMode, model?.modelId).effectiveSettings;
+  }
+
+  if (isRunnableTopazGigapixelModel(model?.providerId, model?.modelId)) {
+    return resolveTopazGigapixelSettings(mergedSettings, model?.modelId).effectiveSettings;
   }
 
   return mergedSettings;
@@ -195,6 +205,15 @@ function fallbackProviderModel(providers: ProviderModel[]): ProviderModel {
       availability: "ready" as const,
       requiresApiKeyEnv: "OPENAI_API_KEY",
       apiKeyConfigured: false,
+      requirements: [
+        {
+          kind: "env" as const,
+          key: "OPENAI_API_KEY",
+          configured: false,
+          label: "OpenAI API key",
+        },
+      ],
+      promptMode: "required" as const,
       executionModes: ["generate", "edit"],
       acceptedInputMimeTypes: OPENAI_IMAGE_INPUT_MIME_TYPES,
       maxInputImages: OPENAI_MAX_INPUT_IMAGES,
@@ -436,6 +455,8 @@ export function CanvasView({ projectId }: Props) {
   const [selectedConnection, setSelectedConnection] = useState<CanvasConnection | null>(null);
 
   const saveTimer = useRef<NodeJS.Timeout | null>(null);
+  const hasLoadedCanvasRef = useRef(false);
+  const pendingCanvasSaveRef = useRef<CanvasDocument | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const insertMenuRef = useRef<HTMLDivElement | null>(null);
   const assetPickerRef = useRef<HTMLDivElement | null>(null);
@@ -774,6 +795,10 @@ export function CanvasView({ projectId }: Props) {
       return "generate" as const;
     }
 
+    if (isRunnableTopazGigapixelModel(selectedNode.providerId, selectedNode.modelId)) {
+      return "edit" as const;
+    }
+
     const hasConnectedImageInputs = selectedNode.upstreamNodeIds.some((nodeId) => {
       const inputNode = nodesById[nodeId];
       const imageAsset = resolveNodeImageAsset(inputNode);
@@ -813,6 +838,15 @@ export function CanvasView({ projectId }: Props) {
     [selectedModelParameters]
   );
 
+  const persistCanvas = useCallback(
+    async (doc: CanvasDocument) => {
+      await putCanvasWorkspace(projectId, {
+        canvasDocument: doc,
+      });
+    },
+    [projectId]
+  );
+
   const fetchCanvas = useCallback(async () => {
     const data = await getCanvasWorkspace(projectId);
     const raw = (data.canvas?.canvasDocument || {}) as Record<string, unknown>;
@@ -839,25 +873,29 @@ export function CanvasView({ projectId }: Props) {
       },
     });
 
+    hasLoadedCanvasRef.current = true;
+
+    if (pendingCanvasSaveRef.current) {
+      const pendingDoc = pendingCanvasSaveRef.current;
+      pendingCanvasSaveRef.current = null;
+      await persistCanvas(pendingDoc);
+    }
+
     setSelectedNodeIds((current) => current.filter((nodeId) => nodes.some((node) => node.id === nodeId)));
-  }, [projectId]);
+  }, [persistCanvas, projectId]);
 
   const fetchJobs = useCallback(async () => {
     const nextJobs = await getJobs(projectId);
     setJobs(nextJobs);
   }, [projectId]);
 
-  const persistCanvas = useCallback(
-    async (doc: CanvasDocument) => {
-      await putCanvasWorkspace(projectId, {
-        canvasDocument: doc,
-      });
-    },
-    [projectId]
-  );
-
   const queueCanvasSave = useCallback(
     (doc: CanvasDocument) => {
+      if (!hasLoadedCanvasRef.current) {
+        pendingCanvasSaveRef.current = doc;
+        return;
+      }
+
       if (saveTimer.current) {
         clearTimeout(saveTimer.current);
       }
@@ -926,7 +964,11 @@ export function CanvasView({ projectId }: Props) {
         .map((assetRef) => assetRef.assetId)
         .filter((assetId, index, array) => array.indexOf(assetId) === index)
         .slice(0, maxInputImages || undefined);
-      const executionMode = inputImageAssetIds.length > 0 ? "edit" : "generate";
+      const executionMode = isRunnableTopazGigapixelModel(model?.providerId, model?.modelId)
+        ? ("edit" as const)
+        : inputImageAssetIds.length > 0
+          ? ("edit" as const)
+          : ("generate" as const);
       const effectiveSettings = resolveModelSettings(model, node.settings, executionMode);
       const outputCount = isRunnableOpenAiImageModel(model?.providerId, model?.modelId)
         ? resolveOpenAiImageSettings(effectiveSettings, executionMode, model?.modelId).outputCount
@@ -956,26 +998,48 @@ export function CanvasView({ projectId }: Props) {
         disabledReason = "Selected model is unavailable.";
       } else if (model.capabilities.availability !== "ready") {
         disabledReason = `${model.displayName} is coming soon.`;
-      } else if (model.capabilities.requiresApiKeyEnv && !model.capabilities.apiKeyConfigured) {
-        disabledReason = `Set ${model.capabilities.requiresApiKeyEnv} in .env.local and restart npm run dev.`;
+      } else if (getFirstUnconfiguredRequirement(model.capabilities)) {
+        disabledReason =
+          formatProviderRequirementMessage(getFirstUnconfiguredRequirement(model.capabilities)) ||
+          `${model.displayName} is not runnable right now.`;
       } else if (!model.capabilities.executionModes.includes(executionMode)) {
         disabledReason = `${model.displayName} does not support ${executionMode} mode.`;
-      } else if (!requestPayload.nodePayload.prompt) {
+      } else if (
+        model.capabilities.promptMode === "required" &&
+        !requestPayload.nodePayload.prompt
+      ) {
         disabledReason = node.promptSourceNodeId
           ? "Connected text note is empty."
           : "Connect a prompt note or enter a prompt.";
+      } else if (
+        model.capabilities.promptMode === "unsupported" &&
+        (Boolean(node.promptSourceNodeId) || Boolean(requestPayload.nodePayload.prompt))
+      ) {
+        disabledReason = `${model.displayName} does not support prompt input.`;
       } else if (connectedImageRefs.length > 0 && requestPayload.nodePayload.inputImageAssetIds.length === 0) {
         disabledReason =
           acceptedMimeTypes.size > 0
-            ? "Connected image inputs are unsupported. Use PNG, JPEG, or WebP references."
+            ? "Connected image inputs are unsupported. Use PNG, JPEG, or TIFF references."
             : "Connected image inputs are unsupported for this model.";
+      } else if (isRunnableTopazGigapixelModel(model.providerId, model.modelId) && inputImageAssetIds.length !== 1) {
+        disabledReason = `${model.displayName} requires exactly one connected PNG, JPEG, or TIFF image input.`;
+      } else if (isRunnableTopazGigapixelModel(model.providerId, model.modelId) && outputCount !== 1) {
+        disabledReason = `${model.displayName} produces exactly one output.`;
       } else {
-        readyMessage =
-          executionMode === "generate"
-            ? `Ready for prompt-only generation with ${outputCount} output${outputCount === 1 ? "" : "s"}.`
-            : `Ready for reference-image generation from ${requestPayload.nodePayload.inputImageAssetIds.length} image input${
-                requestPayload.nodePayload.inputImageAssetIds.length === 1 ? "" : "s"
-              } and ${outputCount} output${outputCount === 1 ? "" : "s"}.`;
+        if (isRunnableTopazGigapixelModel(model.providerId, model.modelId)) {
+          const resolvedTopazSettings = resolveTopazGigapixelSettings(effectiveSettings, model.modelId);
+          readyMessage =
+            model.capabilities.promptMode === "optional" && requestPayload.nodePayload.prompt
+              ? `Ready to run ${model.displayName} at ${resolvedTopazSettings.scale}x on 1 image with prompt guidance.`
+              : `Ready to run ${model.displayName} at ${resolvedTopazSettings.scale}x on 1 image.`;
+        } else {
+          readyMessage =
+            executionMode === "generate"
+              ? `Ready for prompt-only generation with ${outputCount} output${outputCount === 1 ? "" : "s"}.`
+              : `Ready for reference-image generation from ${requestPayload.nodePayload.inputImageAssetIds.length} image input${
+                  requestPayload.nodePayload.inputImageAssetIds.length === 1 ? "" : "s"
+                } and ${outputCount} output${outputCount === 1 ? "" : "s"}.`;
+        }
       }
 
       const debugRequest = isRunnableOpenAiImageModel(node.providerId, node.modelId)
@@ -986,13 +1050,25 @@ export function CanvasView({ projectId }: Props) {
             rawSettings: requestPayload.nodePayload.settings,
             inputImageAssetIds,
           })
-        : null;
+        : isRunnableTopazGigapixelModel(node.providerId, node.modelId)
+          ? buildTopazGigapixelDebugRequest({
+              modelId: node.modelId,
+              prompt: requestPayload.nodePayload.prompt,
+              rawSettings: requestPayload.nodePayload.settings,
+              inputImageAssetIds,
+              inputAssets: connectedImageRefs.map((assetRef) => ({
+                assetId: assetRef.assetId,
+                mimeType: assetRef.mimeType,
+              })),
+            })
+          : null;
 
       return {
         requestPayload,
         disabledReason,
         readyMessage,
-        endpoint: debugRequest?.endpoint || (executionMode === "generate" ? "client.images.generate" : "client.images.edit"),
+        endpoint:
+          debugRequest?.endpoint || (executionMode === "generate" ? "client.images.generate" : "client.images.edit"),
         debugRequest,
       };
     },
@@ -1009,6 +1085,8 @@ export function CanvasView({ projectId }: Props) {
 
   useEffect(() => {
     setIsLoading(true);
+    hasLoadedCanvasRef.current = false;
+    pendingCanvasSaveRef.current = null;
 
     Promise.all([getProviders(), fetchCanvas(), fetchJobs(), openProject(projectId)])
       .then(([nextProviders]) => {
@@ -1264,6 +1342,8 @@ export function CanvasView({ projectId }: Props) {
       if (saveTimer.current) {
         clearTimeout(saveTimer.current);
       }
+      hasLoadedCanvasRef.current = false;
+      pendingCanvasSaveRef.current = null;
     };
   }, []);
 

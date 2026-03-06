@@ -1,4 +1,5 @@
 import OpenAI, { toFile } from "openai";
+import { getFirstUnconfiguredRequirement } from "@/lib/provider-readiness";
 import {
   OPENAI_IMAGE_INPUT_MIME_TYPES,
   OPENAI_MAX_INPUT_IMAGES,
@@ -7,6 +8,16 @@ import {
   parseImageSize,
   resolveOpenAiImageSettings,
 } from "@/lib/openai-image-settings";
+import {
+  getTopazExecutionModes,
+  getTopazGigapixelDefaultSettings,
+  getTopazGigapixelParameterDefinitions,
+  getTopazPromptMode,
+  normalizeLegacyTopazModelId,
+  TOPAZ_GIGAPIXEL_INPUT_MIME_TYPES,
+  TOPAZ_GIGAPIXEL_MAX_INPUT_IMAGES,
+} from "@/lib/topaz-gigapixel-settings";
+import { executeTopazImageApi, getTopazApiRequirement } from "@/lib/server/topaz-image-api";
 import type {
   OpenAIImageMode,
   ImageOutputFormat,
@@ -38,6 +49,15 @@ function apiKeyConfigured(envVar: string) {
   return Boolean(process.env[envVar]?.trim());
 }
 
+function buildEnvRequirement(envVar: string, label: string) {
+  return {
+    kind: "env" as const,
+    key: envVar,
+    configured: apiKeyConfigured(envVar),
+    label,
+  };
+}
+
 function buildCapabilities({
   text,
   image,
@@ -45,6 +65,8 @@ function buildCapabilities({
   runnable,
   availability,
   requiresApiKeyEnv = null,
+  requirements = [],
+  promptMode = "optional",
   executionModes = [],
   acceptedInputMimeTypes = [],
   maxInputImages = 0,
@@ -57,20 +79,31 @@ function buildCapabilities({
   runnable: boolean;
   availability: ProviderModelCapabilities["availability"];
   requiresApiKeyEnv?: string | null;
+  requirements?: ProviderModelCapabilities["requirements"];
+  promptMode?: ProviderModelCapabilities["promptMode"];
   executionModes?: ProviderModelCapabilities["executionModes"];
   acceptedInputMimeTypes?: string[];
   maxInputImages?: number;
   parameters?: ProviderModelCapabilities["parameters"];
   defaults?: ProviderModelCapabilities["defaults"];
 }): ProviderModelCapabilities {
+  const envRequirement =
+    requiresApiKeyEnv && !requirements.some((requirement) => requirement.kind === "env" && requirement.key === requiresApiKeyEnv)
+      ? [buildEnvRequirement(requiresApiKeyEnv, requiresApiKeyEnv)]
+      : [];
+  const mergedRequirements = [...requirements, ...envRequirement];
+  const firstEnvRequirement = mergedRequirements.find((requirement) => requirement.kind === "env") || null;
+
   return {
     text,
     image,
     video,
     runnable,
     availability,
-    requiresApiKeyEnv,
-    apiKeyConfigured: requiresApiKeyEnv ? apiKeyConfigured(requiresApiKeyEnv) : true,
+    requiresApiKeyEnv: firstEnvRequirement?.key || requiresApiKeyEnv,
+    apiKeyConfigured: firstEnvRequirement ? Boolean(firstEnvRequirement.configured) : true,
+    requirements: mergedRequirements,
+    promptMode,
     executionModes,
     acceptedInputMimeTypes,
     maxInputImages,
@@ -87,11 +120,39 @@ function createOpenAiImageCapabilities(modelId: string) {
     runnable: apiKeyConfigured("OPENAI_API_KEY"),
     availability: "ready",
     requiresApiKeyEnv: "OPENAI_API_KEY",
+    requirements: [buildEnvRequirement("OPENAI_API_KEY", "OpenAI API key")],
+    promptMode: "required",
     executionModes: ["generate", "edit"],
     acceptedInputMimeTypes: OPENAI_IMAGE_INPUT_MIME_TYPES,
     maxInputImages: OPENAI_MAX_INPUT_IMAGES,
     parameters: getOpenAiImageParameterDefinitions(modelId),
     defaults: getOpenAiImageDefaultSettings(modelId),
+  });
+}
+
+function createTopazGigapixelCapabilities(modelId: string) {
+  const requirement = getTopazApiRequirement();
+
+  return buildCapabilities({
+    text: false,
+    image: true,
+    video: false,
+    runnable: requirement.configured,
+    availability: "ready",
+    requirements: [
+      {
+        kind: requirement.kind,
+        key: requirement.key,
+        configured: requirement.configured,
+        label: requirement.label,
+      },
+    ],
+    promptMode: getTopazPromptMode(modelId),
+    executionModes: getTopazExecutionModes(modelId),
+    acceptedInputMimeTypes: TOPAZ_GIGAPIXEL_INPUT_MIME_TYPES,
+    maxInputImages: TOPAZ_GIGAPIXEL_MAX_INPUT_IMAGES,
+    parameters: getTopazGigapixelParameterDefinitions(modelId),
+    defaults: getTopazGigapixelDefaultSettings(modelId),
   });
 }
 
@@ -105,6 +166,7 @@ function buildProviderCatalog(): Record<ProviderId, ProviderModelDescriptor[]> {
     video: false,
     runnable: false,
     availability: "coming_soon",
+    promptMode: "optional",
     executionModes: [],
     parameters: [],
   });
@@ -115,6 +177,7 @@ function buildProviderCatalog(): Record<ProviderId, ProviderModelDescriptor[]> {
     video: false,
     runnable: false,
     availability: "coming_soon",
+    promptMode: "required",
     executionModes: [],
     parameters: [],
   });
@@ -125,6 +188,7 @@ function buildProviderCatalog(): Record<ProviderId, ProviderModelDescriptor[]> {
     video: true,
     runnable: false,
     availability: "coming_soon",
+    promptMode: "optional",
     executionModes: [],
     parameters: [],
   });
@@ -172,10 +236,17 @@ function buildProviderCatalog(): Record<ProviderId, ProviderModelDescriptor[]> {
     topaz: [
       {
         providerId: "topaz",
-        modelId: "topaz-studio-main",
-        displayName: "Topaz Studio Main",
-        capabilities: comingSoonImageCapabilities,
-        defaultSettings: {},
+        modelId: "high_fidelity_v2",
+        displayName: "High Fidelity V2",
+        capabilities: createTopazGigapixelCapabilities("high_fidelity_v2"),
+        defaultSettings: getTopazGigapixelDefaultSettings("high_fidelity_v2"),
+      },
+      {
+        providerId: "topaz",
+        modelId: "redefine",
+        displayName: "Redefine",
+        capabilities: createTopazGigapixelCapabilities("redefine"),
+        defaultSettings: getTopazGigapixelDefaultSettings("redefine"),
       },
     ],
   };
@@ -194,8 +265,10 @@ function getOpenAIClient() {
 }
 
 function getProviderModelDescriptor(providerId: ProviderId, modelId: string): ProviderModelDescriptor | null {
+  const normalizedModelId =
+    providerId === "topaz" ? normalizeLegacyTopazModelId(modelId) || "high_fidelity_v2" : modelId;
   const providerModels = buildProviderCatalog()[providerId] || [];
-  return providerModels.find((model) => model.modelId === modelId) || null;
+  return providerModels.find((model) => model.modelId === normalizedModelId) || null;
 }
 
 function outputFormatToMimeType(outputFormat: ImageOutputFormat) {
@@ -328,7 +401,7 @@ async function submitOpenAiImage(input: ProviderJobInput): Promise<NormalizedOut
   if (executionMode === "edit" && inputAssets.length === 0) {
     throw createProviderError(
       "INVALID_INPUT",
-      "Connect at least one PNG, JPEG, or WebP image input before running."
+      "Connect at least one PNG, JPEG, or TIFF image input before running."
     );
   }
 
@@ -430,6 +503,60 @@ async function submitOpenAiImage(input: ProviderJobInput): Promise<NormalizedOut
   return outputs;
 }
 
+async function submitTopazGigapixel(input: ProviderJobInput): Promise<NormalizedOutput[]> {
+  const model = getProviderModelDescriptor(input.providerId, input.modelId);
+  if (!model) {
+    throw createProviderError("INVALID_INPUT", `Unknown provider model: ${input.providerId}/${input.modelId}`);
+  }
+
+  if (model.capabilities.availability !== "ready") {
+    throw createProviderError("COMING_SOON", `${model.displayName} is not runnable yet.`);
+  }
+
+  const missingRequirement = getFirstUnconfiguredRequirement(model.capabilities);
+  if (missingRequirement) {
+    throw createProviderError(
+      "CONFIG_ERROR",
+      `Topaz is not configured. Set ${missingRequirement.key} in .env.local and restart npm run dev.`
+    );
+  }
+
+  const imageInputs = input.inputAssets
+    .filter((asset) => asset.type === "image" && model.capabilities.acceptedInputMimeTypes.includes(asset.mimeType))
+    .slice(0, model.capabilities.maxInputImages);
+
+  if (imageInputs.length !== 1) {
+    throw createProviderError(
+      "INVALID_INPUT",
+      "Topaz requires exactly one connected PNG, JPEG, or TIFF image input."
+    );
+  }
+
+  const prompt = input.payload.prompt.trim();
+  const promptMode = model.capabilities.promptMode;
+  if (promptMode === "unsupported" && prompt) {
+    throw createProviderError("INVALID_INPUT", `${model.displayName} does not support prompt input.`);
+  }
+
+  const { output, request, response } = await executeTopazImageApi({
+    modelId: input.modelId,
+    prompt,
+    settings: input.payload.settings,
+    inputAsset: imageInputs[0],
+  });
+
+  return [
+    {
+      ...output,
+      metadata: {
+        ...output.metadata,
+        topazApiRequest: request,
+        topazApiResponse: response,
+      },
+    },
+  ];
+}
+
 function buildComingSoonAdapter(providerId: ProviderId): ProviderAdapter {
   return {
     providerId,
@@ -459,7 +586,16 @@ const adapters: Record<ProviderId, ProviderAdapter> = {
     submitJob: submitOpenAiImage,
   },
   "google-gemini": buildComingSoonAdapter("google-gemini"),
-  topaz: buildComingSoonAdapter("topaz"),
+  topaz: {
+    providerId: "topaz",
+    getCapabilities: () => ({
+      supportsCancel: false,
+      supportsStreaming: false,
+      nodeKinds: ["transform"],
+    }),
+    getModels: () => buildProviderCatalog().topaz,
+    submitJob: submitTopazGigapixel,
+  },
 };
 
 export function getProviderAdapter(providerId: ProviderId): ProviderAdapter {

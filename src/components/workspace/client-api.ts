@@ -1,4 +1,5 @@
 import { isRunnableOpenAiImageModel, resolveOpenAiImageSettings } from "@/lib/openai-image-settings";
+import { isRunnableTopazGigapixelModel, normalizeLegacyTopazModelId } from "@/lib/topaz-gigapixel-settings";
 import {
   createTextNoteSettings,
   getListNodeSettings,
@@ -131,7 +132,11 @@ export async function uploadProjectAsset(projectId: string, file: File) {
 }
 
 export async function createJob(projectId: string, node: WorkflowNode) {
-  const executionMode: OpenAIImageMode = node.upstreamAssetIds.length > 0 ? "edit" : "generate";
+  const executionMode: OpenAIImageMode = isRunnableTopazGigapixelModel(node.providerId, node.modelId)
+    ? "edit"
+    : node.upstreamAssetIds.length > 0
+      ? "edit"
+      : "generate";
   const outputCount = isRunnableOpenAiImageModel(node.providerId, node.modelId)
     ? resolveOpenAiImageSettings(node.settings, executionMode, node.modelId).outputCount
     : 1;
@@ -321,7 +326,7 @@ export function normalizeNode(raw: Record<string, unknown>, index: number): Work
     id: String(raw.id || uid()),
     label: String(raw.label || `Node ${index + 1}`),
     providerId: (raw.providerId as ProviderId) || "openai",
-    modelId: String(raw.modelId || "gpt-image-1.5"),
+    modelId: normalizeLegacyTopazModelId(String(raw.modelId || "gpt-image-1.5")) || "gpt-image-1.5",
     kind: inferredKind,
     nodeType:
       ((raw.nodeType as WorkflowNode["nodeType"]) ||
