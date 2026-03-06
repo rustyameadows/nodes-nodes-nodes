@@ -75,6 +75,11 @@
 - Rationale: this app is provider-API driven, so Topaz needs to match the OpenAI integration pattern: API key, async submit/status/download, no local binary requirement.
 - Consequence: provider readiness is modeled through `TOPAZ_API_KEY`, saved legacy `topaz-studio-main` and temporary `gigapixel-*` ids normalize into the real API models, `High Fidelity V2` runs synchronously on `/image/v1/enhance`, `Redefine` runs asynchronously on `/image/v1/enhance-gen/async`, and queue/source-call inspection stores Topaz endpoint/request/response metadata through the existing job-attempt pipeline.
 
+## 2026-03-06 - Topaz Async Downloads Must Resolve the Signed Binary URL
+- Decision: treat Topaz async `/download/{process_id}` as a JSON envelope step, not the final binary download itself.
+- Rationale: `redefine` download responses return signed Cloudflare R2 URLs inside JSON, and persisting that envelope as `.png` corrupts the generated asset while leaving metadata looking valid.
+- Consequence: the Topaz adapter now resolves the envelope to the real binary `download_url` before saving output bytes, and the asset file route self-heals any previously-saved Topaz JSON envelopes by hydrating them into the real image on first read.
+
 ## 2026-03-06 - Canvas Saves Must Wait for Initial Hydration
 - Decision: block all client canvas persistence until the current project's saved canvas document has been fetched and applied.
 - Rationale: the default in-memory canvas document is empty, so any early viewport or reconciliation save before hydration can overwrite a real project graph with `workflow.nodes = []`.

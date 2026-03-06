@@ -262,6 +262,7 @@ Topaz run is disabled when:
 ### Runtime and Debugging
 - `high_fidelity_v2` uses the synchronous `/image/v1/enhance` endpoint and returns one image directly.
 - `redefine` uses the asynchronous `/image/v1/enhance-gen/async` endpoint, polls status, downloads the final output, and ingests that file as a normal asset.
+- Topaz async `/download/{process_id}` returns a JSON envelope first; the runtime must follow that envelope's signed `download_url` before persisting the final binary image.
 - Queue/source-call inspection stores:
   - Topaz endpoint
   - API request payload summary

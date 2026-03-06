@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { resolveStoredImageDimensions } from "@/lib/server/asset-dimensions";
 import { internalError } from "@/lib/server/http";
 
 export async function GET(
@@ -148,13 +149,27 @@ export async function GET(
       take: 300,
     });
 
-    const serialized = assets.map((asset) => ({
-      ...asset,
-      origin: asset.jobId ? "generated" : "uploaded",
-      tagNames: asset.tags.map((link) => link.tag.name),
-      rating: asset.feedback?.rating ?? null,
-      flagged: asset.feedback?.flagged ?? false,
-    }));
+    const serialized = await Promise.all(
+      assets.map(async (asset) => {
+        const dimensions = await resolveStoredImageDimensions({
+          type: asset.type,
+          mimeType: asset.mimeType,
+          storageRef: asset.storageRef,
+          width: asset.width,
+          height: asset.height,
+        });
+
+        return {
+          ...asset,
+          width: dimensions.width,
+          height: dimensions.height,
+          origin: asset.jobId ? "generated" : "uploaded",
+          tagNames: asset.tags.map((link) => link.tag.name),
+          rating: asset.feedback?.rating ?? null,
+          flagged: asset.feedback?.flagged ?? false,
+        };
+      })
+    );
 
     return NextResponse.json({ assets: serialized });
   } catch (error) {

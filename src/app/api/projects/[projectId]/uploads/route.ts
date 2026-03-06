@@ -1,6 +1,7 @@
 import path from "node:path";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getImageDimensions } from "@/lib/image-dimensions";
 import { saveBufferAsAsset } from "@/lib/storage/local-storage";
 import { badRequest, internalError } from "@/lib/server/http";
 
@@ -81,6 +82,7 @@ export async function POST(
     const assetType = inferAssetType(mimeType);
     const extension = inferExtension(fileInput.name, mimeType, assetType);
     const fileBuffer = Buffer.from(await fileInput.arrayBuffer());
+    const imageDimensions = assetType === "image" ? getImageDimensions(fileBuffer, mimeType) : null;
     const stored = await saveBufferAsAsset(projectId, extension, fileBuffer);
 
     const asset = await prisma.asset.create({
@@ -91,6 +93,8 @@ export async function POST(
         storageRef: stored.storageRef,
         mimeType,
         checksum: stored.checksum,
+        width: imageDimensions?.width ?? null,
+        height: imageDimensions?.height ?? null,
       },
     });
 

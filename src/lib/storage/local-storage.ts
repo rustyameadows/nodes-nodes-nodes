@@ -64,3 +64,8 @@ export function getAssetAbsolutePath(storageRef: string): string {
 export async function readAssetContent(storageRef: string): Promise<Buffer> {
   return readFile(getAssetAbsolutePath(storageRef));
 }
+
+export async function overwriteAssetContent(storageRef: string, content: Buffer) {
+  await ensureRoot();
+  await writeFile(getAssetAbsolutePath(storageRef), content);
+}

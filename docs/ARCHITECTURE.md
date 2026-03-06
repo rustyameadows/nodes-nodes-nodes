@@ -56,6 +56,7 @@
   - `running/queued` -> `failed` keeps the placeholder
   - `succeeded` image nodes attach the final asset and clear the processing badge
   - `succeeded` GPT text nodes hydrate the note body from `latestTextOutputs` and clear the processing badge
+12. When image assets are missing persisted width/height metadata, the server recovers dimensions from the binary file bytes before provider execution or viewer display.
 
 ## Data Flow: Template Text Generation
 1. User triggers `Generate Rows` from a `text-template` node on the active canvas.

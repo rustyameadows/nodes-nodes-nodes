@@ -157,6 +157,43 @@ function getDownloadUrl(payload: Record<string, unknown>, processId: string) {
   return `${TOPAZ_API_BASE_URL}/download/${processId}`;
 }
 
+function getDirectDownloadUrl(payload: Record<string, unknown>) {
+  const candidateKeys = ["download_url", "downloadUrl", "result_url", "resultUrl", "output_url", "outputUrl", "head_url", "headUrl"] as const;
+  for (const key of candidateKeys) {
+    const candidate = payload[key];
+    if (typeof candidate === "string" && candidate.trim()) {
+      return candidate.trim();
+    }
+  }
+  return null;
+}
+
+function getFilenameFromUrl(url: string) {
+  try {
+    const pathname = new URL(url).pathname;
+    const segments = pathname.split("/").filter(Boolean);
+    return segments.at(-1) || null;
+  } catch {
+    return null;
+  }
+}
+
+function getRequestedOutputDimensions(outputDimensionFields: Record<string, unknown>) {
+  const width =
+    typeof outputDimensionFields.output_width === "number" && Number.isFinite(outputDimensionFields.output_width)
+      ? outputDimensionFields.output_width
+      : null;
+  const height =
+    typeof outputDimensionFields.output_height === "number" && Number.isFinite(outputDimensionFields.output_height)
+      ? outputDimensionFields.output_height
+      : null;
+
+  return {
+    width,
+    height,
+  };
+}
+
 async function pollTopazStatus(processId: string, apiKey: string) {
   const startedAt = Date.now();
   let pollCount = 0;
@@ -218,42 +255,71 @@ async function pollTopazStatus(processId: string, apiKey: string) {
 }
 
 async function downloadTopazOutput(downloadUrl: string, apiKey: string, processId: string, fallbackMimeType: string) {
-  const headers: HeadersInit = {};
-  if (downloadUrl.startsWith(TOPAZ_API_BASE_URL)) {
-    headers["X-API-Key"] = apiKey;
-  }
+  let activeUrl = downloadUrl;
 
-  const response = await fetch(downloadUrl, {
-    method: "GET",
-    headers,
-    redirect: "follow",
-  });
+  for (let redirectCount = 0; redirectCount < 3; redirectCount += 1) {
+    const headers: HeadersInit = {};
+    if (activeUrl.startsWith(TOPAZ_API_BASE_URL)) {
+      headers["X-API-Key"] = apiKey;
+      headers.Accept = "application/json";
+    }
 
-  if (!response.ok) {
-    const body = await parseResponseBody(response);
-    throw createTopazApiError(
-      `Topaz download failed with status ${response.status}.`,
-      {
-        endpoint: "/download/{process_id}",
-        processId,
-        status: response.status,
-        response: body,
-        downloadUrl,
+    const response = await fetch(activeUrl, {
+      method: "GET",
+      headers,
+      redirect: "follow",
+    });
+
+    if (!response.ok) {
+      const body = await parseResponseBody(response);
+      throw createTopazApiError(
+        `Topaz download failed with status ${response.status}.`,
+        {
+          endpoint: "/download/{process_id}",
+          processId,
+          status: response.status,
+          response: body,
+          downloadUrl: activeUrl,
+        }
+      );
+    }
+
+    const contentType = response.headers.get("content-type") || "";
+    if (contentType.includes("application/json")) {
+      const payload = (await response.json().catch(() => null)) as Record<string, unknown> | null;
+      const nextUrl = payload ? getDirectDownloadUrl(payload) : null;
+      if (!nextUrl || nextUrl === activeUrl) {
+        throw createTopazApiError("Topaz download response did not include a binary output URL.", {
+          endpoint: "/download/{process_id}",
+          processId,
+          response: payload,
+          downloadUrl: activeUrl,
+        });
       }
-    );
+      activeUrl = nextUrl;
+      continue;
+    }
+
+    const buffer = Buffer.from(await response.arrayBuffer());
+    const mimeType = mimeTypeFromResponse(response.headers.get("content-type"), fallbackMimeType);
+    const contentDisposition = response.headers.get("content-disposition") || "";
+    const filenameMatch = contentDisposition.match(/filename\*?=(?:UTF-8''|\")?([^\";]+)/i);
+    const filename = filenameMatch
+      ? decodeURIComponent(filenameMatch[1].replace(/"/g, ""))
+      : getFilenameFromUrl(response.url || activeUrl);
+
+    return {
+      buffer,
+      mimeType,
+      filename,
+    };
   }
 
-  const buffer = Buffer.from(await response.arrayBuffer());
-  const mimeType = mimeTypeFromResponse(response.headers.get("content-type"), fallbackMimeType);
-  const contentDisposition = response.headers.get("content-disposition") || "";
-  const filenameMatch = contentDisposition.match(/filename\*?=(?:UTF-8''|\")?([^\";]+)/i);
-  const filename = filenameMatch ? decodeURIComponent(filenameMatch[1].replace(/"/g, "")) : null;
-
-  return {
-    buffer,
-    mimeType,
-    filename,
-  };
+  throw createTopazApiError("Topaz download redirected too many times while resolving the binary output.", {
+    endpoint: "/download/{process_id}",
+    processId,
+    downloadUrl,
+  });
 }
 
 export async function executeTopazImageApi(options: {
@@ -279,6 +345,7 @@ export async function executeTopazImageApi(options: {
     width: options.inputAsset.width ?? null,
     height: options.inputAsset.height ?? null,
   });
+  const requestedOutputDimensions = getRequestedOutputDimensions(outputDimensionFields);
 
   if (!("output_width" in outputDimensionFields) && !("output_height" in outputDimensionFields)) {
     throw createTopazApiError(
@@ -363,6 +430,8 @@ export async function executeTopazImageApi(options: {
           modelId: normalizedModelId,
           executionMode: "edit",
           scale: resolvedSettings.scale,
+          width: requestedOutputDimensions.width,
+          height: requestedOutputDimensions.height,
           creativity: resolvedSettings.creativity,
           texture: resolvedSettings.texture,
           prompt: profile.promptMode !== "unsupported" && prompt ? prompt : null,
@@ -373,6 +442,8 @@ export async function executeTopazImageApi(options: {
         mode: "sync",
         outputMimeType: syncOutput.mimeType,
         outputFilename: syncOutput.filename,
+        outputWidth: requestedOutputDimensions.width,
+        outputHeight: requestedOutputDimensions.height,
       },
     };
   }
@@ -403,7 +474,7 @@ export async function executeTopazImageApi(options: {
 
   const polled = await pollTopazStatus(processId, apiKey);
   const downloadUrl = getDownloadUrl(polled.payload, processId);
-  const downloaded = await downloadTopazOutput(downloadUrl, apiKey, processId, options.inputAsset.mimeType);
+  const downloaded = await downloadTopazOutput(downloadUrl, apiKey, processId, outputMimeType);
   const extension = path.extname(downloaded.filename || "").replace(/^\./, "") || extensionForMimeType(downloaded.mimeType);
 
   return {
@@ -418,6 +489,8 @@ export async function executeTopazImageApi(options: {
         modelId: normalizedModelId,
         executionMode: "edit",
         scale: resolvedSettings.scale,
+        width: requestedOutputDimensions.width,
+        height: requestedOutputDimensions.height,
         creativity: resolvedSettings.creativity,
         texture: resolvedSettings.texture,
         prompt: profile.promptMode !== "unsupported" && prompt ? prompt : null,
@@ -435,6 +508,8 @@ export async function executeTopazImageApi(options: {
       downloadUrl,
       outputMimeType: downloaded.mimeType,
       outputFilename: downloaded.filename,
+      outputWidth: requestedOutputDimensions.width,
+      outputHeight: requestedOutputDimensions.height,
     },
   };
 }

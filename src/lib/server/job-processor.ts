@@ -1,10 +1,11 @@
 import { Prisma } from "@prisma/client";
+import { getImageDimensions } from "@/lib/image-dimensions";
 import { buildOpenAiImageDebugRequest } from "@/lib/openai-image-settings";
 import { buildOpenAiTextDebugRequest, isRunnableOpenAiTextModel } from "@/lib/openai-text-settings";
 import { buildTopazGigapixelDebugRequest } from "@/lib/topaz-gigapixel-settings";
 import { prisma } from "@/lib/prisma";
 import { getProviderAdapter } from "@/lib/providers/registry";
-import { readAssetContent, saveBufferAsAsset, saveContentAsAsset } from "@/lib/storage/local-storage";
+import { readAssetContent, saveBufferAsAsset } from "@/lib/storage/local-storage";
 import type { NodePayload, NormalizedPreviewFrame, ProviderId } from "@/lib/types";
 
 function asNodePayload(value: unknown): NodePayload {
@@ -74,17 +75,25 @@ async function loadInputAssets(projectId: string, inputImageAssetIds: string[]) 
     .filter((asset): asset is NonNullable<typeof asset> => Boolean(asset));
 
   return Promise.all(
-    orderedAssets.map(async (asset) => ({
-      assetId: asset.id,
-      type: asset.type,
-      storageRef: asset.storageRef,
-      mimeType: asset.mimeType,
-      buffer: await readAssetContent(asset.storageRef),
-      checksum: asset.checksum,
-      width: asset.width,
-      height: asset.height,
-      durationMs: asset.durationMs,
-    }))
+    orderedAssets.map(async (asset) => {
+      const buffer = await readAssetContent(asset.storageRef);
+      const inferredDimensions =
+        asset.type === "image" && (asset.width == null || asset.height == null)
+          ? getImageDimensions(buffer, asset.mimeType)
+          : null;
+
+      return {
+        assetId: asset.id,
+        type: asset.type,
+        storageRef: asset.storageRef,
+        mimeType: asset.mimeType,
+        buffer,
+        checksum: asset.checksum,
+        width: asset.width ?? inferredDimensions?.width ?? null,
+        height: asset.height ?? inferredDimensions?.height ?? null,
+        durationMs: asset.durationMs,
+      };
+    })
   );
 }
 
@@ -280,11 +289,16 @@ export async function processJobById(jobId: string) {
         continue;
       }
 
-      const stored = Buffer.isBuffer(output.content)
-        ? await saveBufferAsAsset(existing.projectId, output.extension, output.content)
-        : await saveContentAsAsset(existing.projectId, output.extension, output.content, output.encoding);
-      const width = typeof output.metadata.width === "number" ? output.metadata.width : null;
-      const height = typeof output.metadata.height === "number" ? output.metadata.height : null;
+      const outputBuffer = Buffer.isBuffer(output.content)
+        ? output.content
+        : Buffer.from(output.content, output.encoding === "binary" ? undefined : output.encoding);
+      const inferredDimensions =
+        output.type === "image" ? getImageDimensions(outputBuffer, output.mimeType) : null;
+      const stored = await saveBufferAsAsset(existing.projectId, output.extension, outputBuffer);
+      const width =
+        typeof output.metadata.width === "number" ? output.metadata.width : inferredDimensions?.width ?? null;
+      const height =
+        typeof output.metadata.height === "number" ? output.metadata.height : inferredDimensions?.height ?? null;
       const durationMs = typeof output.metadata.durationMs === "number" ? output.metadata.durationMs : null;
 
       const asset = await prisma.asset.create({

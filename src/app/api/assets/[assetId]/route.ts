@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { resolveStoredImageDimensions } from "@/lib/server/asset-dimensions";
 import { badRequest, internalError } from "@/lib/server/http";
 
 const updateSchema = z.object({
@@ -8,6 +9,31 @@ const updateSchema = z.object({
   flagged: z.boolean().optional(),
   tags: z.array(z.string().trim().min(1).max(40)).optional(),
 });
+
+function readTopazRequestDimensions(value: unknown) {
+  if (!value || typeof value !== "object") {
+    return { width: null, height: null };
+  }
+
+  const record = value as Record<string, unknown>;
+  const topazRequest =
+    record.topazApiRequest && typeof record.topazApiRequest === "object"
+      ? (record.topazApiRequest as Record<string, unknown>)
+      : record.request && typeof record.request === "object"
+        ? (record.request as Record<string, unknown>)
+        : record;
+
+  const width =
+    typeof topazRequest.output_width === "number" && Number.isFinite(topazRequest.output_width)
+      ? topazRequest.output_width
+      : null;
+  const height =
+    typeof topazRequest.output_height === "number" && Number.isFinite(topazRequest.output_height)
+      ? topazRequest.output_height
+      : null;
+
+  return { width, height };
+}
 
 export async function GET(
   _request: Request,
@@ -23,10 +49,14 @@ export async function GET(
           include: { tag: true },
         },
         job: {
-          select: {
-            providerId: true,
-            modelId: true,
-            state: true,
+          include: {
+            attemptsLog: {
+              orderBy: { createdAt: "desc" },
+              take: 1,
+              select: {
+                providerRequest: true,
+              },
+            },
           },
         },
       },
@@ -36,9 +66,25 @@ export async function GET(
       return badRequest("Asset not found", 404);
     }
 
+    const latestAttemptRequest = asset.job?.attemptsLog?.[0]?.providerRequest;
+    const storedDimensions = await resolveStoredImageDimensions({
+      type: asset.type,
+      mimeType: asset.mimeType,
+      storageRef: asset.storageRef,
+      width: asset.width,
+      height: asset.height,
+    });
+    const topazFallbackDimensions =
+      asset.job?.providerId === "topaz" &&
+      (storedDimensions.width == null || storedDimensions.height == null)
+        ? readTopazRequestDimensions(latestAttemptRequest)
+        : { width: null, height: null };
+
     return NextResponse.json({
       asset: {
         ...asset,
+        width: storedDimensions.width ?? topazFallbackDimensions.width,
+        height: storedDimensions.height ?? topazFallbackDimensions.height,
         tagNames: asset.tags.map((link) => link.tag.name),
         rating: asset.feedback?.rating ?? null,
         flagged: asset.feedback?.flagged ?? false,
