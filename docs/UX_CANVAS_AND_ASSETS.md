@@ -54,7 +54,7 @@
   - list -> `List`
   - text template -> `Template`
   - uploaded asset source -> `Details`
-  - generated asset / generated text -> `Source`
+  - generated asset / generated model-spawned nodes -> `Source`
 - canvas keyboard shortcuts when focus is not inside an input, textarea, select, or contenteditable surface:
   - `A` opens the add-to-canvas insert menu at viewport center
   - `C` connects exactly two selected nodes from oldest selected -> newest selected
@@ -71,7 +71,12 @@
 - running jobs show queue state in the queue view and on generated output nodes
 - OpenAI image jobs can show persisted preview frames before final completion
 - successful image jobs hydrate output nodes with final assets
-- successful GPT text jobs hydrate generated text-note nodes
+- successful GPT text jobs hydrate generated nodes by output target:
+  - `Text Note` -> generated text note
+  - `List` -> generated list node
+  - `Template` -> generated template node
+  - `Smart Output` -> one or more unconnected generated nodes
+- model-spawned list/template/note nodes keep source-job provenance but remain editable after hydration
 
 ## Asset Viewer
 - Grid view

@@ -1,4 +1,5 @@
 import type { ModelParameterDefinition } from "@/lib/model-parameters";
+import type { GeneratedNodeDescriptor } from "@/lib/generated-text-output";
 
 export type ProviderId = "openai" | "google-gemini" | "topaz";
 export type ProviderCredentialKey = "OPENAI_API_KEY" | "GOOGLE_API_KEY" | "TOPAZ_API_KEY";
@@ -64,13 +65,26 @@ export type ListRow = {
   values: Record<string, string>;
 };
 
-export type ListNodeSettings = {
+export type BaseListNodeSettings = {
   source: "list";
   columns: ListColumn[];
   rows: ListRow[];
 };
 
-export type TextTemplateNodeSettings = {
+export type GeneratedModelNodeProvenance = {
+  sourceJobId: string;
+  sourceModelNodeId: string;
+  outputIndex: number;
+  descriptorIndex: number;
+};
+
+export type GeneratedModelListSettings = GeneratedModelNodeProvenance & {
+  source: "generated-model-list";
+  columns: ListColumn[];
+  rows: ListRow[];
+};
+
+export type BaseTextTemplateNodeSettings = {
   source: "text-template";
 };
 
@@ -87,12 +101,16 @@ export type GeneratedTextNoteSettings = {
   rowIndex: number;
 };
 
-export type GeneratedModelTextNoteSettings = {
+export type GeneratedModelTextNoteSettings = GeneratedModelNodeProvenance & {
   source: "generated-model-text";
-  sourceJobId: string;
-  sourceModelNodeId: string;
-  outputIndex: number;
 };
+
+export type GeneratedModelTextTemplateSettings = GeneratedModelNodeProvenance & {
+  source: "generated-model-template";
+};
+
+export type ListNodeSettings = BaseListNodeSettings | GeneratedModelListSettings;
+export type TextTemplateNodeSettings = BaseTextTemplateNodeSettings | GeneratedModelTextTemplateSettings;
 
 export type WorkflowNodeSettings = Record<string, unknown>;
 
@@ -210,6 +228,7 @@ export type Job = {
     content: string;
     responseId: string | null;
   }>;
+  generatedNodeDescriptors?: GeneratedNodeDescriptor[];
 };
 
 export type QueueSummary = {

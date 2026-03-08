@@ -81,16 +81,33 @@ function applyAppBranding() {
 
 function broadcastEvent(payload: AppEventPayload) {
   for (const window of BrowserWindow.getAllWindows()) {
+    if (window.isDestroyed() || window.webContents.isDestroyed()) {
+      continue;
+    }
+
     window.webContents.send(APP_EVENT_CHANNEL, payload);
   }
 }
 
+function isUsableWindow(window: BrowserWindow | null) {
+  return Boolean(window && !window.isDestroyed() && !window.webContents.isDestroyed());
+}
+
 function getMenuTargetWindow() {
-  return BrowserWindow.getFocusedWindow() || mainWindow || BrowserWindow.getAllWindows()[0] || null;
+  const focusedWindow = BrowserWindow.getFocusedWindow();
+  if (isUsableWindow(focusedWindow)) {
+    return focusedWindow;
+  }
+
+  if (isUsableWindow(mainWindow)) {
+    return mainWindow;
+  }
+
+  return BrowserWindow.getAllWindows().find((window) => isUsableWindow(window)) || null;
 }
 
 function emitMenuCommand(command: MenuCommand, window = getMenuTargetWindow()) {
-  if (!window || window.isDestroyed()) {
+  if (!window || window.isDestroyed() || window.webContents.isDestroyed()) {
     return;
   }
 
@@ -174,13 +191,14 @@ async function createWindow() {
     },
   });
   mainWindow = window;
+  const webContentsId = window.webContents.id;
 
   window.on("focus", () => {
     void refreshApplicationMenu();
   });
 
   window.on("closed", () => {
-    menuContextByWebContentsId.delete(window.webContents.id);
+    menuContextByWebContentsId.delete(webContentsId);
     if (mainWindow === window) {
       mainWindow = null;
     }
@@ -201,7 +219,9 @@ async function createWindow() {
 
   window.on("page-title-updated", (event) => {
     event.preventDefault();
-    window.setTitle(APP_NAME);
+    if (!window.isDestroyed()) {
+      window.setTitle(APP_NAME);
+    }
   });
 
   if (process.env.NODE_ENV === "development") {

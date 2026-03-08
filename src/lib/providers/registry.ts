@@ -15,6 +15,7 @@ import {
   resolveOpenAiImageSettings,
 } from "@/lib/openai-image-settings";
 import {
+  buildOpenAiTextRequestConfig,
   getOpenAiTextDefaultSettings,
   getOpenAiTextParameterDefinitions,
   isRunnableOpenAiTextModel,
@@ -461,8 +462,12 @@ function buildTextOutput(
     output_text: string;
   }
 ): NormalizedOutput {
-  const mimeType = resolvedSettings.outputFormat === "text" ? "text/plain" : "application/json";
-  const extension = resolvedSettings.outputFormat === "text" ? "txt" : "json";
+  const mimeType =
+    resolvedSettings.textOutputTarget === "note" && resolvedSettings.outputFormat === "text"
+      ? "text/plain"
+      : "application/json";
+  const extension =
+    resolvedSettings.textOutputTarget === "note" && resolvedSettings.outputFormat === "text" ? "txt" : "json";
 
   return {
     type: "text",
@@ -475,6 +480,7 @@ function buildTextOutput(
       outputIndex: 0,
       responseId: response.id,
       responseStatus: response.status,
+      textOutputTarget: resolvedSettings.textOutputTarget,
       outputFormat: resolvedSettings.outputFormat,
       verbosity: resolvedSettings.verbosity,
       reasoningEffort: resolvedSettings.reasoningEffort,
@@ -656,6 +662,7 @@ async function submitOpenAiText(input: ProviderJobInput): Promise<NormalizedOutp
     throw createProviderError("INVALID_INPUT", resolvedSettings.validationError);
   }
 
+  const requestConfig = buildOpenAiTextRequestConfig(resolvedSettings);
   const client = await getOpenAIClient();
   const response = await client.responses.create({
     model: input.modelId,
@@ -663,20 +670,8 @@ async function submitOpenAiText(input: ProviderJobInput): Promise<NormalizedOutp
     reasoning: {
       effort: resolvedSettings.reasoningEffort,
     },
-    text: {
-      verbosity: resolvedSettings.verbosity,
-      format:
-        resolvedSettings.outputFormat === "text"
-          ? { type: "text" }
-          : resolvedSettings.outputFormat === "json_object"
-            ? { type: "json_object" }
-            : {
-                type: "json_schema",
-                name: resolvedSettings.jsonSchemaName || "response_output",
-                schema: resolvedSettings.parsedJsonSchema || {},
-                strict: true,
-              },
-    },
+    text: requestConfig.text,
+    ...(requestConfig.instructions ? { instructions: requestConfig.instructions } : {}),
     ...(resolvedSettings.maxOutputTokens !== null ? { max_output_tokens: resolvedSettings.maxOutputTokens } : {}),
   });
 

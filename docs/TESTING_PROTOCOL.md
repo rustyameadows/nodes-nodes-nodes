@@ -62,7 +62,7 @@ What it does:
   - SQLite file is created
   - native new-project and add-node commands round-trip into the renderer
   - canvas data round-trips
-  - canvas shortcuts stay canvas-scoped and only run after editable controls are blurred
+  - canvas shortcuts stay canvas-scoped and do not fire while a prompt editor or other editable control is focused
   - asset metadata exists
   - asset file exists on disk
   - queue screen renders

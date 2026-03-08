@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useHotkey } from "@tanstack/react-hotkeys";
 import { useRouter } from "@/renderer/navigation";
 import { CanvasBottomBar } from "@/components/workspace/views/canvas-bottom-bar";
 import { InfiniteCanvas, type CanvasConnection, type CanvasInsertRequest } from "@/components/infinite-canvas";
@@ -21,6 +22,15 @@ import {
   OPENAI_MAX_INPUT_IMAGES,
   resolveOpenAiImageSettings,
 } from "@/lib/openai-image-settings";
+import {
+  applyGeneratedDescriptorToNode,
+  buildGeneratedNodePosition,
+  createGeneratedModelNode,
+  getGeneratedDescriptorDefaultLabel,
+  getGeneratedNodeDescriptorKey,
+  type GeneratedNodeDescriptor,
+  type GeneratedNodeKind,
+} from "@/lib/generated-text-output";
 import {
   buildOpenAiTextDebugRequest,
   isRunnableOpenAiTextModel,
@@ -59,17 +69,18 @@ import {
 } from "@/components/workspace/types";
 import {
   buildTextTemplatePreview,
-  createGeneratedModelTextNoteSettings,
   createDefaultListNodeSettings,
   createGeneratedTextNoteSettings,
   createTextNoteSettings,
   createTextTemplateNodeSettings,
+  getGeneratedModelNodeSource,
   getGeneratedModelTextNoteSettings,
   getGeneratedTextNoteSettings,
   getListNodeSettings,
-  isGeneratedModelTextNoteNode,
+  getTextTemplateNodeSettings,
   isGeneratedTextNoteNode,
 } from "@/lib/list-template";
+import { getOpenAiTextOutputTargetLabel, readOpenAiTextOutputTarget } from "@/lib/text-output-targets";
 import { canConnectCanvasNodes } from "@/lib/canvas-connection-rules";
 import {
   applyCanvasHistoryPatch,
@@ -327,11 +338,22 @@ function getNodeSourceOutputIndex(node: WorkflowNode | null | undefined) {
   return typeof node.settings.outputIndex === "number" ? Number(node.settings.outputIndex) : null;
 }
 
+function getNodeSourceDescriptorIndex(node: WorkflowNode | null | undefined) {
+  if (!node) {
+    return 0;
+  }
+  return typeof node.settings.descriptorIndex === "number" ? Number(node.settings.descriptorIndex) : 0;
+}
+
 function getSourceModelNodeId(node: WorkflowNode | null | undefined) {
   if (!node) {
     return null;
   }
   return typeof node.settings.sourceModelNodeId === "string" ? node.settings.sourceModelNodeId : null;
+}
+
+function getTextOutputTargetFromSettings(settings: Record<string, unknown> | undefined) {
+  return readOpenAiTextOutputTarget(settings?.textOutputTarget);
 }
 
 function isGeneratedAssetNode(node: WorkflowNode | null | undefined) {
@@ -376,16 +398,6 @@ function getExpectedGeneratedOutputCount(job: Job) {
   return job.nodeRunPayload?.outputType === "image" ? 1 : 0;
 }
 
-function getExpectedGeneratedTextOutputCount(job: Job) {
-  const requestedCount =
-    typeof job.nodeRunPayload?.outputCount === "number"
-      ? Math.max(1, Math.min(1, job.nodeRunPayload.outputCount))
-      : 1;
-  const textOutputCount = (job.latestTextOutputs || []).length;
-
-  return Math.max(requestedCount, textOutputCount);
-}
-
 function createGeneratedOutputNode(
   modelNode: WorkflowNode,
   job: Job,
@@ -428,9 +440,9 @@ function getGeneratedTextOutputCount(nodes: WorkflowNode[], templateNodeId: stri
   }).length;
 }
 
-function getGeneratedModelTextOutputCount(nodes: WorkflowNode[], sourceModelNodeId: string) {
+function getGeneratedModelNodeCount(nodes: WorkflowNode[], sourceModelNodeId: string) {
   return nodes.filter((node) => {
-    const generatedSettings = getGeneratedModelTextNoteSettings(node.settings);
+    const generatedSettings = getGeneratedModelNodeSource(node.settings);
     return generatedSettings?.sourceModelNodeId === sourceModelNodeId;
   }).length;
 }
@@ -472,38 +484,72 @@ function createGeneratedTextOutputNode(
   };
 }
 
-function createGeneratedModelTextOutputNode(
+function createGeneratedModelPlaceholderNode(
   modelNode: WorkflowNode,
   job: Job,
   sourceNodeId: string,
-  outputIndex: number,
+  target: "note" | "list" | "template",
   visualIndex: number
 ): WorkflowNode {
-  return {
+  const descriptorKind: GeneratedNodeKind =
+    target === "list" ? "list" : target === "template" ? "text-template" : "text-note";
+  const descriptor: GeneratedNodeDescriptor =
+    descriptorKind === "list"
+      ? {
+          kind: "list",
+          label: getGeneratedDescriptorDefaultLabel("list", visualIndex),
+          columns: [],
+          rows: [],
+          sourceJobId: job.id,
+          sourceModelNodeId: sourceNodeId,
+          outputIndex: 0,
+          descriptorIndex: 0,
+        }
+      : descriptorKind === "text-template"
+        ? {
+            kind: "text-template",
+            label: getGeneratedDescriptorDefaultLabel("text-template", visualIndex),
+            templateText: "",
+            sourceJobId: job.id,
+            sourceModelNodeId: sourceNodeId,
+            outputIndex: 0,
+            descriptorIndex: 0,
+          }
+        : {
+            kind: "text-note",
+            label: getGeneratedDescriptorDefaultLabel("text-note", visualIndex),
+            text: "",
+            sourceJobId: job.id,
+            sourceModelNodeId: sourceNodeId,
+            outputIndex: 0,
+            descriptorIndex: 0,
+          };
+
+  return createGeneratedModelNode({
     id: uid(),
-    label: `Generated Text ${visualIndex + 1}`,
-    kind: "text-note",
     providerId: modelNode.providerId,
     modelId: modelNode.modelId,
-    nodeType: "text-note",
-    outputType: "text",
-    prompt: "",
-    settings: createGeneratedModelTextNoteSettings({
-      sourceJobId: job.id,
-      sourceModelNodeId: sourceNodeId,
-      outputIndex,
+    modelNodeId: sourceNodeId,
+    label: descriptor.label,
+    position: buildGeneratedNodePosition({
+      modelNode,
+      visualIndex,
+      baseOffsetX: generatedTextNodeOffsetX,
+      offsetY: generatedTextNodeOffsetY,
     }),
-    sourceAssetId: null,
-    sourceAssetMimeType: null,
-    sourceJobId: job.id,
-    sourceOutputIndex: outputIndex,
     processingState: job.state === "queued" || job.state === "running" || job.state === "failed" ? job.state : null,
-    promptSourceNodeId: null,
-    upstreamNodeIds: [sourceNodeId],
-    upstreamAssetIds: [`node:${sourceNodeId}`],
-    x: Math.round(modelNode.x + generatedTextNodeOffsetX),
-    y: Math.round(modelNode.y + visualIndex * generatedTextNodeOffsetY),
-  };
+    descriptor,
+  });
+}
+
+function getExpectedGeneratedTextNodeCount(job: Job) {
+  const textOutputTarget = getTextOutputTargetFromSettings(job.nodeRunPayload?.settings);
+
+  if (textOutputTarget === "smart") {
+    return (job.generatedNodeDescriptors || []).length;
+  }
+
+  return Math.max(1, (job.generatedNodeDescriptors || []).length);
 }
 
 function findMatchingGeneratedImageAsset(job: Job, sourceOutputIndex: number | null) {
@@ -534,36 +580,23 @@ function findMatchingGeneratedImageAsset(job: Job, sourceOutputIndex: number | n
   return null;
 }
 
-function findMatchingGeneratedTextOutput(job: Job, sourceOutputIndex: number | null) {
-  const textOutputs = [...(job.latestTextOutputs || [])].sort((left, right) => left.outputIndex - right.outputIndex);
-
-  if (textOutputs.length === 0) {
+function findMatchingGeneratedNodeDescriptor(job: Job, node: WorkflowNode) {
+  const sourceJobId = getNodeSourceJobId(node);
+  if (!sourceJobId || sourceJobId !== job.id) {
     return null;
   }
 
-  if (sourceOutputIndex === null) {
-    return textOutputs.at(-1) || null;
-  }
+  const descriptorIndex = getNodeSourceDescriptorIndex(node);
+  const sourceOutputIndex = getNodeSourceOutputIndex(node) ?? 0;
 
-  const exactMatch = textOutputs.find((output) => output.outputIndex === sourceOutputIndex);
-  if (exactMatch) {
-    return exactMatch;
-  }
-
-  return textOutputs[sourceOutputIndex] || null;
-}
-
-function isInputLikeElement(target: EventTarget | null) {
-  if (!(target instanceof HTMLElement)) {
-    return false;
-  }
-
-  if (target.isContentEditable) {
-    return true;
-  }
-
-  const tagName = target.tagName.toLowerCase();
-  return tagName === "input" || tagName === "textarea" || tagName === "select";
+  return (
+    (job.generatedNodeDescriptors || []).find(
+      (descriptor) =>
+        descriptor.descriptorIndex === descriptorIndex &&
+        descriptor.outputIndex === sourceOutputIndex &&
+        descriptor.sourceJobId === sourceJobId
+    ) || null
+  );
 }
 
 export function CanvasView({ projectId }: Props) {
@@ -893,9 +926,14 @@ export function CanvasView({ projectId }: Props) {
     () => getGeneratedModelTextNoteSettings(selectedNode?.settings),
     [selectedNode?.settings]
   );
+  const selectedGeneratedModelNodeSource = useMemo(
+    () => getGeneratedModelNodeSource(selectedNode?.settings),
+    [selectedNode?.settings]
+  );
   const selectedNodeIsGeneratedTextNote = Boolean(
     selectedTemplateGeneratedTextSettings || selectedModelGeneratedTextSettings
   );
+  const selectedNodeIsGeneratedModelNode = Boolean(selectedGeneratedModelNodeSource);
 
   const selectedModel = useMemo(() => {
     if (!selectedNode || !selectedNodeIsModel) {
@@ -930,11 +968,11 @@ export function CanvasView({ projectId }: Props) {
   }, [nodesById, selectedTemplateGeneratedTextSettings]);
 
   const selectedGeneratedTextSourceModelNode = useMemo(() => {
-    if (!selectedModelGeneratedTextSettings) {
+    if (!selectedGeneratedModelNodeSource) {
       return null;
     }
-    return nodesById[selectedModelGeneratedTextSettings.sourceModelNodeId] || null;
-  }, [nodesById, selectedModelGeneratedTextSettings]);
+    return nodesById[selectedGeneratedModelNodeSource.sourceModelNodeId] || null;
+  }, [nodesById, selectedGeneratedModelNodeSource]);
 
   const latestImageAssetByNodeId = useMemo(() => {
     const map = new Map<string, { assetId: string; mimeType: string | null; createdAtMs: number }>();
@@ -1436,7 +1474,11 @@ export function CanvasView({ projectId }: Props) {
               ? `Ready to run ${model.displayName} at ${resolvedTopazSettings.scale}x on 1 image with prompt guidance.`
               : `Ready to run ${model.displayName} at ${resolvedTopazSettings.scale}x on 1 image.`;
         } else if (isOpenAiTextModel) {
-          readyMessage = `Ready to generate 1 text output note with ${model.displayName}.`;
+          const textOutputTarget = readOpenAiTextOutputTarget(effectiveSettings.textOutputTarget);
+          readyMessage =
+            textOutputTarget === "smart"
+              ? `Ready to generate ${getOpenAiTextOutputTargetLabel(textOutputTarget)} with ${model.displayName}. Explicit node instructions take priority. Allowed node kinds: text note, list, template.`
+              : `Ready to generate ${getOpenAiTextOutputTargetLabel(textOutputTarget)} with ${model.displayName}.`;
         } else {
           readyMessage =
             executionMode === "generate"
@@ -1556,95 +1598,57 @@ export function CanvasView({ projectId }: Props) {
     const workingNodes = [...prev.workflow.nodes];
     let didChange = false;
 
-      const existingGeneratedImageCountByModelNodeId = new Map<string, number>();
-      const existingGeneratedTextCountByModelNodeId = new Map<string, number>();
-      for (const node of workingNodes) {
-        if (isGeneratedAssetNode(node)) {
-          const sourceModelNodeId =
-            typeof node.settings.sourceModelNodeId === "string" ? node.settings.sourceModelNodeId : null;
-          if (!sourceModelNodeId) {
-            continue;
-          }
-          existingGeneratedImageCountByModelNodeId.set(
-            sourceModelNodeId,
-            (existingGeneratedImageCountByModelNodeId.get(sourceModelNodeId) || 0) + 1
-          );
+    const existingGeneratedImageCountByModelNodeId = new Map<string, number>();
+    const existingGeneratedTextCountByModelNodeId = new Map<string, number>();
+    for (const node of workingNodes) {
+      if (isGeneratedAssetNode(node)) {
+        const sourceModelNodeId =
+          typeof node.settings.sourceModelNodeId === "string" ? node.settings.sourceModelNodeId : null;
+        if (!sourceModelNodeId) {
           continue;
         }
-
-        if (isGeneratedModelTextNoteNode(node)) {
-          const generatedSettings = getGeneratedModelTextNoteSettings(node.settings);
-          if (!generatedSettings) {
-            continue;
-          }
-          existingGeneratedTextCountByModelNodeId.set(
-            generatedSettings.sourceModelNodeId,
-            (existingGeneratedTextCountByModelNodeId.get(generatedSettings.sourceModelNodeId) || 0) + 1
-          );
-        }
+        existingGeneratedImageCountByModelNodeId.set(
+          sourceModelNodeId,
+          (existingGeneratedImageCountByModelNodeId.get(sourceModelNodeId) || 0) + 1
+        );
+        continue;
       }
 
-      const insertedGeneratedImageCountByModelNodeId = new Map<string, number>();
-      const insertedGeneratedTextCountByModelNodeId = new Map<string, number>();
+      const generatedSettings = getGeneratedModelNodeSource(node.settings);
+      if (!generatedSettings) {
+        continue;
+      }
 
-      for (const job of jobs) {
-        const sourceNodeId = job.nodeRunPayload?.nodeId;
-        if (!sourceNodeId) {
-          continue;
-        }
+      existingGeneratedTextCountByModelNodeId.set(
+        generatedSettings.sourceModelNodeId,
+        (existingGeneratedTextCountByModelNodeId.get(generatedSettings.sourceModelNodeId) || 0) + 1
+      );
+    }
 
-        const modelNode = workingNodes.find((node) => node.id === sourceNodeId && node.kind === "model");
-        if (!modelNode) {
-          continue;
-        }
+    const insertedGeneratedImageCountByModelNodeId = new Map<string, number>();
+    const insertedGeneratedTextCountByModelNodeId = new Map<string, number>();
 
-        if (job.nodeRunPayload?.outputType === "image") {
-          const expectedOutputCount = getExpectedGeneratedOutputCount(job);
-          if (expectedOutputCount <= 0) {
-            continue;
-          }
+    for (const job of jobs) {
+      const sourceNodeId = job.nodeRunPayload?.nodeId;
+      if (!sourceNodeId) {
+        continue;
+      }
 
-          const jobNodes = workingNodes.filter(
-            (node) =>
-              getNodeSourceJobId(node) === job.id &&
-              (typeof node.settings.sourceModelNodeId === "string" || node.upstreamNodeIds.includes(sourceNodeId))
-          );
-          for (let outputIndex = 0; outputIndex < expectedOutputCount; outputIndex += 1) {
-            const hasIndexedNode = jobNodes.some((node) => getNodeSourceOutputIndex(node) === outputIndex);
-            const hasLegacyPrimaryNode =
-              outputIndex === 0 && jobNodes.some((node) => getNodeSourceOutputIndex(node) === null);
+      const modelNode = workingNodes.find((node) => node.id === sourceNodeId && node.kind === "model");
+      if (!modelNode) {
+        continue;
+      }
 
-            if (hasIndexedNode || hasLegacyPrimaryNode) {
-              continue;
-            }
-
-            const visualIndex =
-              (existingGeneratedImageCountByModelNodeId.get(sourceNodeId) || 0) +
-              (insertedGeneratedImageCountByModelNodeId.get(sourceNodeId) || 0);
-            const outputNode = createGeneratedOutputNode(modelNode, job, sourceNodeId, outputIndex, visualIndex);
-
-            workingNodes.push(outputNode);
-            insertedGeneratedImageCountByModelNodeId.set(
-              sourceNodeId,
-              (insertedGeneratedImageCountByModelNodeId.get(sourceNodeId) || 0) + 1
-            );
-            didChange = true;
-          }
-          continue;
-        }
-
-        if (job.nodeRunPayload?.outputType !== "text") {
-          continue;
-        }
-
-        const expectedOutputCount = getExpectedGeneratedTextOutputCount(job);
+      if (job.nodeRunPayload?.outputType === "image") {
+        const expectedOutputCount = getExpectedGeneratedOutputCount(job);
         if (expectedOutputCount <= 0) {
           continue;
         }
 
         const jobNodes = workingNodes.filter(
           (node) =>
-            getNodeSourceJobId(node) === job.id && Boolean(getGeneratedModelTextNoteSettings(node.settings))
+            getNodeSourceJobId(node) === job.id &&
+            (typeof node.settings.sourceModelNodeId === "string" || node.upstreamNodeIds.includes(sourceNodeId))
         );
         for (let outputIndex = 0; outputIndex < expectedOutputCount; outputIndex += 1) {
           const hasIndexedNode = jobNodes.some((node) => getNodeSourceOutputIndex(node) === outputIndex);
@@ -1656,26 +1660,104 @@ export function CanvasView({ projectId }: Props) {
           }
 
           const visualIndex =
-            (existingGeneratedTextCountByModelNodeId.get(sourceNodeId) || 0) +
-            (insertedGeneratedTextCountByModelNodeId.get(sourceNodeId) || 0);
-          const outputNode = createGeneratedModelTextOutputNode(
-            modelNode,
-            job,
-            sourceNodeId,
-            outputIndex,
-            visualIndex
-          );
+            (existingGeneratedImageCountByModelNodeId.get(sourceNodeId) || 0) +
+            (insertedGeneratedImageCountByModelNodeId.get(sourceNodeId) || 0);
+          const outputNode = createGeneratedOutputNode(modelNode, job, sourceNodeId, outputIndex, visualIndex);
 
           workingNodes.push(outputNode);
-          insertedGeneratedTextCountByModelNodeId.set(
+          insertedGeneratedImageCountByModelNodeId.set(
             sourceNodeId,
-            (insertedGeneratedTextCountByModelNodeId.get(sourceNodeId) || 0) + 1
+            (insertedGeneratedImageCountByModelNodeId.get(sourceNodeId) || 0) + 1
           );
           didChange = true;
         }
+        continue;
       }
 
-      const updatedNodes = workingNodes.map((node) => {
+      if (job.nodeRunPayload?.outputType !== "text") {
+        continue;
+      }
+
+      const textOutputTarget = getTextOutputTargetFromSettings(job.nodeRunPayload?.settings);
+      const generatedNodeDescriptors = job.generatedNodeDescriptors || [];
+      const jobNodes = workingNodes.filter(
+        (node) => getNodeSourceJobId(node) === job.id && Boolean(getGeneratedModelNodeSource(node.settings))
+      );
+      const ensuredDescriptorKeys = new Set(
+        jobNodes.map((node) =>
+          getGeneratedNodeDescriptorKey({
+            sourceJobId: job.id,
+            outputIndex: getNodeSourceOutputIndex(node) ?? 0,
+            descriptorIndex: getNodeSourceDescriptorIndex(node),
+          })
+        )
+      );
+
+      const descriptorsToEnsure =
+        textOutputTarget === "smart"
+          ? generatedNodeDescriptors
+          : generatedNodeDescriptors.length > 0
+            ? generatedNodeDescriptors.slice(0, 1)
+            : job.state === "queued" || job.state === "running" || job.state === "failed"
+              ? [null]
+              : [];
+
+      if (getExpectedGeneratedTextNodeCount(job) <= 0) {
+        continue;
+      }
+
+      for (const descriptor of descriptorsToEnsure) {
+        const descriptorKey = descriptor
+          ? getGeneratedNodeDescriptorKey(descriptor)
+          : getGeneratedNodeDescriptorKey({
+              sourceJobId: job.id,
+              outputIndex: 0,
+              descriptorIndex: 0,
+            });
+        if (ensuredDescriptorKeys.has(descriptorKey)) {
+          continue;
+        }
+
+        const visualIndex =
+          (existingGeneratedTextCountByModelNodeId.get(sourceNodeId) || 0) +
+          (insertedGeneratedTextCountByModelNodeId.get(sourceNodeId) || 0);
+        const outputNode = descriptor
+          ? createGeneratedModelNode({
+              id: uid(),
+              providerId: modelNode.providerId,
+              modelId: modelNode.modelId,
+              modelNodeId: sourceNodeId,
+              label: descriptor.label || getGeneratedDescriptorDefaultLabel(descriptor.kind, visualIndex),
+              position: buildGeneratedNodePosition({
+                modelNode,
+                visualIndex,
+                baseOffsetX: generatedTextNodeOffsetX,
+                offsetY: generatedTextNodeOffsetY,
+              }),
+              processingState:
+                job.state === "queued" || job.state === "running" || job.state === "failed" ? job.state : null,
+              descriptor,
+              connectToSourceModel: textOutputTarget !== "smart",
+            })
+          : createGeneratedModelPlaceholderNode(
+              modelNode,
+              job,
+              sourceNodeId,
+              textOutputTarget === "list" ? "list" : textOutputTarget === "template" ? "template" : "note",
+              visualIndex
+            );
+
+        workingNodes.push(outputNode);
+        insertedGeneratedTextCountByModelNodeId.set(
+          sourceNodeId,
+          (insertedGeneratedTextCountByModelNodeId.get(sourceNodeId) || 0) + 1
+        );
+        ensuredDescriptorKeys.add(descriptorKey);
+        didChange = true;
+      }
+    }
+
+    const updatedNodes = workingNodes.map((node) => {
         if (isGeneratedAssetNode(node)) {
           const sourceJobId = getNodeSourceJobId(node);
           if (!sourceJobId) {
@@ -1721,7 +1803,8 @@ export function CanvasView({ projectId }: Props) {
           return nextNode;
         }
 
-        if (!isGeneratedModelTextNoteNode(node)) {
+        const generatedModelSource = getGeneratedModelNodeSource(node.settings);
+        if (!generatedModelSource) {
           return node;
         }
 
@@ -1735,33 +1818,37 @@ export function CanvasView({ projectId }: Props) {
           return node;
         }
 
-        const sourceOutputIndex = getNodeSourceOutputIndex(node);
-        const matchingTextOutput = findMatchingGeneratedTextOutput(job, sourceOutputIndex);
-        const generatedSettings = getGeneratedModelTextNoteSettings(node.settings);
-        const nextOutputIndex =
-          sourceOutputIndex ?? generatedSettings?.outputIndex ?? matchingTextOutput?.outputIndex ?? 0;
-        const nextSourceModelNodeId =
-          generatedSettings?.sourceModelNodeId || job.nodeRunPayload?.nodeId || null;
-
         const nextProcessingState =
           job.state === "queued" || job.state === "running" || job.state === "failed" ? job.state : null;
-        const nextNode: WorkflowNode = {
-          ...node,
+        const matchingDescriptor = findMatchingGeneratedNodeDescriptor(job, node);
+
+        if (!matchingDescriptor) {
+          const nextNode =
+            nextProcessingState === node.processingState
+              ? node
+              : {
+                  ...node,
+                  processingState: nextProcessingState,
+                };
+          if (JSON.stringify(nextNode) === JSON.stringify(node)) {
+            return node;
+          }
+          didChange = true;
+          return nextNode;
+        }
+
+        const allowContentHydration =
+          node.processingState !== null ||
+          node.kind !== matchingDescriptor.kind ||
+          getNodeSourceDescriptorIndex(node) !== matchingDescriptor.descriptorIndex;
+        const nextNode = applyGeneratedDescriptorToNode(node, {
           providerId: job.providerId as WorkflowNode["providerId"],
           modelId: job.modelId,
-          sourceJobId,
-          sourceOutputIndex: nextOutputIndex,
           processingState: nextProcessingState,
-          prompt: matchingTextOutput?.content || node.prompt,
-          settings:
-            nextSourceModelNodeId
-              ? createGeneratedModelTextNoteSettings({
-                  sourceJobId,
-                  sourceModelNodeId: nextSourceModelNodeId,
-                  outputIndex: nextOutputIndex,
-                })
-              : node.settings,
-        };
+          descriptor: matchingDescriptor,
+          allowContentHydration,
+          connectToSourceModel: getTextOutputTargetFromSettings(job.nodeRunPayload?.settings) !== "smart",
+        });
 
         if (JSON.stringify(nextNode) === JSON.stringify(node)) {
           return node;
@@ -1769,7 +1856,7 @@ export function CanvasView({ projectId }: Props) {
 
         didChange = true;
         return nextNode;
-      });
+    });
 
     if (!didChange) {
       return;
@@ -2855,25 +2942,50 @@ export function CanvasView({ projectId }: Props) {
             : sourceNode.kind === "text-template"
               ? {
                   ...sourceNode,
-                }
-              : sourceNode.kind === "text-note"
-              ? {
-                  ...sourceNode,
-                  settings: isGeneratedTextNoteNode(sourceNode) ? createTextNoteSettings() : sourceNode.settings,
-                  promptSourceNodeId: null,
-                  upstreamNodeIds: [],
-                  upstreamAssetIds: [],
-                }
-              : {
-                  ...sourceNode,
-                  upstreamNodeIds: [],
-                  upstreamAssetIds: [],
+                  settings: getGeneratedModelNodeSource(sourceNode.settings)
+                    ? createTextTemplateNodeSettings()
+                    : getTextTemplateNodeSettings(sourceNode.settings),
+                  sourceJobId: null,
+                  sourceOutputIndex: null,
                   processingState: null,
-                  settings: {
-                    ...sourceNode.settings,
-                    sourceModelNodeId: null,
-                  },
-                };
+                  upstreamNodeIds: [],
+                  upstreamAssetIds: [],
+                }
+              : sourceNode.kind === "list"
+                ? {
+                    ...sourceNode,
+                    settings: {
+                      source: "list" as const,
+                      columns: getListNodeSettings(sourceNode.settings).columns,
+                      rows: getListNodeSettings(sourceNode.settings).rows,
+                    },
+                    sourceJobId: null,
+                    sourceOutputIndex: null,
+                    processingState: null,
+                    upstreamNodeIds: [],
+                    upstreamAssetIds: [],
+                  }
+                : sourceNode.kind === "text-note"
+                  ? {
+                      ...sourceNode,
+                      settings: isGeneratedTextNoteNode(sourceNode) ? createTextNoteSettings() : sourceNode.settings,
+                      promptSourceNodeId: null,
+                      upstreamNodeIds: [],
+                      upstreamAssetIds: [],
+                      sourceJobId: null,
+                      sourceOutputIndex: null,
+                      processingState: null,
+                    }
+                  : {
+                      ...sourceNode,
+                      upstreamNodeIds: [],
+                      upstreamAssetIds: [],
+                      processingState: null,
+                      settings: {
+                        ...sourceNode.settings,
+                        sourceModelNodeId: null,
+                      },
+                    };
 
         const duplicate: WorkflowNode = {
           ...duplicateBase,
@@ -3142,102 +3254,53 @@ export function CanvasView({ projectId }: Props) {
     removeNodes(selectedNodeIds);
   }, [removeNodes, selectedNodeIds]);
 
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      const isEditableTarget = isInputLikeElement(event.target);
+  useHotkey("Mod+Z", () => {
+    undoCanvasChange();
+  }, { enabled: historyStacks.undo.length > 0, ignoreInputs: true });
 
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "z" && !isEditableTarget) {
-        event.preventDefault();
-        if (event.shiftKey) {
-          redoCanvasChange();
-        } else {
-          undoCanvasChange();
-        }
-        return;
-      }
+  useHotkey("Mod+Shift+Z", () => {
+    redoCanvasChange();
+  }, { enabled: historyStacks.redo.length > 0, ignoreInputs: true });
 
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "d") {
-        if (selectedNodeIds.length !== 1 || isEditableTarget) {
-          return;
-        }
+  useHotkey("Mod+D", () => {
+    if (selectedNodeIds.length === 1) {
+      duplicateNode(selectedNodeIds[0]!);
+    }
+  }, { enabled: selectedNodeIds.length === 1, ignoreInputs: true });
 
-        event.preventDefault();
-        duplicateNode(selectedNodeIds[0]!);
-        return;
-      }
+  useHotkey("A", () => {
+    openCanvasInsertMenu();
+  }, { enabled: !isLoading, ignoreInputs: true });
 
-      if (!event.metaKey && !event.ctrlKey && !event.altKey && !isEditableTarget) {
-        if (event.key.toLowerCase() === "a") {
-          event.preventDefault();
-          openCanvasInsertMenu();
-          return;
-        }
+  useHotkey("C", () => {
+    connectSelectedNodes();
+  }, { enabled: selectedNodeIds.length === 2, ignoreInputs: true });
 
-        if (event.key.toLowerCase() === "c") {
-          event.preventDefault();
-          connectSelectedNodes();
-          return;
-        }
+  useHotkey("Enter", () => {
+    openPrimaryEditorForSelection();
+  }, { enabled: selectedNodeIds.length === 1, ignoreInputs: true });
 
-        if (event.key === "Enter") {
-          event.preventDefault();
-          openPrimaryEditorForSelection();
-          return;
-        }
-      }
+  useHotkey("Delete", () => {
+    if (selectedConnection) {
+      removeConnection(selectedConnection);
+      return;
+    }
 
-      if (event.key === "Escape") {
-        if (selectedConnection || insertMenu || assetPicker || openBottomBarPopoverId) {
-          event.preventDefault();
-        }
-        setTrackedSelectedConnection(null);
-        setInsertMenu(null);
-        setAssetPicker(null);
-        setOpenBottomBarPopoverId(null);
-        return;
-      }
-
-      if (event.key !== "Delete" && event.key !== "Backspace") {
-        return;
-      }
-      if (isEditableTarget) {
-        return;
-      }
-
-      if (selectedConnection) {
-        event.preventDefault();
-        removeConnection(selectedConnection);
-        return;
-      }
-
-      if (selectedNodeIds.length === 0) {
-        return;
-      }
-
-      event.preventDefault();
+    if (selectedNodeIds.length > 0) {
       removeNodes(selectedNodeIds);
-    };
+    }
+  }, { enabled: Boolean(selectedConnection) || selectedNodeIds.length > 0, ignoreInputs: true });
 
-    window.addEventListener("keydown", onKeyDown);
-    return () => {
-      window.removeEventListener("keydown", onKeyDown);
-    };
-  }, [
-    assetPicker,
-    connectSelectedNodes,
-    duplicateNode,
-    insertMenu,
-    openBottomBarPopoverId,
-    openCanvasInsertMenu,
-    openPrimaryEditorForSelection,
-    redoCanvasChange,
-    removeConnection,
-    removeNodes,
-    selectedConnection,
-    selectedNodeIds,
-    setTrackedSelectedConnection,
-    undoCanvasChange,
-  ]);
+  useHotkey("Backspace", () => {
+    if (selectedConnection) {
+      removeConnection(selectedConnection);
+      return;
+    }
+
+    if (selectedNodeIds.length > 0) {
+      removeNodes(selectedNodeIds);
+    }
+  }, { enabled: Boolean(selectedConnection) || selectedNodeIds.length > 0, ignoreInputs: true });
 
   const updateViewport = useCallback(
     (nextViewport: CanvasDocument["canvasViewport"]) => {
@@ -3315,12 +3378,12 @@ export function CanvasView({ projectId }: Props) {
   );
 
   const insertGeneratedTextOutputPlaceholder = useCallback(
-    (job: Job, sourceNodeId: string, outputCount: number) => {
+    (job: Job, sourceNodeId: string, target: "note" | "list" | "template") => {
       const prev = canvasDocRef.current;
       if (
         prev.workflow.nodes.filter(
-          (node) => getNodeSourceJobId(node) === job.id && Boolean(getGeneratedModelTextNoteSettings(node.settings))
-        ).length >= outputCount
+          (node) => getNodeSourceJobId(node) === job.id && Boolean(getGeneratedModelNodeSource(node.settings))
+        ).length >= 1
       ) {
         return;
       }
@@ -3330,15 +3393,19 @@ export function CanvasView({ projectId }: Props) {
         return;
       }
 
-      const generatedCount = getGeneratedModelTextOutputCount(prev.workflow.nodes, sourceNodeId);
-      const outputNodes: WorkflowNode[] = Array.from({ length: outputCount }, (_, outputOffset) =>
-        createGeneratedModelTextOutputNode(modelNode, job, sourceNodeId, outputOffset, generatedCount + outputOffset)
-      );
-
       applyCanvasDocWithoutHistory({
         ...prev,
         workflow: {
-          nodes: [...prev.workflow.nodes, ...outputNodes],
+          nodes: [
+            ...prev.workflow.nodes,
+            createGeneratedModelPlaceholderNode(
+              modelNode,
+              job,
+              sourceNodeId,
+              target,
+              getGeneratedModelNodeCount(prev.workflow.nodes, sourceNodeId)
+            ),
+          ],
         },
       });
     },
@@ -3583,7 +3650,14 @@ export function CanvasView({ projectId }: Props) {
       const job = await createJobFromRequest(projectId, requestPreview.requestPayload);
       setJobs((prev) => [job, ...prev.filter((existingJob) => existingJob.id !== job.id)]);
       if (requestPreview.requestPayload.nodePayload.outputType === "text") {
-        insertGeneratedTextOutputPlaceholder(job, node.id, requestPreview.requestPayload.nodePayload.outputCount);
+        const textOutputTarget = getTextOutputTargetFromSettings(requestPreview.requestPayload.nodePayload.settings);
+        if (textOutputTarget !== "smart") {
+          insertGeneratedTextOutputPlaceholder(
+            job,
+            node.id,
+            textOutputTarget === "list" ? "list" : textOutputTarget === "template" ? "template" : "note"
+          );
+        }
       } else {
         insertGeneratedOutputPlaceholder(job, node.id, requestPreview.requestPayload.nodePayload.outputCount);
       }
@@ -4026,6 +4100,7 @@ export function CanvasView({ projectId }: Props) {
           selectedNodeIsAssetSource={selectedNodeIsAssetSource}
           selectedNodeIsGeneratedAsset={selectedNodeIsGeneratedAsset}
           selectedNodeIsGeneratedTextNote={selectedNodeIsGeneratedTextNote}
+          selectedNodeIsGeneratedModelNode={selectedNodeIsGeneratedModelNode}
           selectedModel={selectedModel}
           selectedGeneratedSourceJob={selectedGeneratedSourceJob}
           selectedNodeSourceJobId={selectedNodeSourceJobId}

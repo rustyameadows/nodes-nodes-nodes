@@ -54,8 +54,10 @@ test("builds project and canvas menu items with context-aware enabled states", (
   assert.equal(findMenuItem(template, "project.home")?.checked, false);
   assert.equal(findMenuItem(template, "project.view.canvas")?.checked, true);
   assert.equal(findMenuItem(template, "canvas.open-insert-menu")?.enabled, true);
+  assert.equal(findMenuItem(template, "canvas.open-insert-menu")?.accelerator, undefined);
   assert.equal(findMenuItem(template, "canvas.add.model")?.enabled, true);
   assert.equal(findMenuItem(template, "canvas.connect-selected")?.enabled, true);
+  assert.equal(findMenuItem(template, "canvas.connect-selected")?.accelerator, undefined);
   assert.equal(findMenuItem(template, "canvas.duplicate-selected")?.enabled, false);
   assert.equal(findMenuItem(template, "canvas.undo")?.enabled, true);
   assert.equal(findMenuItem(template, "canvas.redo")?.enabled, true);

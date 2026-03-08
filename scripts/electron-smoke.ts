@@ -100,6 +100,15 @@ async function clickCanvasNode(window: Page, label: string, options?: { shiftKey
   }
 }
 
+async function blurActiveElement(window: Page) {
+  await window.evaluate(() => {
+    const activeElement = document.activeElement;
+    if (activeElement instanceof HTMLElement) {
+      activeElement.blur();
+    }
+  });
+}
+
 function getPackagedExecutablePath() {
   return path.resolve("release", "mac-arm64", `${APP_NAME}.app`, "Contents", "MacOS", APP_NAME);
 }
@@ -714,6 +723,7 @@ async function main() {
       return api?.getState().selectedNodeIds.length || 0;
     });
     assert.equal(reselectedCount, 2, "Expected two selected nodes before connect shortcut.");
+    await blurActiveElement(window);
     await window.keyboard.press("c");
     await window.waitForTimeout(900);
 
@@ -758,6 +768,25 @@ async function main() {
       window.locator("#canvas-bar-prompt").waitFor({ state: "visible", timeout: 15_000 })
     );
     const promptEditor = window.locator("#canvas-bar-prompt");
+    await promptEditor.click();
+    await promptEditor.fill("");
+    const nodeCountBeforeFocusedShortcutTyping = (await getCanvasNodes(window, projectId)).length;
+    await window.keyboard.type("ac");
+    await window.keyboard.press("Enter");
+    await window.keyboard.type("z");
+    await window.keyboard.press("Backspace");
+    assert.equal(await promptEditor.inputValue(), "ac\n");
+    assert.equal(
+      await window.getByRole("button", { name: "Add List" }).count(),
+      0,
+      "Expected insert menu to stay closed while typing in the prompt editor."
+    );
+    assert.equal(
+      (await getCanvasNodes(window, projectId)).length,
+      nodeCountBeforeFocusedShortcutTyping,
+      "Expected canvas delete shortcuts to stay disabled while the prompt editor is focused."
+    );
+    console.log("Canvas shortcuts stay suppressed while typing in the prompt editor");
     await promptEditor.fill("Updated smoke prompt from bottom bar");
     await window.keyboard.press("Escape");
     await window.waitForTimeout(900);
@@ -787,14 +816,10 @@ async function main() {
       window.getByText("Note Text").waitFor({ state: "visible", timeout: 15_000 })
     );
     await window.keyboard.press("Escape");
-    await window.evaluate(() => {
-      const activeElement = document.activeElement;
-      if (activeElement instanceof HTMLElement) {
-        activeElement.blur();
-      }
-    });
+    await blurActiveElement(window);
     console.log("Canvas node double-click editor verified");
 
+    await blurActiveElement(window);
     await window.keyboard.press("a");
     await withTimeout(
       "canvas insert menu before add list",
@@ -810,6 +835,26 @@ async function main() {
     await window.keyboard.press(`${process.platform === "darwin" ? "Meta+Shift" : "Control+Shift"}+z`);
     await window.waitForTimeout(900);
     assert.equal((await getCanvasNodes(window, projectId)).length, 3, "Expected redo to restore inserted node.");
+
+    await clickCanvasNode(window, "List 1");
+    await window.keyboard.press("Enter");
+    await withTimeout(
+      "list editor",
+      window.getByText("Columns and Rows").waitFor({ state: "visible", timeout: 15_000 })
+    );
+    const listColumnInput = window.locator('input[placeholder="Column name"]').first();
+    await listColumnInput.click();
+    await window.keyboard.type("a");
+    assert.equal(
+      await listColumnInput.inputValue(),
+      "Column 1a",
+      "Expected list column input to keep typed characters while focused."
+    );
+    assert.equal(
+      await window.getByRole("button", { name: "Add List" }).count(),
+      0,
+      "Expected insert menu to stay closed while typing in the list editor."
+    );
     console.log("Canvas add-node menu and undo/redo verified");
 
     await window.screenshot({ path: canvasScreenshotPath, fullPage: true });

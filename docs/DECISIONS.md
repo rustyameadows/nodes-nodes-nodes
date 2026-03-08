@@ -69,3 +69,13 @@
 - Decision: route desktop startup to a persistent app-level home view instead of auto-opening the last project route.
 - Rationale: a visible project picker is a better top-level desktop pattern now that the app supports multiple local projects plus app-level settings.
 - Consequence: `/` always renders app home, project picking moves onto a dedicated grid/list screen, and the open-project marker remains metadata rather than startup routing state.
+
+## 2026-03-08 - Text Models Emit Structured Generated Nodes
+- Decision: let runnable OpenAI text models target `Text Note`, `List`, `Template`, or `Smart Output` instead of hardcoding model text responses to generated notes only.
+- Rationale: issue `#22` needs model text runs to become useful downstream graph inputs, and the renderer should not infer node types by parsing raw provider text.
+- Consequence: the app now injects strict JSON schema plus instructions for structured targets, parses generated-node descriptors in the worker, falls back to one generated note on parse failure, and hydrates model-spawned note/list/template nodes from serialized descriptor metadata.
+
+## 2026-03-08 - Canvas Shortcuts Use TanStack Hotkeys
+- Decision: move canvas keyboard shortcuts off manual `window` listeners and onto TanStack Hotkeys with input ignoring enabled.
+- Rationale: the canvas needs keyboard shortcuts to stay active on the route while reliably shutting off inside text inputs, list editors, and other editable surfaces.
+- Consequence: canvas hotkeys are declarative, route-scoped through `CanvasView`, and no longer rely on custom editable-target detection to avoid stealing typed characters.

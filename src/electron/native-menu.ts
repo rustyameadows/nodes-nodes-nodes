@@ -172,7 +172,6 @@ export function buildNativeMenuTemplate({
         {
           id: "canvas.open-insert-menu",
           label: "Add Node…",
-          accelerator: "A",
           enabled: hasCanvasProject,
           command: { type: "canvas.open-insert-menu" },
         },
@@ -205,7 +204,6 @@ export function buildNativeMenuTemplate({
         {
           id: "canvas.connect-selected",
           label: "Connect Selected Nodes",
-          accelerator: "C",
           enabled: hasCanvasProject && context.canConnectSelected,
           command: { type: "canvas.connect-selected" },
         },

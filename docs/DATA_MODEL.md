@@ -164,9 +164,18 @@ Worker behavior:
 The renderer never sees absolute paths; those refs are resolved only in main/worker/storage code.
 
 ## Text Output Model
-- GPT text generations remain note-native in the canvas document.
+- GPT text generations now serialize parsed generated-node descriptors in `job_attempts.provider_response`.
+- Renderer-facing jobs expose:
+  - `latestTextOutputs`
+  - `generatedNodeDescriptors`
+- Generated node descriptors can materialize:
+  - `text-note`
+  - `list`
+  - `text-template`
+- `Smart Output` may produce multiple descriptors from one text response, but they stay unconnected in this pass.
+- Parse failure falls back to one generated text-note descriptor instead of failing the job.
 - Those outputs do not create `assets` rows.
-- Queue debug data stores the returned text inline in `job_attempts.provider_response`.
+- Queue debug data stores both the returned text and the parsed structured-output metadata inline in `job_attempts.provider_response`.
 
 ## Integrity Rules
 - Project deletion cascades through workspace state, canvas, jobs, attempts, assets, feedback, tags, and preview metadata.

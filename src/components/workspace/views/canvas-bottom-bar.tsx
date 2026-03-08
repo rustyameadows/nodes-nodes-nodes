@@ -61,6 +61,7 @@ type Props = {
   selectedNodeIsAssetSource: boolean;
   selectedNodeIsGeneratedAsset: boolean;
   selectedNodeIsGeneratedTextNote: boolean;
+  selectedNodeIsGeneratedModelNode: boolean;
   selectedModel: ProviderModel | undefined;
   selectedGeneratedSourceJob: Job | null;
   selectedNodeSourceJobId: string | null;
@@ -502,6 +503,7 @@ export function CanvasBottomBar({
   selectedNodeIsAssetSource,
   selectedNodeIsGeneratedAsset,
   selectedNodeIsGeneratedTextNote,
+  selectedNodeIsGeneratedModelNode,
   selectedModel,
   selectedGeneratedSourceJob,
   selectedNodeSourceJobId,
@@ -1283,7 +1285,7 @@ export function CanvasBottomBar({
             {selectedNode &&
             selectedNodeIds.length === 1 &&
             selectedNodeSourceJobId &&
-            (selectedNodeIsGeneratedAsset || Boolean(selectedModelGeneratedTextSettings)) ? (
+            (selectedNodeIsGeneratedAsset || selectedNodeIsGeneratedModelNode) ? (
               <CanvasBarTray
                 id="source-call"
                 label="Source"
@@ -1337,7 +1339,7 @@ export function CanvasBottomBar({
         {selectedNode &&
         selectedNodeIds.length === 1 &&
         selectedNodeSourceJobId &&
-        (selectedNodeIsGeneratedAsset || Boolean(selectedModelGeneratedTextSettings)) ? (
+        (selectedNodeIsGeneratedAsset || selectedNodeIsGeneratedModelNode) ? (
           <button
             type="button"
             className={styles.actionButton}

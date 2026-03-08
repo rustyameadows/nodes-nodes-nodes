@@ -1,5 +1,7 @@
 import type {
+  GeneratedModelListSettings,
   GeneratedModelTextNoteSettings,
+  GeneratedModelTextTemplateSettings,
   GeneratedTextNoteSettings,
   ListColumn,
   ListNodeSettings,
@@ -14,6 +16,8 @@ export const TEXT_TEMPLATE_SOURCE = "text-template";
 export const TEXT_NOTE_SOURCE = "text-note";
 export const TEMPLATE_OUTPUT_SOURCE = "template-output";
 export const MODEL_OUTPUT_TEXT_SOURCE = "generated-model-text";
+export const MODEL_OUTPUT_LIST_SOURCE = "generated-model-list";
+export const MODEL_OUTPUT_TEMPLATE_SOURCE = "generated-model-template";
 
 const whitespacePattern = /\s+/g;
 const placeholderPattern = /\[\[\s*([^[\]]+?)\s*\]\]/g;
@@ -83,10 +87,14 @@ export function createListRow(columnIds: string[] = [], values: Record<string, s
 
 export function createDefaultListNodeSettings(): ListNodeSettings {
   const firstColumn = createListColumn("Column 1");
+  return createBaseListNodeSettings([firstColumn], [createListRow([firstColumn.id])]);
+}
+
+function createBaseListNodeSettings(columns: ListColumn[], rows: ListRow[]): ListNodeSettings {
   return {
     source: LIST_NODE_SOURCE,
-    columns: [firstColumn],
-    rows: [createListRow([firstColumn.id])],
+    columns,
+    rows,
   };
 }
 
@@ -114,6 +122,24 @@ export function createGeneratedModelTextNoteSettings(
 ): GeneratedModelTextNoteSettings {
   return {
     source: MODEL_OUTPUT_TEXT_SOURCE,
+    ...input,
+  };
+}
+
+export function createGeneratedModelListSettings(
+  input: Omit<GeneratedModelListSettings, "source">
+): GeneratedModelListSettings {
+  return {
+    source: MODEL_OUTPUT_LIST_SOURCE,
+    ...input,
+  };
+}
+
+export function createGeneratedModelTextTemplateSettings(
+  input: Omit<GeneratedModelTextTemplateSettings, "source">
+): GeneratedModelTextTemplateSettings {
+  return {
+    source: MODEL_OUTPUT_TEMPLATE_SOURCE,
     ...input,
   };
 }
@@ -157,15 +183,24 @@ export function getListNodeSettings(value: unknown): ListNodeSettings {
         .filter((row) => Boolean(row.id))
     : [];
 
-  return {
-    source: LIST_NODE_SOURCE,
-    columns,
-    rows,
-  };
+  const provenance = getGeneratedModelListSettings(record);
+  if (provenance) {
+    return {
+      ...provenance,
+      columns,
+      rows,
+    };
+  }
+
+  return createBaseListNodeSettings(columns, rows);
 }
 
 export function getTextTemplateNodeSettings(value: unknown): TextTemplateNodeSettings {
   const record = asRecord(value);
+  const generated = getGeneratedModelTextTemplateSettings(record);
+  if (generated) {
+    return generated;
+  }
   return {
     source: record.source === TEXT_TEMPLATE_SOURCE ? TEXT_TEMPLATE_SOURCE : TEXT_TEMPLATE_SOURCE,
   };
@@ -210,6 +245,49 @@ export function getGeneratedModelTextNoteSettings(value: unknown): GeneratedMode
     sourceJobId: String(record.sourceJobId),
     sourceModelNodeId: String(record.sourceModelNodeId),
     outputIndex: Number(record.outputIndex),
+    descriptorIndex: typeof record.descriptorIndex === "number" ? Number(record.descriptorIndex) : 0,
+  };
+}
+
+export function getGeneratedModelListSettings(value: unknown): GeneratedModelListSettings | null {
+  const record = asRecord(value);
+  if (
+    record.source !== MODEL_OUTPUT_LIST_SOURCE ||
+    !record.sourceJobId ||
+    !record.sourceModelNodeId ||
+    typeof record.outputIndex !== "number"
+  ) {
+    return null;
+  }
+
+  return {
+    source: MODEL_OUTPUT_LIST_SOURCE,
+    sourceJobId: String(record.sourceJobId),
+    sourceModelNodeId: String(record.sourceModelNodeId),
+    outputIndex: Number(record.outputIndex),
+    descriptorIndex: typeof record.descriptorIndex === "number" ? Number(record.descriptorIndex) : 0,
+    columns: [],
+    rows: [],
+  };
+}
+
+export function getGeneratedModelTextTemplateSettings(value: unknown): GeneratedModelTextTemplateSettings | null {
+  const record = asRecord(value);
+  if (
+    record.source !== MODEL_OUTPUT_TEMPLATE_SOURCE ||
+    !record.sourceJobId ||
+    !record.sourceModelNodeId ||
+    typeof record.outputIndex !== "number"
+  ) {
+    return null;
+  }
+
+  return {
+    source: MODEL_OUTPUT_TEMPLATE_SOURCE,
+    sourceJobId: String(record.sourceJobId),
+    sourceModelNodeId: String(record.sourceModelNodeId),
+    outputIndex: Number(record.outputIndex),
+    descriptorIndex: typeof record.descriptorIndex === "number" ? Number(record.descriptorIndex) : 0,
   };
 }
 
@@ -228,6 +306,44 @@ export function isGeneratedTextNoteNode(node: WorkflowNode | null | undefined) {
 
 export function isGeneratedModelTextNoteNode(node: WorkflowNode | null | undefined) {
   return node?.kind === "text-note" && Boolean(getGeneratedModelTextNoteSettings(node.settings));
+}
+
+export function getGeneratedModelNodeSource(
+  value: unknown
+):
+  | (GeneratedModelTextNoteSettings & { kind: "text-note" })
+  | (GeneratedModelListSettings & { kind: "list" })
+  | (GeneratedModelTextTemplateSettings & { kind: "text-template" })
+  | null {
+  const generatedText = getGeneratedModelTextNoteSettings(value);
+  if (generatedText) {
+    return {
+      ...generatedText,
+      kind: "text-note",
+    };
+  }
+
+  const generatedList = getGeneratedModelListSettings(value);
+  if (generatedList) {
+    return {
+      ...generatedList,
+      kind: "list",
+    };
+  }
+
+  const generatedTemplate = getGeneratedModelTextTemplateSettings(value);
+  if (generatedTemplate) {
+    return {
+      ...generatedTemplate,
+      kind: "text-template",
+    };
+  }
+
+  return null;
+}
+
+export function isGeneratedModelNode(node: WorkflowNode | null | undefined) {
+  return Boolean(node && getGeneratedModelNodeSource(node.settings));
 }
 
 export function getNormalizedListColumns(settings: ListNodeSettings): NormalizedListColumn[] {

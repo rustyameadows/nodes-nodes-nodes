@@ -35,7 +35,7 @@ type ProviderJobInput = {
 
 Provider adapters return normalized outputs:
 - image/video buffers for persisted assets
-- inline text for note-native GPT outputs
+- inline text for GPT text responses plus parsed generated-node descriptors in worker-owned attempt metadata
 - preview frames when streaming is supported
 
 ## Capability Metadata
@@ -90,8 +90,19 @@ The packaged app can be fully configured from Finder without editing repo env fi
 
 ## OpenAI GPT Text Jobs
 - accept prompt text only
-- create generated `text-note` placeholders on the canvas
-- persist returned text in `job_attempts.provider_response`
+- support four output targets:
+  - `Text Note`
+  - `List`
+  - `Template`
+  - `Smart Output`
+- `Text Note` remains the default and is fully backward compatible
+- `List`, `Template`, and `Smart Output` force app-owned strict JSON schema output through the Responses API
+- structured parsing happens in the worker/job pipeline, never in the renderer
+- `List` and `Template` create one deterministic generated placeholder node while queued/running
+- `Smart Output` spawns one or more unconnected generated nodes only after parsed descriptors are available
+- `Smart Output` follows explicit user instructions about node types first, and only falls back to the general node-selection rules when the prompt is ambiguous
+- parse failure still marks the job successful and falls back to one generated `text-note`
+- persist returned text plus parsed generated-node descriptors in `job_attempts.provider_response`
 - do not create asset rows or asset files
 
 ## Topaz Jobs

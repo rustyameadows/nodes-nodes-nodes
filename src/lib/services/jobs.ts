@@ -4,12 +4,17 @@ import { z } from "zod";
 import type { Job, JobDebugResponse } from "@/components/workspace/types";
 import { getDb, getSqlite } from "@/lib/db/client";
 import { assets, jobAttempts, jobPreviewFrames, jobs } from "@/lib/db/schema";
+import {
+  createGeneratedTextNoteDescriptorsFromRawText,
+  type GeneratedNodeDescriptor,
+} from "@/lib/generated-text-output";
 import { formatProviderRequirementMessage, getFirstUnconfiguredRequirement } from "@/lib/provider-readiness";
 import { getProviderModel } from "@/lib/providers/registry";
 import { syncProviderModels } from "@/lib/services/providers";
 import { nowIso, newId } from "@/lib/services/common";
 import { isRunnableOpenAiImageModel, resolveOpenAiImageSettings } from "@/lib/openai-image-settings";
 import { isRunnableOpenAiTextModel, resolveOpenAiTextSettings } from "@/lib/openai-text-settings";
+import { readOpenAiTextOutputTarget } from "@/lib/text-output-targets";
 import { isRunnableTopazGigapixelModel, resolveTopazGigapixelSettings } from "@/lib/topaz-gigapixel-settings";
 import type { OpenAIImageMode } from "@/lib/types";
 import type { CreateJobRequest } from "@/lib/ipc-contract";
@@ -41,6 +46,43 @@ function getLatestTextOutputs(providerResponse: Record<string, unknown> | null |
         responseId: metadata.responseId ? String(metadata.responseId) : null,
       };
     });
+}
+
+function getGeneratedNodeDescriptors(
+  providerResponse: Record<string, unknown> | null | undefined,
+  sourceJobId: string,
+  sourceModelNodeId: string | null | undefined
+): GeneratedNodeDescriptor[] {
+  if (!providerResponse || typeof providerResponse !== "object" || !sourceModelNodeId) {
+    return [];
+  }
+
+  if (Array.isArray(providerResponse.generatedNodeDescriptors)) {
+    return providerResponse.generatedNodeDescriptors
+      .map((descriptor) =>
+        descriptor && typeof descriptor === "object" ? (descriptor as GeneratedNodeDescriptor) : null
+      )
+      .filter((descriptor): descriptor is GeneratedNodeDescriptor => Boolean(descriptor));
+  }
+
+  const textOutputs = getLatestTextOutputs(providerResponse);
+  if (textOutputs.length === 0) {
+    return [];
+  }
+
+  const textOutputTarget = readOpenAiTextOutputTarget(providerResponse.textOutputTarget);
+  if (textOutputTarget !== "note") {
+    return [];
+  }
+
+  return createGeneratedTextNoteDescriptorsFromRawText({
+    outputs: textOutputs.map((output) => ({
+      content: output.content,
+      outputIndex: output.outputIndex,
+    })),
+    sourceJobId,
+    sourceModelNodeId,
+  });
 }
 
 const createJobSchema = z.object({
@@ -118,7 +160,7 @@ async function getSubmissionError(input: z.infer<typeof createJobSchema>) {
     }
 
     if (input.nodePayload.outputCount !== 1) {
-      return `${model.displayName} produces exactly one output note.`;
+      return `${model.displayName} produces exactly one text response per run.`;
     }
 
     const resolved = resolveOpenAiTextSettings(input.nodePayload.settings, input.modelId);
@@ -176,6 +218,13 @@ function serializeJobRows(
     assets: assetsByJobId.get(job.id) || [],
     latestPreviewFrames: previewFramesByJobId.get(job.id) || [],
     latestTextOutputs: getLatestTextOutputs(latestAttemptByJobId.get(job.id)?.providerResponse || null),
+    generatedNodeDescriptors: getGeneratedNodeDescriptors(
+      latestAttemptByJobId.get(job.id)?.providerResponse || null,
+      job.id,
+      typeof (job.nodeRunPayload as Record<string, unknown> | undefined)?.nodeId === "string"
+        ? String((job.nodeRunPayload as Record<string, unknown>).nodeId)
+        : null
+    ),
   }));
 }
 

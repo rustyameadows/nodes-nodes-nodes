@@ -77,6 +77,7 @@ TanStack Query owns persisted app data in the renderer and is invalidated from t
 
 ## Canvas Interaction Model
 - `CanvasView` owns a local canvas command layer for native menu commands and canvas-scoped keyboard shortcuts.
+- Canvas keyboard shortcuts are registered through TanStack Hotkeys with input ignoring enabled, so canvas commands do not fire while editable controls are focused.
 - `InfiniteCanvas` renders live drag previews, but committed node movement is written back once per drag through `onCommitNodePositions`.
 - Multi-node drag uses the current selection as a batch and preserves relative spacing across the moved nodes.
 - `CanvasBottomBar` is partially controlled by `CanvasView` so `Enter` and node double-click can open deterministic primary editor trays.
@@ -86,7 +87,7 @@ TanStack Query owns persisted app data in the renderer and is invalidated from t
   - list -> `list`
   - text template -> `template`
   - uploaded asset source -> `asset-details`
-  - generated asset / generated text -> `source-call`
+  - generated asset / generated model-spawned nodes -> `source-call`
 
 ## Canvas History Model
 - Undo/redo is renderer-local and scoped to the active canvas document.
@@ -116,8 +117,16 @@ TanStack Query owns persisted app data in the renderer and is invalidated from t
 4. Worker polls eligible `queued` jobs and atomically claims one.
 5. Worker marks heartbeats while the provider call is running.
 6. Provider adapter emits preview frames when supported.
-7. Worker persists final outputs as assets or note-native text results.
+7. Worker persists final outputs as assets or text-response metadata with parsed generated-node descriptors.
 8. Worker records attempt metadata, marks terminal job state, and emits `jobs.changed` plus `assets.changed` when needed.
+
+## Structured Text Output Flow
+- Runnable OpenAI text models expose `textOutputTarget` in model settings.
+- `note` uses the user-selected text output format (`text`, `json_object`, or `json_schema`) and hydrates one generated text note.
+- `list`, `template`, and `smart` override the OpenAI text format with app-owned strict JSON schema plus system instructions.
+- Worker-side parsing validates those structured responses into generated-node descriptors before they reach the renderer.
+- `CanvasView` hydrates model-spawned notes, lists, and templates from `job.generatedNodeDescriptors` instead of parsing raw provider text in the renderer.
+- `smart` spawns multiple unconnected nodes in this pass; explicit `list` and `template` targets still use deterministic placeholders while queued/running.
 
 ## Queue Recovery
 - Queue source of truth is the `jobs` table.
