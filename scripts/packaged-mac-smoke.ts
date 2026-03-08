@@ -94,6 +94,7 @@ async function main() {
   const zipPath = path.resolve("release", `${APP_NAME}-${version}-arm64-mac.zip`);
   const blockmapPath = `${zipPath}.blockmap`;
   const canvasScreenshotPath = path.join(appDataRoot, "packaged-canvas-smoke.png");
+  const nodeFocusScreenshotPath = path.join(appDataRoot, "packaged-node-focus.png");
   const modelFullScreenshotPath = path.join(appDataRoot, "packaged-model-full.png");
   const listFullScreenshotPath = path.join(appDataRoot, "packaged-list-full.png");
   const templateFullScreenshotPath = path.join(appDataRoot, "packaged-template-full.png");
@@ -330,6 +331,70 @@ async function main() {
       15_000
     );
 
+    const viewportBeforeNodeFocus = await driver.executeScript(() => {
+      return (
+        (window as typeof window & {
+          __NND_CANVAS_TEST__?: {
+            getState: () => {
+              activeFullNodeId: string | null;
+              canvasViewport: { x: number; y: number; zoom: number };
+            };
+          };
+        }).__NND_CANVAS_TEST__?.getState() || {
+          activeFullNodeId: null,
+          canvasViewport: { x: 0, y: 0, zoom: 1 },
+        }
+      );
+    });
+    await driver.executeScript(() => {
+      const api = (window as typeof window & {
+        __NND_CANVAS_TEST__?: {
+          focusAndOpenNode: (nodeId: string) => void;
+        };
+      }).__NND_CANVAS_TEST__;
+      api?.focusAndOpenNode("smoke-text-note");
+    });
+    await driver.wait(
+      async () =>
+        Boolean(
+          await driver.executeScript((beforeZoom: number) => {
+            const api = (window as typeof window & {
+              __NND_CANVAS_TEST__?: {
+                getState: () => {
+                  activeFullNodeId: string | null;
+                  canvasViewport: { x: number; y: number; zoom: number };
+                };
+              };
+            }).__NND_CANVAS_TEST__;
+            if (!api) {
+              return false;
+            }
+
+            const state = api.getState();
+            return state.activeFullNodeId === "smoke-text-note" && state.canvasViewport.zoom > beforeZoom + 0.02;
+          }, viewportBeforeNodeFocus.canvasViewport.zoom)
+        ),
+      15_000
+    );
+    const viewportAfterNodeFocus = await driver.executeScript(() => {
+      return (
+        (window as typeof window & {
+          __NND_CANVAS_TEST__?: {
+            getState: () => {
+              activeFullNodeId: string | null;
+              canvasViewport: { x: number; y: number; zoom: number };
+            };
+          };
+        }).__NND_CANVAS_TEST__?.getState() || {
+          activeFullNodeId: null,
+          canvasViewport: { x: 0, y: 0, zoom: 1 },
+        }
+      );
+    });
+    assert.equal(viewportAfterNodeFocus.activeFullNodeId, "smoke-text-note");
+    assert.ok(viewportAfterNodeFocus.canvasViewport.zoom <= 1.1, "Expected packaged node focus zoom to stay gentle.");
+    await saveScreenshot(driver, nodeFocusScreenshotPath);
+
     await driver.executeScript(() => {
       const api = (window as typeof window & {
         __NND_CANVAS_TEST__?: {
@@ -409,7 +474,14 @@ async function main() {
     await clickButton(driver, "Project Settings");
     await waitForUrl(driver, new RegExp(`#?/projects/${projectId}/settings$`));
     await waitForHeading(driver, "Project Settings");
-    const projectNameValue = await driver.findElement(By.css("input")).getAttribute("value");
+    const visibleInputs = await driver.findElements(By.css("input"));
+    let projectNameValue = "";
+    for (const input of visibleInputs) {
+      if (await input.isDisplayed()) {
+        projectNameValue = await input.getAttribute("value");
+        break;
+      }
+    }
     assert.ok(projectNameValue.trim().length > 0, "Expected a project name in settings.");
     const settingsText = await driver.findElement(By.css("body")).getText();
     assert.ok(!settingsText.includes("Provider Credentials"), "Project settings should not include provider credentials.");
@@ -448,6 +520,7 @@ async function main() {
           assetCount,
           storedAssetFiles,
           canvasScreenshotPath,
+          nodeFocusScreenshotPath,
           modelFullScreenshotPath,
           listFullScreenshotPath,
           templateFullScreenshotPath,

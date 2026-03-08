@@ -52,7 +52,8 @@
 - mode changes animate quickly on shell size/content transitions, but those transitions shut off while dragging, resizing, or panning
 - inline full-mode entry points:
   - `Enter` opens the selected node's inline full editor
-  - node double-click opens the same inline full editor for the clicked node
+  - node double-click on a `preview` or `compact` node opens the same inline full editor and gently animates the viewport to that node
+  - node double-click on a `resized` node keeps it resized and only animates the viewport focus
 - primary editor mapping:
   - model -> `Prompt`
   - text note -> `Note`

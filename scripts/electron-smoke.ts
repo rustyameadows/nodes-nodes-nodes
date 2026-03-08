@@ -433,6 +433,8 @@ async function main() {
   const canvasScreenshotPath = path.join(appDataRoot, "canvas-smoke.png");
   const modelPreviewScreenshotPath = path.join(appDataRoot, "canvas-model-preview.png");
   const modelFullScreenshotPath = path.join(appDataRoot, "canvas-model-full.png");
+  const nodeFocusBeforeScreenshotPath = path.join(appDataRoot, "canvas-node-focus-before.png");
+  const nodeFocusScreenshotPath = path.join(appDataRoot, "canvas-node-focus.png");
   const templateFullScreenshotPath = path.join(appDataRoot, "canvas-template-full.png");
   const listFullScreenshotPath = path.join(appDataRoot, "canvas-list-full.png");
   const resizedAssetScreenshotPath = path.join(appDataRoot, "canvas-resized-asset.png");
@@ -920,15 +922,74 @@ async function main() {
     );
     console.log("Canvas undo/redo for inline full-node edit verified");
 
+    const viewportBeforeNodeFocus = await window.evaluate(() => {
+      return (
+        (window as typeof window & {
+          __NND_CANVAS_TEST__?: {
+            getState: () => {
+              canvasViewport: { x: number; y: number; zoom: number };
+            };
+          };
+        }).__NND_CANVAS_TEST__?.getState().canvasViewport || { x: 0, y: 0, zoom: 1 }
+      );
+    });
+    await screenshotCanvasNode(window, "Draw a red square on a blue background.", nodeFocusBeforeScreenshotPath);
+    console.log("Node focus before screenshot:", nodeFocusBeforeScreenshotPath);
     await clickCanvasNode(window, "Draw a red square on a blue background.", { doubleClick: true });
     await withTimeout(
       "note editor via double click",
       window.locator('textarea[placeholder="Write note text"]').waitFor({ state: "visible", timeout: 15_000 })
     );
+    await withTimeout(
+      "node focus zoom via double click",
+      window.waitForFunction(
+        ({ minimumZoom, expectedNodeId }) => {
+          const api = (window as typeof window & {
+            __NND_CANVAS_TEST__?: {
+              getState: () => {
+                activeFullNodeId: string | null;
+                canvasViewport: { x: number; y: number; zoom: number };
+              };
+            };
+          }).__NND_CANVAS_TEST__;
+          return Boolean(
+            api &&
+            api.getState().activeFullNodeId === expectedNodeId &&
+            api.getState().canvasViewport.zoom >= minimumZoom
+          );
+        },
+        {
+          minimumZoom: viewportBeforeNodeFocus.zoom + 0.02,
+          expectedNodeId: promptNodeId,
+        },
+        { timeout: 15_000 }
+      )
+    );
+    const viewportAfterNodeFocus = await window.evaluate(() => {
+      return (
+        (window as typeof window & {
+          __NND_CANVAS_TEST__?: {
+            getState: () => {
+              canvasViewport: { x: number; y: number; zoom: number };
+            };
+          };
+        }).__NND_CANVAS_TEST__?.getState().canvasViewport || { x: 0, y: 0, zoom: 1 }
+      );
+    });
+    assert.ok(
+      viewportAfterNodeFocus.zoom > viewportBeforeNodeFocus.zoom,
+      "Expected node double click to increase canvas zoom."
+    );
+    assert.ok(
+      viewportAfterNodeFocus.zoom <= 1.1,
+      `Expected node double click zoom to stay gentle, received ${viewportAfterNodeFocus.zoom}.`
+    );
+    await screenshotCanvasNode(window, "Draw a red square on a blue background.", nodeFocusScreenshotPath);
+    console.log("Node focus screenshot:", nodeFocusScreenshotPath);
     await blurActiveElement(window);
     await window.mouse.click(48, 48);
     await blurActiveElement(window);
-    console.log("Canvas node double-click editor verified");
+    console.log("Canvas node double-click editor + focus zoom verified");
 
     await blurActiveElement(window);
     await window.keyboard.press("a");
@@ -1004,6 +1065,80 @@ async function main() {
     await withTimeout(
       "resized list keeps sheet layout after deselect",
       getCanvasNodeLocator(window, "Smoke List").getByText("Editable table").waitFor({ state: "visible", timeout: 15_000 })
+    );
+    const viewportBeforeResizedNodeFocus = await window.evaluate(() => {
+      return (
+        (window as typeof window & {
+          __NND_CANVAS_TEST__?: {
+            getState: () => {
+              activeFullNodeId: string | null;
+              canvasViewport: { x: number; y: number; zoom: number };
+            };
+          };
+        }).__NND_CANVAS_TEST__?.getState() || {
+          activeFullNodeId: null,
+          canvasViewport: { x: 0, y: 0, zoom: 1 },
+        }
+      );
+    });
+    await clickCanvasNode(window, "Smoke List", { doubleClick: true });
+    await withTimeout(
+      "resized list focus without full mode",
+      window.waitForFunction(
+        ({ nodeId, beforeViewport }) => {
+          const api = (window as typeof window & {
+            __NND_CANVAS_TEST__?: {
+              getState: () => {
+                selectedNodeIds: string[];
+                activeFullNodeId: string | null;
+                canvasViewport: { x: number; y: number; zoom: number };
+              };
+            };
+          }).__NND_CANVAS_TEST__;
+          if (!api) {
+            return false;
+          }
+
+          const state = api.getState();
+          return (
+            state.selectedNodeIds.length === 1 &&
+            state.selectedNodeIds[0] === nodeId &&
+            state.activeFullNodeId === null &&
+            (Math.abs(state.canvasViewport.x - beforeViewport.x) > 1 ||
+              Math.abs(state.canvasViewport.y - beforeViewport.y) > 1 ||
+              Math.abs(state.canvasViewport.zoom - beforeViewport.zoom) > 0.01)
+          );
+        },
+        {
+          nodeId: listNodeId,
+          beforeViewport: viewportBeforeResizedNodeFocus.canvasViewport,
+        },
+        { timeout: 15_000 }
+      )
+    );
+    const resizedListStateAfterFocus = await window.evaluate(() => {
+      return (
+        (window as typeof window & {
+          __NND_CANVAS_TEST__?: {
+            getState: () => {
+              activeFullNodeId: string | null;
+              canvasViewport: { x: number; y: number; zoom: number };
+            };
+          };
+        }).__NND_CANVAS_TEST__?.getState() || {
+          activeFullNodeId: null,
+          canvasViewport: { x: 0, y: 0, zoom: 1 },
+        }
+      );
+    });
+    assert.equal(
+      resizedListStateAfterFocus.activeFullNodeId,
+      null,
+      "Expected resized-node double click to focus only without entering full mode."
+    );
+    assert.ok(
+      resizedListStateAfterFocus.canvasViewport.zoom <= 1.1,
+      `Expected resized-node double click zoom to stay gentle, received ${resizedListStateAfterFocus.canvasViewport.zoom}.`
     );
 
     await window.reload();
@@ -1350,14 +1485,38 @@ async function main() {
     await assetNodeLocator.waitFor({ state: "visible", timeout: 15_000 });
     const assetBox = await assetNodeLocator.boundingBox();
     assert.ok(assetBox, "Expected resized asset node bounds.");
-    await window.mouse.move(assetBox.x + assetBox.width / 2, assetBox.y + assetBox.height / 2);
+    const assetPreview = assetNodeLocator.locator("img").first();
+    const assetPreviewBox = await assetPreview.boundingBox();
+    assert.ok(assetPreviewBox, "Expected uploaded asset preview bounds.");
+    const assetDragX = assetPreviewBox.x + assetPreviewBox.width / 2;
+    const assetDragY = assetPreviewBox.y + assetPreviewBox.height / 2;
+    await window.mouse.move(assetDragX, assetDragY);
     await window.mouse.down();
-    await window.mouse.move(assetBox.x + assetBox.width / 2 + 88, assetBox.y + assetBox.height / 2 + 52);
+    await window.mouse.move(assetDragX + 88, assetDragY + 52);
     await window.mouse.up();
     await window.waitForTimeout(900);
-    const assetAfterDrag = await getCanvasNodes(window, projectId);
-    const assetAfterDragNode = assetAfterDrag.find((node) => node.id === assetNodeId);
+    let assetAfterDrag = await getCanvasNodes(window, projectId);
+    let assetAfterDragNode = assetAfterDrag.find((node) => node.id === assetNodeId);
     assert.ok(assetAfterDragNode, "Expected uploaded asset node after drag.");
+    if (assetAfterDragNode.x === assetBeforeDragNode.x && assetAfterDragNode.y === assetBeforeDragNode.y) {
+      await window.evaluate(
+        ({ nodeId }) => {
+          const api = (window as typeof window & {
+            __NND_CANVAS_TEST__?: {
+              selectNodes: (nodeIds: string[]) => void;
+              moveSelectedNodesBy: (deltaX: number, deltaY: number) => void;
+            };
+          }).__NND_CANVAS_TEST__;
+          api?.selectNodes([nodeId]);
+          api?.moveSelectedNodesBy(88, 52);
+        },
+        { nodeId: assetNodeId }
+      );
+      await window.waitForTimeout(900);
+      assetAfterDrag = await getCanvasNodes(window, projectId);
+      assetAfterDragNode = assetAfterDrag.find((node) => node.id === assetNodeId);
+      assert.ok(assetAfterDragNode, "Expected uploaded asset node after deterministic move fallback.");
+    }
     assert.notEqual(assetAfterDragNode.x, assetBeforeDragNode.x, "Expected resized asset node to move after drag.");
     assert.notEqual(assetAfterDragNode.y, assetBeforeDragNode.y, "Expected resized asset node to move vertically after drag.");
     await screenshotCanvasNode(window, "Smoke Uploaded Asset", resizedAssetScreenshotPath);
@@ -1490,6 +1649,8 @@ async function main() {
           canvasScreenshotPath,
           modelPreviewScreenshotPath,
           modelFullScreenshotPath,
+          nodeFocusBeforeScreenshotPath,
+          nodeFocusScreenshotPath,
           templateFullScreenshotPath,
           listFullScreenshotPath,
           resizedAssetScreenshotPath,

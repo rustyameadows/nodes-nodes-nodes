@@ -47,7 +47,8 @@ What it does:
   - multi-selected nodes move as one batch
   - `C` connects exactly two selected nodes
   - `Enter` opens the selected node's inline full editor
-  - node double-click opens the same primary inline editor mapping
+  - node double-click opens the same primary inline editor mapping on `preview` / `compact` nodes and gently animates the viewport focus
+  - double-click on a `resized` node keeps it resized and only focuses the viewport
   - `Cmd/Ctrl+Z` and `Cmd/Ctrl+Shift+Z` undo/redo batch move, connection, inline edit, and node insertion
   - typing inside inline editors does not trigger canvas shortcuts
   - resized asset nodes can still be dragged after resize
@@ -83,6 +84,8 @@ Expected output:
   - `canvasScreenshotPath`
   - `modelPreviewScreenshotPath`
   - `modelFullScreenshotPath`
+  - `nodeFocusBeforeScreenshotPath`
+  - `nodeFocusScreenshotPath`
   - `listFullScreenshotPath`
   - `templateFullScreenshotPath`
   - `resizedAssetScreenshotPath`
@@ -209,28 +212,29 @@ Run this when touching workflow or asset UX:
 9. Multi-select two nodes and drag them together.
 10. Press `C` with exactly two selected nodes and confirm a connection is created.
 11. Press `Enter` on a single selected node and confirm the expected inline full editor opens.
-12. Double-click a node and confirm it opens the same primary inline editor as `Enter`.
-13. Click into a prompt, note, list cell, or template textarea and confirm canvas shortcuts do not fire while typing.
-14. Resize a text/list/template/asset node and confirm the size persists after deselecting or reloading.
-15. Open a template node with a connected list and confirm variable chips, compatibility state, and merge preview render inline.
-16. Open a list node in full mode and confirm it behaves like an inline editable sheet instead of the old stacked field controls.
-17. Resize an asset node, then drag it directly from the media surface and confirm it still moves cleanly.
-18. Confirm phantom output previews appear only for the active node and disappear when you deselect or change selection.
-19. Use `Cmd/Ctrl+Z` and `Cmd/Ctrl+Shift+Z` to undo/redo one move, one connection, and one inline edit.
-20. If a generated child node exists, resize or edit it, wait through at least one jobs poll, reload, and confirm it does not revert.
-21. Delete a generated child node, reload, and confirm it does not respawn.
-22. Import an asset.
-23. Open the Assets view and confirm the imported asset appears.
-24. Open Project Settings and confirm the project metadata renders and provider credentials do not appear there.
-25. Open App Settings and confirm provider credentials render there.
-26. If testing on macOS, confirm:
+12. Double-click a `preview` or `compact` node and confirm it opens the same primary inline editor as `Enter` with a gentle viewport focus animation.
+13. Double-click a `resized` node and confirm it stays resized while the viewport focuses to it.
+14. Click into a prompt, note, list cell, or template textarea and confirm canvas shortcuts do not fire while typing.
+15. Resize a text/list/template/asset node and confirm the size persists after deselecting or reloading.
+16. Open a template node with a connected list and confirm variable chips, compatibility state, and merge preview render inline.
+17. Open a list node in full mode and confirm it behaves like an inline editable sheet instead of the old stacked field controls.
+18. Resize an asset node, then drag it directly from the media surface and confirm it still moves cleanly.
+19. Confirm phantom output previews appear only for the active node and disappear when you deselect or change selection.
+20. Use `Cmd/Ctrl+Z` and `Cmd/Ctrl+Shift+Z` to undo/redo one move, one connection, and one inline edit.
+21. If a generated child node exists, resize or edit it, wait through at least one jobs poll, reload, and confirm it does not revert.
+22. Delete a generated child node, reload, and confirm it does not respawn.
+23. Import an asset.
+24. Open the Assets view and confirm the imported asset appears.
+25. Open Project Settings and confirm the project metadata renders and provider credentials do not appear there.
+26. Open App Settings and confirm provider credentials render there.
+27. If testing on macOS, confirm:
    - `File`, `Project`, `Canvas`, `Edit`, `View`, and `Window` menus appear
    - `Cmd+,` opens App Settings
    - `File > New Project` opens a new project
    - `Project > Home` returns to app home
    - `Project > Assets` / `Queue` / `Project Settings` match the in-app menu behavior
    - `Canvas > Add Node…`, `Connect Selected Nodes`, `Duplicate Selected Node`, `Undo Canvas Change`, and `Redo Canvas Change` enable or disable correctly on canvas
-27. If API keys are configured, run at least one real provider job and verify:
+28. If API keys are configured, run at least one real provider job and verify:
   - queue row created
   - state changes visible
   - output lands on canvas or in assets as appropriate

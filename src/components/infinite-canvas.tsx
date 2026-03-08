@@ -44,10 +44,12 @@ type Props = {
   onRequestInsertMenu: (request: CanvasInsertRequest) => void;
   onDropFiles: (files: File[], position: { x: number; y: number }) => void;
   onViewportChange: (viewport: CanvasViewport) => void;
+  onViewportInteractionStart?: () => void;
   onCommitNodePositions: (positions: Record<string, { x: number; y: number }>) => void;
   onCommitNodeSize: (nodeId: string, size: WorkflowNodeSize) => void;
   onConnectNodes: (sourceNodeId: string, targetNodeId: string) => void;
   onSelectConnection: (connection: CanvasConnection | null) => void;
+  onNodeActivate: (nodeId: string) => void;
   onNodeDoubleClick: (nodeId: string) => void;
   renderNodeContent: (node: CanvasRenderNode) => ReactNode;
   activePhantomPreview?: CanvasPhantomPreview | null;
@@ -469,10 +471,12 @@ export function InfiniteCanvas({
   onRequestInsertMenu,
   onDropFiles,
   onViewportChange,
+  onViewportInteractionStart,
   onCommitNodePositions,
   onCommitNodeSize,
   onConnectNodes,
   onSelectConnection,
+  onNodeActivate,
   onNodeDoubleClick,
   renderNodeContent,
   activePhantomPreview,
@@ -731,6 +735,7 @@ export function InfiniteCanvas({
   const handleWheelEvent = useCallback(
     (event: WheelEvent) => {
       event.preventDefault();
+      onViewportInteractionStart?.();
 
       const current = viewRef.current;
       const rect = containerRef.current?.getBoundingClientRect();
@@ -756,7 +761,7 @@ export function InfiniteCanvas({
       setView(next);
       scheduleViewportCommit(next);
     },
-    [scheduleViewportCommit]
+    [onViewportInteractionStart, scheduleViewportCommit]
   );
 
   const handlePointerMove = useCallback(
@@ -1062,6 +1067,7 @@ export function InfiniteCanvas({
     // pinch zoom inside canvas instead of browser page zoom.
     const onGestureStart = (event: Event) => {
       event.preventDefault();
+      onViewportInteractionStart?.();
 
       const rect = container.getBoundingClientRect();
       const maybeGesture = event as Event & { clientX?: number; clientY?: number };
@@ -1116,7 +1122,7 @@ export function InfiniteCanvas({
       container.removeEventListener("gesturechange", onGestureChange as EventListener);
       container.removeEventListener("gestureend", onGestureEnd as EventListener);
     };
-  }, [scheduleViewportCommit, viewport]);
+  }, [onViewportInteractionStart, scheduleViewportCommit, viewport]);
 
   const onBackgroundPointerDown = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -1130,6 +1136,7 @@ export function InfiniteCanvas({
       }
 
       if (event.shiftKey) {
+        onViewportInteractionStart?.();
         event.preventDefault();
         window.getSelection()?.removeAllRanges();
         setDragDraftPositions(null);
@@ -1152,6 +1159,7 @@ export function InfiniteCanvas({
       }
 
       onSelectSingleNode(null);
+      onViewportInteractionStart?.();
       setDragDraftPositions(null);
       interactionRef.current = {
         type: "pan",
@@ -1161,12 +1169,13 @@ export function InfiniteCanvas({
       };
       setInteractionMode("pan");
     },
-    [clearConnectionDraft, onSelectConnection, onSelectSingleNode, toWorldPoint]
+    [clearConnectionDraft, onSelectConnection, onSelectSingleNode, onViewportInteractionStart, toWorldPoint]
   );
 
   const onNodePointerDown = useCallback(
     (node: CanvasRenderNode, event: ReactPointerEvent<HTMLDivElement>) => {
       event.stopPropagation();
+      onViewportInteractionStart?.();
 
       if (event.shiftKey || event.metaKey || event.ctrlKey) {
         event.currentTarget.focus();
@@ -1216,13 +1225,14 @@ export function InfiniteCanvas({
         onSelectSingleNode(node.id);
       }
     },
-    [nodesById, onSelectSingleNode, onToggleNodeSelection, selectedNodeIds, toWorldPoint]
+    [nodesById, onSelectSingleNode, onToggleNodeSelection, onViewportInteractionStart, selectedNodeIds, toWorldPoint]
   );
 
   const onResizeHandlePointerDown = useCallback(
     (node: CanvasRenderNode, event: ReactPointerEvent<HTMLButtonElement>) => {
       event.stopPropagation();
       event.preventDefault();
+      onViewportInteractionStart?.();
       const startSize = getNodeSize(node.id);
       interactionRef.current = {
         type: "resize",
@@ -1235,13 +1245,14 @@ export function InfiniteCanvas({
       setInteractionMode("resize");
       onSelectSingleNode(node.id);
     },
-    [getNodeSize, onSelectSingleNode]
+    [getNodeSize, onSelectSingleNode, onViewportInteractionStart]
   );
 
   const onPortPointerDown = useCallback(
     (node: CanvasRenderNode, port: "input" | "output", event: ReactPointerEvent<HTMLButtonElement>) => {
       event.stopPropagation();
       event.preventDefault();
+      onViewportInteractionStart?.();
       onSelectConnection(null);
 
       const source =
@@ -1260,7 +1271,7 @@ export function InfiniteCanvas({
       });
       onSelectSingleNode(node.id);
     },
-    [getNodeSize, onSelectConnection, onSelectSingleNode]
+    [getNodeSize, onSelectConnection, onSelectSingleNode, onViewportInteractionStart]
   );
 
   const onPortPointerUp = useCallback(
@@ -1598,7 +1609,7 @@ export function InfiniteCanvas({
                 }
                 if (event.key === "Enter") {
                   event.preventDefault();
-                  onNodeDoubleClick(node.id);
+                  onNodeActivate(node.id);
                   return;
                 }
                 if (event.key === " ") {

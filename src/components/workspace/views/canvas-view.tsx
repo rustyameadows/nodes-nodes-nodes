@@ -113,6 +113,11 @@ const generatedTextNodeOffsetX = 320;
 const generatedTextNodeOffsetY = 172;
 const CANVAS_HISTORY_LIMIT = 100;
 const COALESCED_HISTORY_DELAY_MS = 450;
+const NODE_FOCUS_ZOOM_PADDING_X = 96;
+const NODE_FOCUS_ZOOM_PADDING_Y = 84;
+const NODE_FOCUS_MIN_ZOOM = 0.42;
+const NODE_FOCUS_MAX_ZOOM = 1.08;
+const NODE_FOCUS_ANIMATION_DURATION_MS = 165;
 
 type Props = {
   projectId: string;
@@ -610,6 +615,7 @@ export function CanvasView({ projectId }: Props) {
   const [assetPickerError, setAssetPickerError] = useState<string | null>(null);
   const [selectedConnection, setSelectedConnection] = useState<CanvasConnection | null>(null);
   const [activeFullNodeId, setActiveFullNodeId] = useState<string | null>(null);
+  const [pendingViewportFocusNodeId, setPendingViewportFocusNodeId] = useState<string | null>(null);
   const [historyStacks, setHistoryStacks] = useState<CanvasHistoryStacks>({
     undo: [],
     redo: [],
@@ -627,6 +633,8 @@ export function CanvasView({ projectId }: Props) {
   const selectedNodeIdsRef = useRef(selectedNodeIds);
   const selectedConnectionRef = useRef(selectedConnection);
   const activeFullNodeIdRef = useRef(activeFullNodeId);
+  const viewportFocusAnimationFrameRef = useRef<number | null>(null);
+  const viewportFocusSetupFrameIdsRef = useRef<number[]>([]);
   const historyStacksRef = useRef(historyStacks);
   const pendingCoalescedHistoryRef = useRef<PendingCoalescedCanvasHistory | null>(null);
   const historyTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -646,6 +654,27 @@ export function CanvasView({ projectId }: Props) {
   useEffect(() => {
     activeFullNodeIdRef.current = activeFullNodeId;
   }, [activeFullNodeId]);
+
+  const clearViewportFocusSetupFrames = useCallback(() => {
+    for (const frameId of viewportFocusSetupFrameIdsRef.current) {
+      window.cancelAnimationFrame(frameId);
+    }
+    viewportFocusSetupFrameIdsRef.current = [];
+  }, []);
+
+  const cancelViewportFocusAnimation = useCallback(
+    (options?: { clearPending?: boolean }) => {
+      clearViewportFocusSetupFrames();
+      if (viewportFocusAnimationFrameRef.current !== null) {
+        window.cancelAnimationFrame(viewportFocusAnimationFrameRef.current);
+        viewportFocusAnimationFrameRef.current = null;
+      }
+      if (options?.clearPending) {
+        setPendingViewportFocusNodeId(null);
+      }
+    },
+    [clearViewportFocusSetupFrames]
+  );
 
   useEffect(() => {
     historyStacksRef.current = historyStacks;
@@ -2471,6 +2500,42 @@ export function CanvasView({ projectId }: Props) {
     openPrimaryEditorForNode(selectedNodeIdsRef.current[0]!);
   }, [openPrimaryEditorForNode]);
 
+  const focusNodeViewport = useCallback(
+    (nodeId: string) => {
+      const node = nodesById[nodeId];
+      if (!node) {
+        return;
+      }
+
+      commitPendingCoalescedHistory();
+      setTrackedSelectedNodeIds([nodeId]);
+      setTrackedSelectedConnection(null);
+      setInsertMenu(null);
+      setAssetPicker(null);
+      setActiveFullNodeId(null);
+      setPendingViewportFocusNodeId(nodeId);
+    },
+    [commitPendingCoalescedHistory, nodesById, setTrackedSelectedConnection, setTrackedSelectedNodeIds]
+  );
+
+  const focusAndOpenNode = useCallback(
+    (nodeId: string) => {
+      const node = nodesById[nodeId];
+      if (!node) {
+        return;
+      }
+
+      if (node.displayMode === "resized") {
+        focusNodeViewport(nodeId);
+        return;
+      }
+
+      openPrimaryEditorForNode(nodeId);
+      setPendingViewportFocusNodeId(nodeId);
+    },
+    [focusNodeViewport, nodesById, openPrimaryEditorForNode]
+  );
+
   const updateSelectedModelParameter = useCallback(
     (parameterKey: string, value: string | number | null) => {
       if (!selectedNode || !selectedNodeIsModel) {
@@ -3407,14 +3472,130 @@ export function CanvasView({ projectId }: Props) {
   }, { enabled: Boolean(selectedConnection) || selectedNodeIds.length > 0, ignoreInputs: true });
 
   const updateViewport = useCallback(
-    (nextViewport: CanvasDocument["canvasViewport"]) => {
-      applyCanvasDocWithoutHistory({
-        ...canvasDocRef.current,
-        canvasViewport: nextViewport,
-      });
+    (
+      nextViewport: CanvasDocument["canvasViewport"],
+      options?: {
+        persist?: boolean;
+      }
+    ) => {
+      applyCanvasDocWithoutHistory(
+        {
+          ...canvasDocRef.current,
+          canvasViewport: nextViewport,
+        },
+        {
+          persist: options?.persist,
+        }
+      );
     },
     [applyCanvasDocWithoutHistory]
   );
+
+  const animateViewportTo = useCallback(
+    (targetViewport: CanvasDocument["canvasViewport"]) => {
+      cancelViewportFocusAnimation();
+
+      const startViewport = canvasDocRef.current.canvasViewport;
+      const deltaX = targetViewport.x - startViewport.x;
+      const deltaY = targetViewport.y - startViewport.y;
+      const deltaZoom = targetViewport.zoom - startViewport.zoom;
+
+      if (Math.abs(deltaX) < 0.5 && Math.abs(deltaY) < 0.5 && Math.abs(deltaZoom) < 0.0015) {
+        updateViewport(targetViewport);
+        return;
+      }
+
+      const startTime = performance.now();
+      const step = (timestamp: number) => {
+        const progress = Math.min(1, (timestamp - startTime) / NODE_FOCUS_ANIMATION_DURATION_MS);
+        const eased = 1 - Math.pow(1 - progress, 3);
+        const nextViewport = {
+          x: startViewport.x + deltaX * eased,
+          y: startViewport.y + deltaY * eased,
+          zoom: startViewport.zoom + deltaZoom * eased,
+        };
+
+        updateViewport(nextViewport, { persist: false });
+
+        if (progress >= 1) {
+          viewportFocusAnimationFrameRef.current = null;
+          updateViewport(targetViewport);
+          return;
+        }
+
+        viewportFocusAnimationFrameRef.current = window.requestAnimationFrame(step);
+      };
+
+      viewportFocusAnimationFrameRef.current = window.requestAnimationFrame(step);
+    },
+    [cancelViewportFocusAnimation, updateViewport]
+  );
+
+  useEffect(() => {
+    if (!pendingViewportFocusNodeId) {
+      return;
+    }
+
+    const surfaceElement = canvasSurfaceRef.current;
+    if (!surfaceElement) {
+      return;
+    }
+
+    const targetNode = canvasNodes.find((node) => node.id === pendingViewportFocusNodeId);
+    if (!targetNode) {
+      setPendingViewportFocusNodeId(null);
+      return;
+    }
+
+    cancelViewportFocusAnimation();
+
+    const firstFrameId = window.requestAnimationFrame(() => {
+      viewportFocusSetupFrameIdsRef.current = viewportFocusSetupFrameIdsRef.current.filter((frameId) => frameId !== firstFrameId);
+      const secondFrameId = window.requestAnimationFrame(() => {
+        viewportFocusSetupFrameIdsRef.current = viewportFocusSetupFrameIdsRef.current.filter((frameId) => frameId !== secondFrameId);
+        const bounds = surfaceElement.getBoundingClientRect();
+        if (bounds.width < 160 || bounds.height < 120) {
+          setPendingViewportFocusNodeId(null);
+          return;
+        }
+
+        const availableWidth = Math.max(220, bounds.width - NODE_FOCUS_ZOOM_PADDING_X * 2);
+        const availableHeight = Math.max(180, bounds.height - NODE_FOCUS_ZOOM_PADDING_Y * 2);
+        const fitZoom = Math.min(
+          availableWidth / targetNode.resolvedSize.width,
+          availableHeight / targetNode.resolvedSize.height
+        );
+        const zoom = Math.min(NODE_FOCUS_MAX_ZOOM, Math.max(NODE_FOCUS_MIN_ZOOM, fitZoom));
+        const x = bounds.width / 2 - (targetNode.x + targetNode.resolvedSize.width / 2) * zoom;
+        const y = bounds.height / 2 - (targetNode.y + targetNode.resolvedSize.height / 2) * zoom;
+
+        animateViewportTo({ x, y, zoom });
+        setPendingViewportFocusNodeId((current) => (current === targetNode.id ? null : current));
+      });
+      viewportFocusSetupFrameIdsRef.current.push(secondFrameId);
+    });
+    viewportFocusSetupFrameIdsRef.current.push(firstFrameId);
+
+    return () => {
+      clearViewportFocusSetupFrames();
+    };
+  }, [
+    animateViewportTo,
+    cancelViewportFocusAnimation,
+    canvasNodes,
+    clearViewportFocusSetupFrames,
+    pendingViewportFocusNodeId,
+  ]);
+
+  useEffect(() => {
+    return () => {
+      cancelViewportFocusAnimation();
+    };
+  }, [cancelViewportFocusAnimation]);
+
+  const handleViewportInteractionStart = useCallback(() => {
+    cancelViewportFocusAnimation({ clearPending: true });
+  }, [cancelViewportFocusAnimation]);
 
   const insertGeneratedOutputPlaceholder = useCallback(
     (job: Job, sourceNodeId: string, outputCount: number) => {
@@ -4110,11 +4291,13 @@ export function CanvasView({ projectId }: Props) {
         moveSelectedNodesBy: (deltaX: number, deltaY: number) => void;
         connectSelected: () => void;
         openPrimaryEditor: (nodeId: string) => void;
+        focusAndOpenNode: (nodeId: string) => void;
         setDisplayMode: (nodeId: string, mode: "preview" | "compact") => void;
         resizeNode: (nodeId: string, size: WorkflowNodeSize) => void;
         getState: () => {
           selectedNodeIds: string[];
           activeFullNodeId: string | null;
+          canvasViewport: CanvasDocument["canvasViewport"];
           canUndo: boolean;
           canRedo: boolean;
         };
@@ -4153,6 +4336,11 @@ export function CanvasView({ projectId }: Props) {
           openPrimaryEditorForNode(nodeId);
         }
       },
+      focusAndOpenNode: (nodeId: string) => {
+        if (canvasDocRef.current.workflow.nodes.some((node) => node.id === nodeId)) {
+          focusAndOpenNode(nodeId);
+        }
+      },
       setDisplayMode: (nodeId: string, mode: "preview" | "compact") => {
         if (canvasDocRef.current.workflow.nodes.some((node) => node.id === nodeId)) {
           handleNodeDisplayModeChange(nodeId, mode);
@@ -4166,6 +4354,7 @@ export function CanvasView({ projectId }: Props) {
       getState: () => ({
         selectedNodeIds: [...selectedNodeIdsRef.current],
         activeFullNodeId: activeFullNodeIdRef.current,
+        canvasViewport: canvasDocRef.current.canvasViewport,
         canUndo: historyStacksRef.current.undo.length > 0,
         canRedo: historyStacksRef.current.redo.length > 0,
       }),
@@ -4183,6 +4372,7 @@ export function CanvasView({ projectId }: Props) {
     connectSelectedNodes,
     handleNodeDisplayModeChange,
     handleNodeSizeCommit,
+    focusAndOpenNode,
     openPrimaryEditorForNode,
     setTrackedSelectedConnection,
     setTrackedSelectedNodeIds,
@@ -4214,11 +4404,13 @@ export function CanvasView({ projectId }: Props) {
                 uploadFilesToCanvas(files, position).catch(console.error);
               }}
               onViewportChange={updateViewport}
+              onViewportInteractionStart={handleViewportInteractionStart}
               onCommitNodePositions={commitNodePositions}
               onCommitNodeSize={handleNodeSizeCommit}
               onConnectNodes={connectNodes}
               onSelectConnection={selectCanvasConnection}
-              onNodeDoubleClick={openPrimaryEditorForNode}
+              onNodeActivate={openPrimaryEditorForNode}
+              onNodeDoubleClick={focusAndOpenNode}
               renderNodeContent={renderNodeContent}
               activePhantomPreview={activePhantomPreview}
               onRunActiveNode={(nodeId) => {
