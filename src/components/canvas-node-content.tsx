@@ -1,12 +1,21 @@
 "use client";
 
-import { useRef } from "react";
-import type { WorkflowNode } from "@/components/workspace/types";
-import type { ListNodeSettings } from "@/components/workspace/types";
-import type { ProviderId, ProviderModel } from "@/components/workspace/types";
+import { useMemo, useRef, type PointerEvent as ReactPointerEvent } from "react";
+import {
+  flexRender,
+  getCoreRowModel,
+  useReactTable,
+  type ColumnDef,
+} from "@tanstack/react-table";
+import type { CanvasRenderNode } from "@/components/canvas-node-types";
+import type {
+  ListNodeSettings,
+  ProviderId,
+  ProviderModel,
+  WorkflowNode,
+} from "@/components/workspace/types";
 import type { ModelParameterDefinition } from "@/lib/model-parameters";
 import type { TextTemplatePreview } from "@/lib/list-template";
-import type { CanvasRenderNode } from "@/components/canvas-node-types";
 import styles from "@/components/infinite-canvas.module.css";
 
 type SelectOption = {
@@ -63,6 +72,28 @@ type Props = {
   onCommitTextEdits: () => void;
 };
 
+type ListSheetRow = {
+  id: string;
+  rowIndex: number;
+  values: Record<string, string>;
+};
+
+function stopPointer(event: ReactPointerEvent<HTMLElement>) {
+  event.stopPropagation();
+}
+
+function spreadsheetColumnLabel(index: number) {
+  let label = "";
+  let cursor = index;
+
+  while (cursor >= 0) {
+    label = String.fromCharCode(65 + (cursor % 26)) + label;
+    cursor = Math.floor(cursor / 26) - 1;
+  }
+
+  return label;
+}
+
 function renderSummaryLines(lines: string[]) {
   return lines.filter(Boolean).map((line, index) => (
     <span key={`${line}-${index}`}>{line}</span>
@@ -82,6 +113,7 @@ function renderParameterField(
         value={value === null || value === undefined ? "" : String(value)}
         onChange={(event) => onChange(event.target.value === "" ? null : event.target.value)}
         onBlur={onBlur}
+        onPointerDown={stopPointer}
       >
         <option value="">Unset</option>
         {(definition.options || []).map((option) => (
@@ -146,11 +178,11 @@ function ModeSwitch({
   return (
     <div className={styles.inlineModeSwitch}>
       {showPreviewButton ? (
-        <button type="button" onClick={onPreview}>
+        <button type="button" onClick={onPreview} onPointerDown={stopPointer}>
           Default
         </button>
       ) : null}
-      <button type="button" onClick={onCompact}>
+      <button type="button" onClick={onCompact} onPointerDown={stopPointer}>
         Compact
       </button>
     </div>
@@ -158,11 +190,11 @@ function ModeSwitch({
 }
 
 function PreviewModelNode({ node }: { node: CanvasRenderNode }) {
-  const summary = [
-    node.displayModelName || node.modelId,
-    node.promptSourceNodeId ? "Prompt note connected" : node.prompt.trim() ? node.prompt.trim() : "No prompt",
-    node.displaySourceLabel || "No inputs",
-  ];
+  const secondaryLine = node.promptSourceNodeId
+    ? "Prompt note connected"
+    : node.prompt.trim()
+      ? "Prompt ready"
+      : "No prompt";
 
   return (
     <div className={styles.inlineModelPreview}>
@@ -170,7 +202,11 @@ function PreviewModelNode({ node }: { node: CanvasRenderNode }) {
         <strong>{node.label}</strong>
         <span>{node.outputType}</span>
       </div>
-      <div className={styles.inlineSummaryStack}>{renderSummaryLines(summary)}</div>
+      <div className={styles.inlineModelPreviewMeta}>
+        <span className={styles.inlineModelPreviewName}>{node.displayModelName || node.modelId}</span>
+        <span>{secondaryLine}</span>
+        <span>{node.displaySourceLabel || "No connected inputs"}</span>
+      </div>
     </div>
   );
 }
@@ -246,6 +282,177 @@ function CompactNode({ node }: { node: CanvasRenderNode }) {
       <span>{node.kind === "model" ? node.displayModelName || node.modelId : node.kind}</span>
     </div>
   );
+}
+
+function ListSheetEditor({
+  settings,
+  onUpdateListColumnLabel,
+  onUpdateListCell,
+  onAddListColumn,
+  onRemoveListColumn,
+  onAddListRow,
+  onRemoveListRow,
+  onCommitTextEdits,
+}: {
+  settings: ListNodeSettings;
+  onUpdateListColumnLabel: (columnId: string, label: string) => void;
+  onUpdateListCell: (rowId: string, columnId: string, value: string) => void;
+  onAddListColumn: () => void;
+  onRemoveListColumn: (columnId: string) => void;
+  onAddListRow: () => void;
+  onRemoveListRow: (rowId: string) => void;
+  onCommitTextEdits: () => void;
+}) {
+  const rows = useMemo<ListSheetRow[]>(
+    () =>
+      settings.rows.map((row, rowIndex) => ({
+        id: row.id,
+        rowIndex,
+        values: row.values,
+      })),
+    [settings.rows]
+  );
+
+  const tableColumns = useMemo<ColumnDef<ListSheetRow>[]>(
+    () => [
+      {
+        id: "rowNumber",
+        header: () => <span className={styles.inlineSheetCornerLabel}>#</span>,
+        cell: ({ row }) => <span className={styles.inlineSheetRowNumber}>{row.original.rowIndex + 1}</span>,
+        meta: {
+          className: styles.inlineSheetRowHeader,
+        },
+      },
+      ...settings.columns.map<ColumnDef<ListSheetRow>>((column, index) => ({
+        id: column.id,
+        header: () => (
+          <div className={styles.inlineSheetHeaderCellInner}>
+            <span className={styles.inlineSheetLetter}>{spreadsheetColumnLabel(index)}</span>
+            <input
+              className={styles.inlineSheetHeaderInput}
+              value={column.label}
+              onChange={(event) => onUpdateListColumnLabel(column.id, event.target.value)}
+              onBlur={onCommitTextEdits}
+              onPointerDown={stopPointer}
+              placeholder={`Column ${index + 1}`}
+            />
+            <button
+              type="button"
+              className={styles.inlineSheetRemoveColumn}
+              onClick={() => onRemoveListColumn(column.id)}
+              onPointerDown={stopPointer}
+              aria-label={`Remove ${column.label || `column ${index + 1}`}`}
+            >
+              ×
+            </button>
+          </div>
+        ),
+        cell: ({ row }) => (
+          <input
+            className={styles.inlineSheetCellInput}
+            value={row.original.values[column.id] || ""}
+            onChange={(event) => onUpdateListCell(row.original.id, column.id, event.target.value)}
+            onBlur={onCommitTextEdits}
+            onPointerDown={stopPointer}
+            placeholder="Value"
+          />
+        ),
+      })),
+      {
+        id: "rowActions",
+        header: () => <span className={styles.inlineSheetActionLabel}>Actions</span>,
+        cell: ({ row }) => (
+          <button
+            type="button"
+            className={styles.inlineSheetRemoveRow}
+            onClick={() => onRemoveListRow(row.original.id)}
+            onPointerDown={stopPointer}
+          >
+            Remove
+          </button>
+        ),
+        meta: {
+          className: styles.inlineSheetActionColumn,
+        },
+      },
+    ],
+    [
+      onCommitTextEdits,
+      onRemoveListColumn,
+      onRemoveListRow,
+      onUpdateListCell,
+      onUpdateListColumnLabel,
+      settings.columns,
+    ]
+  );
+
+  const table = useReactTable({
+    data: rows,
+    columns: tableColumns,
+    getCoreRowModel: getCoreRowModel(),
+  });
+
+  return (
+    <div className={styles.inlineSheetShell}>
+      <div className={styles.inlineSheetChrome}>
+        <div className={styles.inlineSheetChromeMeta}>
+          <strong>Sheet</strong>
+          <span>{`${settings.columns.length} columns · ${settings.rows.length} rows`}</span>
+        </div>
+        <div className={styles.inlineSheetChromeActions}>
+          <button type="button" onClick={onAddColumn} onPointerDown={stopPointer}>
+            Add column
+          </button>
+          <button type="button" onClick={onAddRow} onPointerDown={stopPointer}>
+            Add row
+          </button>
+        </div>
+      </div>
+      <div className={styles.inlineSheetTitleRow}>
+        <span>Editable table</span>
+      </div>
+      <div className={styles.inlineSheetScroller}>
+        <table className={styles.inlineSheetTable}>
+          <thead>
+            {table.getHeaderGroups().map((headerGroup) => (
+              <tr key={headerGroup.id}>
+                {headerGroup.headers.map((header) => (
+                  <th
+                    key={header.id}
+                    className={(header.column.columnDef.meta as { className?: string } | undefined)?.className}
+                  >
+                    {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
+                  </th>
+                ))}
+              </tr>
+            ))}
+          </thead>
+          <tbody>
+            {table.getRowModel().rows.map((row) => (
+              <tr key={row.id}>
+                {row.getVisibleCells().map((cell) => (
+                  <td
+                    key={cell.id}
+                    className={(cell.column.columnDef.meta as { className?: string } | undefined)?.className}
+                  >
+                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+
+  function onAddColumn() {
+    onAddListColumn();
+  }
+
+  function onAddRow() {
+    onAddListRow();
+  }
 }
 
 export function CanvasNodeContent({
@@ -334,13 +541,15 @@ export function CanvasNodeContent({
     return (
       <div className={styles.inlineNodeSurface}>
         {sharedHeader}
-        <textarea
-          className={styles.inlineNoteEditor}
-          value={activeEditor.selectedNode.prompt}
-          onChange={(event) => onPromptChange(event.target.value)}
-          onBlur={onCommitTextEdits}
-          placeholder="Write note text"
-        />
+        <div className={styles.inlineNodeBodyShell}>
+          <textarea
+            className={styles.inlineNoteEditor}
+            value={activeEditor.selectedNode.prompt}
+            onChange={(event) => onPromptChange(event.target.value)}
+            onBlur={onCommitTextEdits}
+            placeholder="Write note text"
+          />
+        </div>
       </div>
     );
   }
@@ -349,48 +558,17 @@ export function CanvasNodeContent({
     return (
       <div className={styles.inlineNodeSurface}>
         {sharedHeader}
-        <div className={styles.inlineListEditorToolbar}>
-          <button type="button" onClick={onAddListColumn}>
-            Add column
-          </button>
-          <button type="button" onClick={onAddListRow}>
-            Add row
-          </button>
-        </div>
-        <div className={styles.inlineListEditor}>
-          <div className={styles.inlineListEditorGrid}>
-            {activeEditor.selectedListSettings.columns.map((column) => (
-              <div key={column.id} className={styles.inlineListColumn}>
-                <input
-                  className={styles.inlineTextInput}
-                  value={column.label}
-                  onChange={(event) => onUpdateListColumnLabel(column.id, event.target.value)}
-                  onBlur={onCommitTextEdits}
-                  placeholder="Column name"
-                />
-                <button type="button" onClick={() => onRemoveListColumn(column.id)}>
-                  Remove
-                </button>
-              </div>
-            ))}
-            {activeEditor.selectedListSettings.rows.map((row, rowIndex) => (
-              <div key={row.id} className={styles.inlineListRow}>
-                <span className={styles.inlineListRowLabel}>{`Row ${rowIndex + 1}`}</span>
-                {activeEditor.selectedListSettings.columns.map((column) => (
-                  <input
-                    key={`${row.id}-${column.id}`}
-                    className={styles.inlineTextInput}
-                    value={row.values[column.id] || ""}
-                    onChange={(event) => onUpdateListCell(row.id, column.id, event.target.value)}
-                    onBlur={onCommitTextEdits}
-                  />
-                ))}
-                <button type="button" onClick={() => onRemoveListRow(row.id)}>
-                  Remove
-                </button>
-              </div>
-            ))}
-          </div>
+        <div className={styles.inlineListFullShell}>
+          <ListSheetEditor
+            settings={activeEditor.selectedListSettings}
+            onUpdateListColumnLabel={onUpdateListColumnLabel}
+            onUpdateListCell={onUpdateListCell}
+            onAddListColumn={onAddListColumn}
+            onRemoveListColumn={onRemoveListColumn}
+            onAddListRow={onAddListRow}
+            onRemoveListRow={onRemoveListRow}
+            onCommitTextEdits={onCommitTextEdits}
+          />
         </div>
       </div>
     );
@@ -410,12 +588,30 @@ export function CanvasNodeContent({
             key: token.key,
             label: token.label,
           }));
+    const previewRows = (activeEditor.selectedTemplatePreview?.rows || []).slice(0, 4);
 
     return (
       <div className={styles.inlineNodeSurface}>
         {sharedHeader}
-        <div className={styles.inlineTemplateLayout}>
-          <div className={styles.inlineTemplateEditorColumn}>
+        <div className={styles.inlineTemplateFullShell}>
+          <section className={styles.inlineTemplateMainColumn}>
+            <div className={styles.inlineNodeSectionHeading}>
+              <strong>Template</strong>
+              <span>Use `[[variables]]` for list-backed placeholders.</span>
+            </div>
+            <div className={styles.inlineVariableShelf}>
+              {variableChips.map((token) => (
+                <button
+                  key={token.key}
+                  type="button"
+                  className={styles.inlineVariableChip}
+                  onClick={() => insertTemplateToken(token.label)}
+                  onPointerDown={stopPointer}
+                >
+                  {`[[${token.label}]]`}
+                </button>
+              ))}
+            </div>
             <textarea
               ref={templateTextareaRef}
               className={styles.inlineTemplateEditor}
@@ -424,59 +620,68 @@ export function CanvasNodeContent({
               onBlur={onCommitTextEdits}
               placeholder="Write template with [[variables]]"
             />
-            <div className={styles.inlineVariableShelf}>
-              {variableChips.map((token) => (
-                <button
-                  key={token.key}
-                  type="button"
-                  className={styles.inlineVariableChip}
-                  onClick={() => insertTemplateToken(token.label)}
-                >
-                  {`[[${token.label}]]`}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className={styles.inlineTemplatePreviewColumn}>
+          </section>
+          <aside className={styles.inlineTemplateSideRail}>
             <div className={styles.inlineTemplateStatusCard}>
               <strong>Compatibility</strong>
-              <span>{activeEditor.selectedTemplatePreview?.disabledReason || activeEditor.selectedTemplatePreview?.readyMessage || "Ready"}</span>
+              <span>
+                {activeEditor.selectedTemplatePreview?.disabledReason ||
+                  activeEditor.selectedTemplatePreview?.readyMessage ||
+                  "Ready"}
+              </span>
             </div>
             <div className={styles.inlineTemplateStatusCard}>
               <strong>Merge preview</strong>
-              {(activeEditor.selectedTemplatePreview?.rows || []).slice(0, 4).map((row) => (
-                <span key={row.rowId}>{row.text}</span>
-              ))}
-              {!activeEditor.selectedTemplatePreview?.rows.length ? <span>No preview rows yet.</span> : null}
+              <div className={styles.inlineTemplatePreviewRows}>
+                {previewRows.length > 0 ? (
+                  previewRows.map((row) => <span key={row.rowId}>{row.text}</span>)
+                ) : (
+                  <span>No preview rows yet.</span>
+                )}
+              </div>
               <span>{`${activeEditor.selectedTemplatePreview?.nonBlankRowCount || 0} total rows`}</span>
             </div>
-          </div>
+          </aside>
         </div>
       </div>
     );
   }
 
   if (node.kind === "model") {
+    const summaryLines = [
+      activeEditor.selectedNodeRunPreview?.readyMessage ||
+        activeEditor.selectedNodeRunPreview?.disabledReason ||
+        "Not ready yet",
+      activeEditor.selectedNodeRunPreview?.endpoint || "No endpoint",
+      `Target: ${node.outputType}`,
+    ];
+
     return (
       <div className={styles.inlineNodeSurface}>
         {sharedHeader}
-        <div className={styles.inlineModelFullLayout}>
-          <section className={styles.inlineModelSection}>
+        <div className={styles.inlineModelFullShell}>
+          <section className={styles.inlineModelCard}>
             <span className={styles.inlineSectionLabel}>Inputs</span>
             <div className={styles.inlineSummaryStack}>
               {activeEditor.selectedInputNodes.length > 0
-                ? activeEditor.selectedInputNodes.map((inputNode) => <span key={inputNode.id}>{inputNode.label}</span>)
+                ? activeEditor.selectedInputNodes.map((inputNode) => (
+                    <span key={inputNode.id}>{inputNode.label}</span>
+                  ))
                 : <span>No connected inputs</span>}
               {activeEditor.selectedPromptSourceNode ? (
                 <span>{`Prompt source: ${activeEditor.selectedPromptSourceNode.label}`}</span>
               ) : null}
             </div>
-            <button type="button" onClick={onClearInputs}>
+            <button type="button" onClick={onClearInputs} onPointerDown={stopPointer}>
               Clear inputs
             </button>
           </section>
-          <section className={styles.inlineModelSection}>
-            <span className={styles.inlineSectionLabel}>Prompt</span>
+
+          <section className={styles.inlineModelCardPrimary}>
+            <div className={styles.inlineNodeSectionHeading}>
+              <strong>Prompt</strong>
+              <span>Describe what should happen in plain language.</span>
+            </div>
             <textarea
               className={styles.inlinePromptEditor}
               value={activeEditor.selectedNode.prompt}
@@ -485,7 +690,12 @@ export function CanvasNodeContent({
               placeholder="Describe what to generate"
             />
           </section>
-          <section className={styles.inlineModelSectionWide}>
+
+          <section className={styles.inlineModelCardConfig}>
+            <div className={styles.inlineNodeSectionHeading}>
+              <strong>Model setup</strong>
+              <span>Provider, model, and output tuning.</span>
+            </div>
             <div className={styles.inlineSelectRow}>
               <label className={styles.inlineFieldLabel}>
                 Provider
@@ -493,6 +703,7 @@ export function CanvasNodeContent({
                   className={styles.inlineSelect}
                   value={activeEditor.selectedNode.providerId}
                   onChange={(event) => onProviderChange(event.target.value as ProviderId)}
+                  onPointerDown={stopPointer}
                 >
                   {activeEditor.providerOptions.map((option) => (
                     <option key={option.value} value={option.value}>
@@ -507,6 +718,7 @@ export function CanvasNodeContent({
                   className={styles.inlineSelect}
                   value={activeEditor.selectedNode.modelId}
                   onChange={(event) => onModelChange(event.target.value)}
+                  onPointerDown={stopPointer}
                 >
                   {activeEditor.modelOptions.map((option) => (
                     <option key={option.value} value={option.value}>
@@ -530,12 +742,14 @@ export function CanvasNodeContent({
               ))}
             </div>
           </section>
-          <section className={styles.inlineModelSection}>
-            <span className={styles.inlineSectionLabel}>Output</span>
+
+          <section className={styles.inlineModelCardOutput}>
+            <div className={styles.inlineNodeSectionHeading}>
+              <strong>Output</strong>
+              <span>Run from the output edge to spawn results.</span>
+            </div>
             <div className={styles.inlineSummaryStack}>
-              <span>{activeEditor.selectedNodeRunPreview?.readyMessage || activeEditor.selectedNodeRunPreview?.disabledReason || "Not ready"}</span>
-              <span>{activeEditor.selectedNodeRunPreview?.endpoint || "No endpoint"}</span>
-              <span>{`Target: ${node.outputType}`}</span>
+              {renderSummaryLines(summaryLines)}
             </div>
           </section>
         </div>
@@ -549,17 +763,29 @@ export function CanvasNodeContent({
         {sharedHeader}
         <div className={styles.inlineAssetActions}>
           {activeEditor.selectedSingleImageAssetId ? (
-            <button type="button" onClick={() => onOpenAssetViewer(activeEditor.selectedSingleImageAssetId!)}>
+            <button
+              type="button"
+              onClick={() => onOpenAssetViewer(activeEditor.selectedSingleImageAssetId!)}
+              onPointerDown={stopPointer}
+            >
               Open asset
             </button>
           ) : null}
           {activeEditor.selectedSingleImageAssetId ? (
-            <button type="button" onClick={() => onDownloadAssets([activeEditor.selectedSingleImageAssetId!])}>
+            <button
+              type="button"
+              onClick={() => onDownloadAssets([activeEditor.selectedSingleImageAssetId!])}
+              onPointerDown={stopPointer}
+            >
               Download
             </button>
           ) : null}
           {activeEditor.selectedNodeSourceJobId ? (
-            <button type="button" onClick={() => onOpenQueueInspect(activeEditor.selectedNodeSourceJobId!)}>
+            <button
+              type="button"
+              onClick={() => onOpenQueueInspect(activeEditor.selectedNodeSourceJobId!)}
+              onPointerDown={stopPointer}
+            >
               Inspect source
             </button>
           ) : null}

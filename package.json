@@ -23,6 +23,7 @@
     "@tanstack/react-hotkeys": "^0.4.0",
     "@tanstack/react-query": "^5.90.5",
     "@tanstack/react-router": "^1.132.31",
+    "@tanstack/react-table": "^8.21.3",
     "better-sqlite3": "^12.4.1",
     "drizzle-orm": "^0.44.7",
     "keytar": "^7.9.0",

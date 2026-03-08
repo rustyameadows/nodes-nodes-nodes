@@ -84,3 +84,8 @@
 - Decision: move node editing out of the old bottom-bar flow and into adaptive inline node surfaces with `preview`, `compact`, transient `full`, and persisted `resized` presentation states.
 - Rationale: issue `#44` needs the canvas to feel flexible and customizable, and issue `#24` needs templates/list pairing to be inspectable and editable directly where the node lives.
 - Consequence: `CanvasView` now persists node-local presentation metadata inside the canvas document, full-node editing uses header-only drag chrome, template compatibility/merge preview lives inline, and phantom output previews plus the edge-mounted run launcher are renderer-only affordances instead of persisted nodes.
+
+## 2026-03-08 - List Full Mode Uses An Inline Sheet
+- Decision: implement full/resized list nodes as an inline spreadsheet-like sheet backed by TanStack Table instead of reusing the old stacked form controls.
+- Rationale: issue `#19` needs list editing to feel like a real sheet on the canvas, and the adaptive-node cleanup pass showed that simply transplanting the old controls into full mode was not good enough.
+- Consequence: list preview stays lightweight, but full/resized list nodes now render a real editable grid with header edits, cell edits, row numbering, and node-chrome add/remove actions.

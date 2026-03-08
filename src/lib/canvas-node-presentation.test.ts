@@ -22,7 +22,7 @@ test("promotes the active full node into transient full mode without changing pe
   assert.equal(presentation.persistedMode, "preview");
   assert.equal(presentation.renderMode, "full");
   assert.equal(presentation.canResize, false);
-  assert.deepEqual(presentation.size, { width: 640, height: 164 });
+  assert.deepEqual(presentation.size, { width: 980, height: 336 });
 });
 
 test("keeps compact nodes compact when full mode is not active", () => {
@@ -61,7 +61,7 @@ test("clamps resized list nodes to their minimum inline spreadsheet size", () =>
 
   assert.equal(presentation.renderMode, "resized");
   assert.equal(presentation.canResize, true);
-  assert.deepEqual(presentation.size, { width: 280, height: 188 });
+  assert.deepEqual(presentation.size, { width: 520, height: 320 });
 });
 
 test("treats image asset nodes as resizable but aspect-ratio locked", () => {

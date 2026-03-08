@@ -16,8 +16,8 @@ export type ResolvedCanvasNodePresentation = {
 };
 
 const MIN_TEXT_NOTE_SIZE: WorkflowNodeSize = { width: 244, height: 152 };
-const MIN_LIST_SIZE: WorkflowNodeSize = { width: 280, height: 188 };
-const MIN_TEMPLATE_SIZE: WorkflowNodeSize = { width: 300, height: 220 };
+const MIN_LIST_SIZE: WorkflowNodeSize = { width: 520, height: 320 };
+const MIN_TEMPLATE_SIZE: WorkflowNodeSize = { width: 420, height: 300 };
 const MIN_ASSET_SIZE: WorkflowNodeSize = { width: 196, height: 196 };
 
 export function normalizeWorkflowNodeDisplayMode(
@@ -98,9 +98,9 @@ export function getWorkflowNodeDefaultSize(
       return { width: 168, height: 48 };
     }
     if (renderMode === "full") {
-      return { width: 640, height: 164 };
+      return { width: 980, height: 336 };
     }
-    return { width: 276, height: 104 };
+    return { width: 236, height: 84 };
   }
 
   if (kind === "text-note") {
@@ -118,9 +118,9 @@ export function getWorkflowNodeDefaultSize(
       return { width: 156, height: 46 };
     }
     if (renderMode === "full") {
-      return { width: 420, height: 286 };
+      return { width: 840, height: 500 };
     }
-    return { width: 286, height: 198 };
+    return { width: 320, height: 214 };
   }
 
   if (kind === "text-template") {
@@ -128,9 +128,9 @@ export function getWorkflowNodeDefaultSize(
       return { width: 172, height: 46 };
     }
     if (renderMode === "full") {
-      return { width: 460, height: 324 };
+      return { width: 720, height: 420 };
     }
-    return { width: 302, height: 188 };
+    return { width: 264, height: 182 };
   }
 
   if (kind === "asset-source") {

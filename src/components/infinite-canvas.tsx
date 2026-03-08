@@ -484,6 +484,7 @@ export function InfiniteCanvas({
   const [view, setView] = useState<CanvasViewport>(viewport);
   const [nodeSizes, setNodeSizes] = useState<Record<string, { width: number; height: number }>>({});
   const [imageAspectRatios, setImageAspectRatios] = useState<Record<string, number>>({});
+  const [interactionMode, setInteractionMode] = useState<InteractionState["type"]>("idle");
   const viewRef = useRef<CanvasViewport>(viewport);
   const interactionRef = useRef<InteractionState>({ type: "idle" });
   const viewportTimer = useRef<NodeJS.Timeout | null>(null);
@@ -551,14 +552,14 @@ export function InfiniteCanvas({
         return resized;
       }
 
-      const measured = nodeSizes[nodeId];
-      if (measured) {
-        return measured;
-      }
-
       const node = nodesById[nodeId];
       if (node) {
         return node.resolvedSize;
+      }
+
+      const measured = nodeSizes[nodeId];
+      if (measured) {
+        return measured;
       }
 
       return { width: DEFAULT_NODE_WIDTH, height: DEFAULT_NODE_HEIGHT };
@@ -694,6 +695,7 @@ export function InfiniteCanvas({
 
   const clearConnectionDraft = useCallback(() => {
     interactionRef.current = { type: "idle" };
+    setInteractionMode("idle");
     setConnectionDraft(null);
   }, []);
 
@@ -919,6 +921,7 @@ export function InfiniteCanvas({
     }
 
     interactionRef.current = { type: "idle" };
+    setInteractionMode("idle");
   }, [
     clearConnectionDraft,
     dragDraftPositions,
@@ -1138,6 +1141,7 @@ export function InfiniteCanvas({
           endX: point.x,
           endY: point.y,
         };
+        setInteractionMode("marquee");
         setMarqueeDraft({
           startX: point.x,
           startY: point.y,
@@ -1155,6 +1159,7 @@ export function InfiniteCanvas({
         startClientY: event.clientY,
         startViewport: viewRef.current,
       };
+      setInteractionMode("pan");
     },
     [clearConnectionDraft, onSelectConnection, onSelectSingleNode, toWorldPoint]
   );
@@ -1170,7 +1175,8 @@ export function InfiniteCanvas({
       }
 
       const target = event.target as HTMLElement | null;
-      const requiresDragHandle = node.renderMode === "full" || node.renderMode === "resized";
+      const requiresDragHandle =
+        (node.renderMode === "full" || node.renderMode === "resized") && node.kind !== "asset-source";
       const hasDragHandle = Boolean(target?.closest("[data-node-drag-handle='true']"));
       if (requiresDragHandle && !hasDragHandle) {
         if (!(selectedNodeIds.length === 1 && selectedNodeIds[0] === node.id)) {
@@ -1204,6 +1210,7 @@ export function InfiniteCanvas({
         pointerOffsetY: point.y - node.y,
         initialPositions,
       };
+      setInteractionMode("drag");
 
       if (!draggingSelectedGroup) {
         onSelectSingleNode(node.id);
@@ -1225,6 +1232,7 @@ export function InfiniteCanvas({
         startSize,
         aspectRatio: node.lockAspectRatio ? startSize.width / Math.max(1, startSize.height) : null,
       };
+      setInteractionMode("resize");
       onSelectSingleNode(node.id);
     },
     [getNodeSize, onSelectSingleNode]
@@ -1243,6 +1251,7 @@ export function InfiniteCanvas({
         nodeId: node.id,
         port,
       };
+      setInteractionMode("connect");
       setConnectionDraft({
         nodeId: node.id,
         port,
@@ -1381,7 +1390,7 @@ export function InfiniteCanvas({
   return (
     <div
       ref={containerRef}
-      className={`${styles.canvasRoot} ${marqueeDraft ? styles.canvasMarqueeActive : ""}`}
+      className={`${styles.canvasRoot} ${marqueeDraft ? styles.canvasMarqueeActive : ""} ${interactionMode !== "idle" ? styles.canvasInteractionActive : ""}`}
       onPointerDown={onBackgroundPointerDown}
       onDoubleClick={onDoubleClick}
       onDragOver={(event) => {

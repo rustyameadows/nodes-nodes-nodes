@@ -100,6 +100,21 @@ async function clickCanvasNode(window: Page, label: string, options?: { shiftKey
   }
 }
 
+function getCanvasNodeLocator(window: Page, label: string) {
+  const inputMatch = window
+    .locator("div[role='button']")
+    .filter({ has: window.locator(`input[value="${label}"]`) });
+  const textMatch = window.locator("div[role='button']").filter({ hasText: label });
+
+  return inputMatch.or(textMatch).first();
+}
+
+async function screenshotCanvasNode(window: Page, label: string, outputPath: string) {
+  const node = getCanvasNodeLocator(window, label);
+  await node.waitFor({ state: "visible", timeout: 15_000 });
+  await node.screenshot({ path: outputPath });
+}
+
 async function blurActiveElement(window: Page) {
   await window.evaluate(() => {
     const activeElement = document.activeElement;
@@ -416,6 +431,11 @@ async function main() {
   const runtimeMode = isPackagedMacMode() ? "packaged-mac" : "unpackaged";
   const appDataRoot = await mkdtemp(path.join(os.tmpdir(), `node-interface-smoke-${runtimeMode}-`));
   const canvasScreenshotPath = path.join(appDataRoot, "canvas-smoke.png");
+  const modelPreviewScreenshotPath = path.join(appDataRoot, "canvas-model-preview.png");
+  const modelFullScreenshotPath = path.join(appDataRoot, "canvas-model-full.png");
+  const templateFullScreenshotPath = path.join(appDataRoot, "canvas-template-full.png");
+  const listFullScreenshotPath = path.join(appDataRoot, "canvas-list-full.png");
+  const resizedAssetScreenshotPath = path.join(appDataRoot, "canvas-resized-asset.png");
   const assetsScreenshotPath = path.join(appDataRoot, "assets-smoke.png");
   const queueScreenshotPath = path.join(appDataRoot, "queue-smoke.png");
   const projectSettingsScreenshotPath = path.join(appDataRoot, "project-settings-smoke.png");
@@ -597,6 +617,75 @@ async function main() {
                 x: 420,
                 y: 120,
               },
+              {
+                id: "smoke-list-node",
+                label: "Smoke List",
+                providerId: "openai",
+                modelId: "gpt-image-1.5",
+                kind: "list",
+                nodeType: "list",
+                outputType: "text",
+                prompt: "",
+                settings: {
+                  source: "list",
+                  columns: [
+                    { id: "smoke-col-animal", label: "Animal" },
+                    { id: "smoke-col-habitat", label: "Habitat" },
+                    { id: "smoke-col-trait", label: "Trait" },
+                  ],
+                  rows: [
+                    {
+                      id: "smoke-row-1",
+                      values: {
+                        "smoke-col-animal": "Otter",
+                        "smoke-col-habitat": "River",
+                        "smoke-col-trait": "Curious",
+                      },
+                    },
+                    {
+                      id: "smoke-row-2",
+                      values: {
+                        "smoke-col-animal": "Fox",
+                        "smoke-col-habitat": "Forest",
+                        "smoke-col-trait": "Playful",
+                      },
+                    },
+                  ],
+                },
+                sourceAssetId: null,
+                sourceAssetMimeType: null,
+                sourceJobId: null,
+                sourceOutputIndex: null,
+                processingState: null,
+                promptSourceNodeId: null,
+                upstreamNodeIds: [],
+                upstreamAssetIds: [],
+                x: 120,
+                y: 340,
+              },
+              {
+                id: "smoke-template-node",
+                label: "Smoke Template",
+                providerId: "openai",
+                modelId: "gpt-image-1.5",
+                kind: "text-template",
+                nodeType: "text-template",
+                outputType: "text",
+                prompt: "Illustrate a [[Animal]] in a [[Habitat]] with a [[Trait]] expression.",
+                settings: {
+                  source: "text-template",
+                },
+                sourceAssetId: null,
+                sourceAssetMimeType: null,
+                sourceJobId: null,
+                sourceOutputIndex: null,
+                processingState: null,
+                promptSourceNodeId: null,
+                upstreamNodeIds: ["smoke-list-node"],
+                upstreamAssetIds: ["node:smoke-list-node"],
+                x: 470,
+                y: 340,
+              },
             ],
           },
         },
@@ -610,7 +699,7 @@ async function main() {
       return nodes.map((node) => node.label || "");
     }, { activeProjectId: projectId });
 
-    assert.deepEqual(nodeLabels, ["Smoke Prompt", "Smoke Image Model"]);
+    assert.deepEqual(nodeLabels, ["Smoke Prompt", "Smoke Image Model", "Smoke List", "Smoke Template"]);
     console.log("Canvas snapshot round-trip verified");
 
     await window.reload();
@@ -641,8 +730,12 @@ async function main() {
     const interactionNodes = await getCanvasNodes(window, projectId);
     const promptNodeId = getRequiredCanvasNodeId(interactionNodes, "Smoke Prompt");
     const modelNodeId = getRequiredCanvasNodeId(interactionNodes, "Smoke Image Model");
+    const listNodeId = getRequiredCanvasNodeId(interactionNodes, "Smoke List");
+    const templateNodeId = getRequiredCanvasNodeId(interactionNodes, "Smoke Template");
     const modelNode = window.locator("div[role='button']").filter({ hasText: "Smoke Image Model" }).first();
     await modelNode.waitFor({ state: "visible", timeout: 15_000 });
+    await screenshotCanvasNode(window, "Smoke Image Model", modelPreviewScreenshotPath);
+    console.log("Model preview screenshot:", modelPreviewScreenshotPath);
     await withTimeout(
       "canvas nodes after reload",
       window.waitForFunction(
@@ -650,7 +743,7 @@ async function main() {
           const snapshot = await window.nodeInterface.getWorkspaceSnapshot(activeProjectId);
           const nodes = ((snapshot.canvas?.canvasDocument as { workflow?: { nodes?: unknown[] } } | null)?.workflow?.nodes ||
             []) as unknown[];
-          return nodes.length >= 2;
+          return nodes.length >= 4;
         },
         projectId,
         { timeout: 15_000 }
@@ -782,6 +875,8 @@ async function main() {
       "model prompt editor",
       promptEditor.waitFor({ state: "visible", timeout: 15_000 })
     );
+    await screenshotCanvasNode(window, "Smoke Image Model", modelFullScreenshotPath);
+    console.log("Model full screenshot:", modelFullScreenshotPath);
     await promptEditor.click();
     await promptEditor.fill("");
     const nodeCountBeforeFocusedShortcutTyping = (await getCanvasNodes(window, projectId)).length;
@@ -838,23 +933,22 @@ async function main() {
     await blurActiveElement(window);
     await window.keyboard.press("a");
     await withTimeout(
-      "canvas insert menu before add list",
-      window.getByRole("button", { name: "Add List" }).waitFor({ state: "visible", timeout: 15_000 })
+      "canvas insert menu before add note",
+      window.getByRole("button", { name: "Add Text Note" }).waitFor({ state: "visible", timeout: 15_000 })
     );
-    await window.getByRole("button", { name: "Add List" }).click();
+    await window.getByRole("button", { name: "Add Text Note" }).click();
     await window.waitForTimeout(900);
-    const addedListNodes = await getCanvasNodes(window, projectId);
-    assert.equal(addedListNodes.length, 3, "Expected Add Node menu to insert a third node.");
+    const addedNodes = await getCanvasNodes(window, projectId);
+    assert.equal(addedNodes.length, 5, "Expected Add Node menu to insert a fifth node.");
     await window.keyboard.press(`${process.platform === "darwin" ? "Meta" : "Control"}+z`);
     await window.waitForTimeout(900);
-    assert.equal((await getCanvasNodes(window, projectId)).length, 2, "Expected undo to remove inserted node.");
+    assert.equal((await getCanvasNodes(window, projectId)).length, 4, "Expected undo to remove inserted node.");
     await window.keyboard.press(`${process.platform === "darwin" ? "Meta+Shift" : "Control+Shift"}+z`);
     await window.waitForTimeout(900);
-    assert.equal((await getCanvasNodes(window, projectId)).length, 3, "Expected redo to restore inserted node.");
+    assert.equal((await getCanvasNodes(window, projectId)).length, 5, "Expected redo to restore inserted node.");
 
-    await clickCanvasNode(window, "List 1");
-    const listNodeId = getRequiredCanvasNodeId(await getCanvasNodes(window, projectId), "List 1");
-    const listNodeButton = window.locator("div[role='button']").filter({ hasText: "List 1" }).first();
+    await clickCanvasNode(window, "Smoke List");
+    const listNodeButton = window.locator("div[role='button']").filter({ hasText: "Smoke List" }).first();
     await listNodeButton.focus();
     await window.keyboard.press("Enter");
     try {
@@ -873,12 +967,14 @@ async function main() {
       "list editor",
       window.getByRole("button", { name: "Add column", exact: true }).waitFor({ state: "visible", timeout: 15_000 })
     );
-    const listColumnInput = window.locator('input[placeholder="Column name"]').first();
+    await screenshotCanvasNode(window, "Smoke List", listFullScreenshotPath);
+    console.log("List full screenshot:", listFullScreenshotPath);
+    const listColumnInput = window.locator('input[placeholder="Column 1"]').first();
     await listColumnInput.click();
     await window.keyboard.type("a");
     assert.equal(
       await listColumnInput.inputValue(),
-      "Column 1a",
+      "Animala",
       "Expected list column input to keep typed characters while focused."
     );
     assert.equal(
@@ -886,7 +982,22 @@ async function main() {
       0,
       "Expected insert menu to stay closed while typing in the list editor."
     );
-    console.log("Canvas add-node menu and undo/redo verified");
+    console.log("Canvas add-node menu and list sheet editor verified");
+
+    await window.evaluate((nodeId: string) => {
+      const api = (window as typeof window & {
+        __NND_CANVAS_TEST__?: {
+          openPrimaryEditor: (nodeId: string) => void;
+        };
+      }).__NND_CANVAS_TEST__;
+      api?.openPrimaryEditor(nodeId);
+    }, templateNodeId);
+    await withTimeout(
+      "template editor",
+      window.locator('textarea[placeholder="Write template with [[variables]]"]').waitFor({ state: "visible", timeout: 15_000 })
+    );
+    await screenshotCanvasNode(window, "Smoke Template", templateFullScreenshotPath);
+    console.log("Template full screenshot:", templateFullScreenshotPath);
 
     await window.screenshot({ path: canvasScreenshotPath, fullPage: true });
     console.log("Canvas screenshot:", canvasScreenshotPath);
@@ -919,6 +1030,107 @@ async function main() {
 
     assert.equal(assetCount, 1, "Expected one asset after import.");
     console.log("Asset listing verified");
+
+    const assetNodeId = await window.evaluate(async ({ activeProjectId, assetId }) => {
+      const snapshot = await window.nodeInterface.getWorkspaceSnapshot(activeProjectId);
+      const canvasDocument = (snapshot.canvas?.canvasDocument || {
+        canvasViewport: { x: 0, y: 0, zoom: 1 },
+        workflow: { nodes: [] },
+      }) as {
+        canvasViewport: { x: number; y: number; zoom: number };
+        workflow: { nodes: Array<Record<string, unknown>> };
+      };
+
+      const nextNodeId = "smoke-uploaded-asset-node";
+      const nextNodes = [
+        ...canvasDocument.workflow.nodes,
+        {
+          id: nextNodeId,
+          label: "Smoke Uploaded Asset",
+          providerId: "openai",
+          modelId: "gpt-image-1.5",
+          kind: "asset-source",
+          nodeType: "transform",
+          outputType: "image",
+          prompt: "",
+          settings: {
+            source: "upload",
+          },
+          sourceAssetId: assetId,
+          sourceAssetMimeType: "image/svg+xml",
+          sourceJobId: null,
+          sourceOutputIndex: null,
+          processingState: null,
+          promptSourceNodeId: null,
+          upstreamNodeIds: [],
+          upstreamAssetIds: [],
+          x: 820,
+          y: 160,
+          displayMode: "preview",
+          size: null,
+        },
+      ];
+
+      await window.nodeInterface.saveWorkspaceSnapshot(activeProjectId, {
+        canvasDocument: {
+          ...canvasDocument,
+          workflow: {
+            nodes: nextNodes,
+          },
+        },
+      });
+
+      return nextNodeId;
+    }, { activeProjectId: projectId, assetId: importedAssets[0]!.id });
+
+    await window.reload();
+    await withTimeout("canvas reload with uploaded asset", window.waitForLoadState("domcontentloaded"));
+    await withTimeout(
+      "canvas hook after uploaded asset",
+      window.waitForFunction(
+        () =>
+          Boolean(
+            (window as typeof window & {
+              __NND_CANVAS_TEST__?: unknown;
+            }).__NND_CANVAS_TEST__
+          ),
+        undefined,
+        { timeout: 15_000 }
+      )
+    );
+    await window.evaluate(
+      ({ nodeId }) => {
+        const api = (window as typeof window & {
+          __NND_CANVAS_TEST__?: {
+            selectNodes: (nodeIds: string[]) => void;
+            resizeNode: (nodeId: string, size: { width: number; height: number }) => void;
+          };
+        }).__NND_CANVAS_TEST__;
+        api?.selectNodes([nodeId]);
+        api?.resizeNode(nodeId, { width: 320, height: 236 });
+      },
+      { nodeId: assetNodeId }
+    );
+    await window.waitForTimeout(900);
+    const assetBeforeDrag = await getCanvasNodes(window, projectId);
+    const assetBeforeDragNode = assetBeforeDrag.find((node) => node.id === assetNodeId);
+    assert.ok(assetBeforeDragNode, "Expected uploaded asset node before drag.");
+    const assetNodeLocator = getCanvasNodeLocator(window, "Smoke Uploaded Asset");
+    await assetNodeLocator.waitFor({ state: "visible", timeout: 15_000 });
+    const assetBox = await assetNodeLocator.boundingBox();
+    assert.ok(assetBox, "Expected resized asset node bounds.");
+    await window.mouse.move(assetBox.x + assetBox.width / 2, assetBox.y + assetBox.height / 2);
+    await window.mouse.down();
+    await window.mouse.move(assetBox.x + assetBox.width / 2 + 88, assetBox.y + assetBox.height / 2 + 52);
+    await window.mouse.up();
+    await window.waitForTimeout(900);
+    const assetAfterDrag = await getCanvasNodes(window, projectId);
+    const assetAfterDragNode = assetAfterDrag.find((node) => node.id === assetNodeId);
+    assert.ok(assetAfterDragNode, "Expected uploaded asset node after drag.");
+    assert.notEqual(assetAfterDragNode.x, assetBeforeDragNode.x, "Expected resized asset node to move after drag.");
+    assert.notEqual(assetAfterDragNode.y, assetBeforeDragNode.y, "Expected resized asset node to move vertically after drag.");
+    await screenshotCanvasNode(window, "Smoke Uploaded Asset", resizedAssetScreenshotPath);
+    console.log("Resized asset screenshot:", resizedAssetScreenshotPath);
 
     await triggerWorkspaceView(runtime, window, "project.view.assets", "Assets");
     await withTimeout("assets route", window.waitForURL(projectRoutePattern(projectId, "assets")));
@@ -1045,6 +1257,11 @@ async function main() {
           appDataRoot,
           appMetadata,
           canvasScreenshotPath,
+          modelPreviewScreenshotPath,
+          modelFullScreenshotPath,
+          templateFullScreenshotPath,
+          listFullScreenshotPath,
+          resizedAssetScreenshotPath,
           assetsScreenshotPath,
           queueScreenshotPath,
           projectSettingsScreenshotPath,

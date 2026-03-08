@@ -3,6 +3,7 @@
 ## Stack
 - Shell: Electron main + preload + worker.
 - Renderer: Vite + React + TanStack Router + TanStack Query.
+- Inline list sheet engine: TanStack Table (headless, canvas-only).
 - Persistence: SQLite via Drizzle and `better-sqlite3`.
 - Queue: durable SQLite-backed job polling in a dedicated worker process.
 - Asset storage: local filesystem under the Electron app-data root.
@@ -80,9 +81,10 @@ TanStack Query owns persisted app data in the renderer and is invalidated from t
 - Canvas keyboard shortcuts are registered through TanStack Hotkeys with input ignoring enabled, so canvas commands do not fire while editable controls are focused.
 - `CanvasView` derives node presentation from persisted node-local metadata (`displayMode`, `size`) plus transient active-node state (`activeFullNodeId`).
 - `CanvasNodeContent` renders mode-aware inline node surfaces for model, text note, list, template, and asset nodes.
-- `InfiniteCanvas` renders live drag previews, resize handles, phantom previews, and the edge-mounted run launcher, but committed node movement is written back once per drag through `onCommitNodePositions`.
+- `InfiniteCanvas` renders live drag previews, resize handles, phantom previews, quick mode transitions, and the edge-mounted run launcher, but committed node movement is written back once per drag through `onCommitNodePositions`.
 - Multi-node drag uses the current selection as a batch and preserves relative spacing across the moved nodes.
 - Full/resized nodes switch drag to a header/chrome handle so clicking into inline controls does not collapse the editor or start dragging.
+- Asset/image nodes are the exception to chrome-only drag so resized media cards can still be repositioned directly from the preview surface.
 - Primary inline editor routing is resolved by node type:
   - model -> `prompt`
   - text note -> `note`
@@ -92,6 +94,8 @@ TanStack Query owns persisted app data in the renderer and is invalidated from t
   - generated asset / generated model-spawned nodes -> `source-call`
 - Phantom output previews are renderer-only derived state. They appear only for the active node, never persist to the canvas document, and never participate in selection/history.
 - Template/list compatibility and merge preview are computed in `CanvasView` from the existing template preview engine and rendered inline inside the template node.
+- Full/resized list nodes render through a dedicated inline sheet component backed by TanStack Table, while preview and compact states stay on lightweight custom card renderers.
+- Full template mode suppresses external phantom row cards and relies on the inline side-rail merge preview instead.
 
 ## Canvas History Model
 - Undo/redo is renderer-local and scoped to the active canvas document.

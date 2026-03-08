@@ -49,6 +49,7 @@
   - `compact` is a persisted pill/tiny-node state
   - `full` is transient and applies only to the active single-selected node
   - `resized` is a persisted custom size for text notes, lists, templates, and asset nodes
+- mode changes animate quickly on shell size/content transitions, but those transitions shut off while dragging, resizing, or panning
 - inline full-mode entry points:
   - `Enter` opens the selected node's inline full editor
   - node double-click opens the same inline full editor for the clicked node
@@ -60,18 +61,29 @@
   - uploaded asset source -> `Details`
   - generated asset / generated model-spawned nodes -> `Source`
 - full/resized nodes use a header/chrome drag handle so text areas, table cells, and inline controls stay editable without dragging the node
-- model full mode follows the issue `#44` direction: wide horizontal layout with inputs on the left, prompt/settings in the middle, and output/run controls aligned toward the output edge
+- asset/image nodes are the exception to chrome-only drag: dragging directly on the media surface still moves the node, while quick-action controls stop propagation
+- model preview stays close to the original small model card
+- model full mode follows the issue `#44` direction: one wide horizontal shell with inputs on the left, prompt/editor in the middle, model settings next, and output/run controls aligned toward the output edge
+- list full/resized mode is an inline sheet:
+  - editable header row
+  - editable cell grid
+  - row number rail
+  - add row / add column actions in node chrome
+  - remove-row action column
+  - remove-column controls in the header
 - template full mode includes:
   - textarea editing
   - detected placeholder chips
   - connected-list column chips that insert `[[Column Name]]`
   - inline compatibility warnings
   - live merge preview rows
+- template full mode uses a two-zone layout with the editor on the left and compatibility/merge preview in a contained side rail
 - active-node phantom previews:
   - appear only when exactly one source node is active
   - show likely downstream outputs without persisting real nodes
   - use dotted/low-opacity output connections
   - pin the run launcher near the source output edge
+- active template nodes suppress external phantom row cards while they are in `full` mode and rely on the inline merge preview instead
 - multi-selection compare/download actions live in a floating selection strip near the current selection instead of the old bottom bar
 - canvas keyboard shortcuts when focus is not inside an input, textarea, select, or contenteditable surface:
   - `A` opens the add-to-canvas insert menu at viewport center

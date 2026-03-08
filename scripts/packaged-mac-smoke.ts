@@ -94,6 +94,9 @@ async function main() {
   const zipPath = path.resolve("release", `${APP_NAME}-${version}-arm64-mac.zip`);
   const blockmapPath = `${zipPath}.blockmap`;
   const canvasScreenshotPath = path.join(appDataRoot, "packaged-canvas-smoke.png");
+  const modelFullScreenshotPath = path.join(appDataRoot, "packaged-model-full.png");
+  const listFullScreenshotPath = path.join(appDataRoot, "packaged-list-full.png");
+  const templateFullScreenshotPath = path.join(appDataRoot, "packaged-template-full.png");
   const assetsScreenshotPath = path.join(appDataRoot, "packaged-assets-smoke.png");
   const queueScreenshotPath = path.join(appDataRoot, "packaged-queue-smoke.png");
   const projectSettingsScreenshotPath = path.join(appDataRoot, "packaged-project-settings-smoke.png");
@@ -226,6 +229,75 @@ async function main() {
                 x: 420,
                 y: 120,
               },
+              {
+                id: "smoke-list-node",
+                label: "Smoke List",
+                providerId: "openai",
+                modelId: "gpt-image-1.5",
+                kind: "list",
+                nodeType: "list",
+                outputType: "text",
+                prompt: "",
+                settings: {
+                  source: "list",
+                  columns: [
+                    { id: "smoke-col-animal", label: "Animal" },
+                    { id: "smoke-col-habitat", label: "Habitat" },
+                    { id: "smoke-col-trait", label: "Trait" },
+                  ],
+                  rows: [
+                    {
+                      id: "smoke-row-1",
+                      values: {
+                        "smoke-col-animal": "Otter",
+                        "smoke-col-habitat": "River",
+                        "smoke-col-trait": "Curious",
+                      },
+                    },
+                    {
+                      id: "smoke-row-2",
+                      values: {
+                        "smoke-col-animal": "Fox",
+                        "smoke-col-habitat": "Forest",
+                        "smoke-col-trait": "Playful",
+                      },
+                    },
+                  ],
+                },
+                sourceAssetId: null,
+                sourceAssetMimeType: null,
+                sourceJobId: null,
+                sourceOutputIndex: null,
+                processingState: null,
+                promptSourceNodeId: null,
+                upstreamNodeIds: [],
+                upstreamAssetIds: [],
+                x: 120,
+                y: 340,
+              },
+              {
+                id: "smoke-template-node",
+                label: "Smoke Template",
+                providerId: "openai",
+                modelId: "gpt-image-1.5",
+                kind: "text-template",
+                nodeType: "text-template",
+                outputType: "text",
+                prompt: "Illustrate a [[Animal]] in a [[Habitat]] with a [[Trait]] expression.",
+                settings: {
+                  source: "text-template",
+                },
+                sourceAssetId: null,
+                sourceAssetMimeType: null,
+                sourceJobId: null,
+                sourceOutputIndex: null,
+                processingState: null,
+                promptSourceNodeId: null,
+                upstreamNodeIds: ["smoke-list-node"],
+                upstreamAssetIds: ["node:smoke-list-node"],
+                x: 470,
+                y: 340,
+              },
             ],
           },
         },
@@ -239,11 +311,57 @@ async function main() {
       return nodes.map((node) => node.label || "");
     }, { activeProjectId: projectId });
 
-    assert.deepEqual(nodeLabels, ["Smoke Prompt", "Smoke Image Model"]);
+    assert.deepEqual(nodeLabels, ["Smoke Prompt", "Smoke Image Model", "Smoke List", "Smoke Template"]);
 
     await driver.navigate().refresh();
     await sleep(800);
     await saveScreenshot(driver, canvasScreenshotPath);
+    await driver.wait(
+      async () =>
+        Boolean(
+          await driver.executeScript(() => {
+            return Boolean(
+              (window as typeof window & {
+                __NND_CANVAS_TEST__?: unknown;
+              }).__NND_CANVAS_TEST__
+            );
+          })
+        ),
+      15_000
+    );
+
+    await driver.executeScript(() => {
+      const api = (window as typeof window & {
+        __NND_CANVAS_TEST__?: {
+          openPrimaryEditor: (nodeId: string) => void;
+        };
+      }).__NND_CANVAS_TEST__;
+      api?.openPrimaryEditor("smoke-model-node");
+    });
+    await sleep(800);
+    await saveScreenshot(driver, modelFullScreenshotPath);
+
+    await driver.executeScript(() => {
+      const api = (window as typeof window & {
+        __NND_CANVAS_TEST__?: {
+          openPrimaryEditor: (nodeId: string) => void;
+        };
+      }).__NND_CANVAS_TEST__;
+      api?.openPrimaryEditor("smoke-list-node");
+    });
+    await sleep(800);
+    await saveScreenshot(driver, listFullScreenshotPath);
+
+    await driver.executeScript(() => {
+      const api = (window as typeof window & {
+        __NND_CANVAS_TEST__?: {
+          openPrimaryEditor: (nodeId: string) => void;
+        };
+      }).__NND_CANVAS_TEST__;
+      api?.openPrimaryEditor("smoke-template-node");
+    });
+    await sleep(800);
+    await saveScreenshot(driver, templateFullScreenshotPath);
 
     const importedAssets = await driver.executeScript(async ({ activeProjectId }) => {
       const svg = `
@@ -330,6 +448,9 @@ async function main() {
           assetCount,
           storedAssetFiles,
           canvasScreenshotPath,
+          modelFullScreenshotPath,
+          listFullScreenshotPath,
+          templateFullScreenshotPath,
           assetsScreenshotPath,
           queueScreenshotPath,
           projectSettingsScreenshotPath,

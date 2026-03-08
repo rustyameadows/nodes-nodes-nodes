@@ -3903,6 +3903,10 @@ export function CanvasView({ projectId }: Props) {
     }
 
     if (activeSelectedNode.kind === "text-template") {
+      if (activeFullNodeId === activeSelectedNode.id) {
+        return null;
+      }
+
       if (!selectedTemplatePreview || selectedTemplatePreview.rows.length === 0) {
         return null;
       }
@@ -3974,7 +3978,7 @@ export function CanvasView({ projectId }: Props) {
       overflowCount: Math.max(0, (selectedNodeRunPreview.requestPayload.nodePayload.outputCount || 1) - outputCount),
       runDisabledReason: selectedNodeRunPreview.disabledReason,
     };
-  }, [activeSelectedNode, selectedNodeResolvedSettings.textOutputTarget, selectedNodeRunPreview, selectedTemplatePreview]);
+  }, [activeFullNodeId, activeSelectedNode, selectedNodeResolvedSettings.textOutputTarget, selectedNodeRunPreview, selectedTemplatePreview]);
 
   const selectionActions = useMemo<CanvasSelectionAction[]>(() => {
     const actions: CanvasSelectionAction[] = [];
@@ -4040,6 +4044,8 @@ export function CanvasView({ projectId }: Props) {
         moveSelectedNodesBy: (deltaX: number, deltaY: number) => void;
         connectSelected: () => void;
         openPrimaryEditor: (nodeId: string) => void;
+        setDisplayMode: (nodeId: string, mode: "preview" | "compact") => void;
+        resizeNode: (nodeId: string, size: WorkflowNodeSize) => void;
         getState: () => {
           selectedNodeIds: string[];
           activeFullNodeId: string | null;
@@ -4081,6 +4087,16 @@ export function CanvasView({ projectId }: Props) {
           openPrimaryEditorForNode(nodeId);
         }
       },
+      setDisplayMode: (nodeId: string, mode: "preview" | "compact") => {
+        if (canvasDocRef.current.workflow.nodes.some((node) => node.id === nodeId)) {
+          handleNodeDisplayModeChange(nodeId, mode);
+        }
+      },
+      resizeNode: (nodeId: string, size: WorkflowNodeSize) => {
+        if (canvasDocRef.current.workflow.nodes.some((node) => node.id === nodeId)) {
+          handleNodeSizeCommit(nodeId, size);
+        }
+      },
       getState: () => ({
         selectedNodeIds: [...selectedNodeIdsRef.current],
         activeFullNodeId: activeFullNodeIdRef.current,
@@ -4099,6 +4115,8 @@ export function CanvasView({ projectId }: Props) {
     commitNodePositions,
     commitPendingCoalescedHistory,
     connectSelectedNodes,
+    handleNodeDisplayModeChange,
+    handleNodeSizeCommit,
     openPrimaryEditorForNode,
     setTrackedSelectedConnection,
     setTrackedSelectedNodeIds,

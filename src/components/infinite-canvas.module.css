@@ -24,6 +24,15 @@
   -webkit-user-select: none;
 }
 
+.canvasInteractionActive .node,
+.canvasInteractionActive .inlineNodeContentWrap,
+.canvasInteractionActive .inlineNodeSurface,
+.canvasInteractionActive .assetNodeLayout,
+.canvasInteractionActive .phantomNode,
+.canvasInteractionActive .edgeRunButton {
+  transition: none !important;
+}
+
 .canvasRoot:active {
   cursor: grabbing;
 }
@@ -96,6 +105,12 @@
   isolation: isolate;
   outline: none;
   -webkit-tap-highlight-color: transparent;
+  transition:
+    width 140ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    height 140ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    box-shadow 140ms ease,
+    filter 140ms ease,
+    background 120ms ease;
 }
 
 .node:focus,
@@ -108,7 +123,7 @@
 .nodeModel {
   width: auto;
   min-width: 172px;
-  max-width: 232px;
+  max-width: 248px;
   min-height: 48px;
   padding: 9px 18px 9px 14px;
   border-color: transparent;
@@ -495,6 +510,7 @@
   overflow: hidden;
   border: 0;
   background: #fff;
+  cursor: inherit;
 }
 
 .sourcePreviewFrameGenerated {
@@ -659,6 +675,11 @@
   z-index: 9;
 }
 
+.nodeWithImage.nodeFullMode,
+.nodeWithImage.nodeResizedMode {
+  cursor: move;
+}
+
 .nodeFullMode.nodeModel,
 .nodeResizedMode.nodeModel {
   max-width: none;
@@ -669,6 +690,11 @@
   z-index: 1;
   width: 100%;
   height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  transition:
+    opacity 110ms ease,
+    transform 110ms ease;
 }
 
 .assetNodeLayout {
@@ -677,6 +703,10 @@
   width: 100%;
   height: 100%;
   background: #fff;
+  min-height: 0;
+  transition:
+    width 140ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    height 140ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .inlineNodeSurface {
@@ -685,8 +715,13 @@
   width: 100%;
   height: 100%;
   min-height: 0;
+  overflow: hidden;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 248, 248, 0.96));
+    linear-gradient(180deg, rgba(255, 255, 255, 0.985), rgba(246, 246, 244, 0.985));
+  transition:
+    background 120ms ease,
+    opacity 100ms ease,
+    transform 100ms ease;
 }
 
 .inlineNodeHeader {
@@ -694,10 +729,10 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  padding: 10px 12px;
+  padding: 12px 14px;
   border-bottom: 1px solid rgba(0, 0, 0, 0.08);
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(255, 255, 255, 0.78));
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(250, 250, 248, 0.88));
   cursor: move;
 }
 
@@ -756,9 +791,9 @@
 }
 
 .inlineModeSwitch button:hover,
-.inlineListEditorToolbar button:hover,
 .inlineAssetActions button:hover,
 .selectionActionStrip button:hover,
+.inlineSheetChromeActions button:hover,
 .inlineVariableChip:hover {
   background: #fff;
 }
@@ -768,9 +803,13 @@
 .inlineAssetPreviewMeta {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   min-height: 100%;
-  padding: 11px 12px;
+  padding: 10px 12px;
+}
+
+.inlineModelPreview {
+  justify-content: center;
 }
 
 .inlineModelPreviewHeader,
@@ -801,6 +840,22 @@
   font-size: 0.64rem;
   letter-spacing: 0.05em;
   text-transform: uppercase;
+}
+
+.inlineModelPreviewMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  color: rgba(0, 0, 0, 0.68);
+  font-size: 0.67rem;
+  line-height: 1.35;
+}
+
+.inlineModelPreviewName {
+  color: rgba(0, 0, 0, 0.94);
+  font-size: 0.92rem;
+  font-weight: 700;
+  line-height: 1.1;
 }
 
 .inlineSummaryStack {
@@ -879,6 +934,13 @@
   height: 100%;
 }
 
+.inlineNodeBodyShell {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 14px;
+}
+
 .inlineNoteEditor,
 .inlinePromptEditor,
 .inlineTemplateEditor,
@@ -895,84 +957,255 @@
 
 .inlineNoteEditor {
   flex: 1 1 auto;
-  padding: 12px 14px 14px;
+  padding: 0;
   font-size: 0.85rem;
   line-height: 1.5;
 }
 
-.inlineListEditorToolbar {
+.inlineListFullShell {
   display: flex;
-  gap: 8px;
-  padding: 10px 12px 0;
-}
-
-.inlineListEditor {
   flex: 1 1 auto;
   min-height: 0;
-  overflow: auto;
-  padding: 10px 12px 12px;
+  padding: 14px;
 }
 
-.inlineListEditorGrid {
+.inlineSheetShell {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  gap: 10px;
+  width: 100%;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  background:
+    linear-gradient(180deg, rgba(251, 251, 249, 0.98), rgba(242, 242, 240, 0.98));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+}
+
+.inlineSheetChrome {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px 0;
+}
+
+.inlineSheetChromeMeta {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 3px;
 }
 
-.inlineListColumn,
-.inlineListRow {
-  display: grid;
-  gap: 8px;
-  align-items: center;
-}
-
-.inlineListColumn {
-  grid-template-columns: minmax(0, 1fr) auto;
-}
-
-.inlineListRow {
-  grid-template-columns: 56px repeat(auto-fit, minmax(120px, 1fr)) auto;
-}
-
-.inlineListRowLabel {
-  color: rgba(0, 0, 0, 0.48);
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
+.inlineSheetChromeMeta strong {
+  color: rgba(0, 0, 0, 0.94);
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
-.inlineTemplateLayout {
-  display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(220px, 0.9fr);
-  gap: 12px;
-  flex: 1 1 auto;
-  min-height: 0;
-  padding: 12px;
+.inlineSheetChromeMeta span {
+  color: rgba(0, 0, 0, 0.54);
+  font-size: 0.7rem;
 }
 
-.inlineTemplateEditorColumn,
-.inlineTemplatePreviewColumn {
+.inlineSheetChromeActions {
+  display: flex;
+  gap: 8px;
+}
+
+.inlineSheetChromeActions button,
+.inlineSheetRemoveRow,
+.inlineSheetRemoveColumn {
+  border: 1px solid rgba(0, 0, 0, 0.16);
+  background: rgba(255, 255, 255, 0.92);
+  color: rgba(0, 0, 0, 0.88);
+  font: inherit;
+  cursor: pointer;
+}
+
+.inlineSheetChromeActions button {
+  padding: 7px 10px;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.inlineSheetTitleRow {
+  display: flex;
+  justify-content: center;
+  padding: 0 14px;
+}
+
+.inlineSheetTitleRow span {
+  color: rgba(0, 0, 0, 0.74);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.inlineSheetScroller {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  margin: 0 14px 14px;
+  border: 1px solid rgba(0, 0, 0, 0.14);
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.inlineSheetTable {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed;
+}
+
+.inlineSheetTable th,
+.inlineSheetTable td {
+  min-width: 0;
+  border-right: 1px solid rgba(0, 0, 0, 0.12);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.inlineSheetTable thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: rgba(227, 227, 224, 0.98);
+}
+
+.inlineSheetRowHeader {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  width: 56px;
+  min-width: 56px;
+  background: rgba(236, 236, 233, 0.98) !important;
+  text-align: center;
+}
+
+.inlineSheetActionColumn {
+  width: 108px;
+  min-width: 108px;
+  background: rgba(250, 250, 248, 0.98) !important;
+}
+
+.inlineSheetCornerLabel,
+.inlineSheetActionLabel {
+  display: block;
+  color: rgba(0, 0, 0, 0.46);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 10px 8px;
+  text-transform: uppercase;
+}
+
+.inlineSheetRowNumber {
+  display: block;
+  padding: 10px 8px;
+  color: rgba(0, 0, 0, 0.56);
+  font-size: 0.9rem;
+}
+
+.inlineSheetHeaderCellInner {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 6px;
+  padding: 8px 10px 10px;
+}
+
+.inlineSheetLetter {
+  color: rgba(0, 0, 0, 0.48);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.inlineSheetHeaderInput,
+.inlineSheetCellInput {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: rgba(0, 0, 0, 0.92);
+  font: inherit;
+  outline: none;
+}
+
+.inlineSheetHeaderInput {
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.inlineSheetCellInput {
+  padding: 11px 12px;
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+
+.inlineSheetRemoveColumn {
+  align-self: flex-start;
+  min-width: 28px;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.inlineSheetRemoveRow {
+  margin: 8px;
+  padding: 7px 9px;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.inlineTemplateFullShell {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(220px, 300px);
+  gap: 14px;
+  flex: 1 1 auto;
   min-height: 0;
+  padding: 14px;
+}
+
+.inlineTemplateMainColumn,
+.inlineTemplateSideRail {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.inlineTemplateMainColumn {
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.inlineTemplateSideRail {
+  gap: 12px;
 }
 
 .inlineTemplateEditor {
   flex: 1 1 auto;
-  min-height: 180px;
+  min-height: 0;
   border: 1px solid rgba(0, 0, 0, 0.14);
-  background: rgba(255, 255, 255, 0.8);
-  padding: 12px;
+  background: rgba(255, 255, 255, 0.96);
+  padding: 14px;
   font-size: 0.82rem;
   line-height: 1.46;
+  overflow: auto;
 }
 
 .inlineVariableShelf {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  align-items: center;
 }
 
 .inlineVariableChip {
@@ -987,6 +1220,7 @@
   border: 1px solid rgba(0, 0, 0, 0.12);
   background: rgba(255, 255, 255, 0.82);
   padding: 10px 12px;
+  overflow: hidden;
 }
 
 .inlineTemplateStatusCard strong {
@@ -1001,29 +1235,61 @@
   white-space: pre-wrap;
 }
 
-.inlineModelFullLayout {
-  display: grid;
-  grid-template-columns: minmax(138px, 0.78fr) minmax(180px, 1.1fr) minmax(240px, 1.22fr) minmax(124px, 0.72fr);
-  gap: 12px;
-  flex: 1 1 auto;
-  min-height: 0;
-  padding: 12px;
-}
-
-.inlineModelSection,
-.inlineModelSectionWide {
+.inlineTemplatePreviewRows {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
+  min-height: 0;
+  max-height: 180px;
+  overflow: auto;
+}
+
+.inlineNodeSectionHeading {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.inlineNodeSectionHeading strong {
+  color: rgba(0, 0, 0, 0.94);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.inlineNodeSectionHeading span {
+  color: rgba(0, 0, 0, 0.58);
+  font-size: 0.7rem;
+  line-height: 1.35;
+}
+
+.inlineModelFullShell {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.88fr) minmax(300px, 1.55fr) minmax(260px, 1.2fr) minmax(180px, 0.82fr);
+  gap: 14px;
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 14px;
+}
+
+.inlineModelCard,
+.inlineModelCardPrimary,
+.inlineModelCardConfig,
+.inlineModelCardOutput {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
   min-height: 0;
   border: 1px solid rgba(0, 0, 0, 0.12);
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(244, 244, 244, 0.92));
-  padding: 11px 12px;
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(242, 242, 240, 0.96));
+  padding: 14px;
 }
 
-.inlineModelSectionWide {
-  min-width: 0;
+.inlineModelCardPrimary {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.99), rgba(246, 246, 244, 0.96));
 }
 
 .inlineSectionLabel {
@@ -1036,9 +1302,12 @@
 
 .inlinePromptEditor {
   flex: 1 1 auto;
-  min-height: 112px;
+  min-height: 208px;
   font-size: 0.82rem;
   line-height: 1.48;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  background: rgba(255, 255, 255, 0.96);
+  padding: 14px;
 }
 
 .inlineSelectRow {
@@ -1079,6 +1348,7 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
   min-width: 0;
+  align-content: start;
 }
 
 .inlineAssetActions {
@@ -1086,6 +1356,8 @@
   flex-wrap: wrap;
   gap: 8px;
   padding: 12px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(245, 245, 243, 0.94));
 }
 
 .resizeHandle {
@@ -1122,6 +1394,10 @@
   color: rgba(0, 0, 0, 0.86);
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.12);
   pointer-events: none;
+  transition:
+    left 140ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    top 140ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    opacity 110ms ease;
 }
 
 .phantomNode[data-kind="asset"] {
@@ -1149,6 +1425,10 @@
   box-shadow:
     0 10px 24px rgba(0, 0, 0, 0.24),
     0 0 0 1px rgba(255, 255, 255, 0.32) inset;
+  transition:
+    left 140ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    top 140ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    opacity 110ms ease;
 }
 
 .edgeRunButton:disabled {

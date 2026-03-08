@@ -50,6 +50,9 @@ What it does:
   - node double-click opens the same primary inline editor mapping
   - `Cmd/Ctrl+Z` and `Cmd/Ctrl+Shift+Z` undo/redo batch move, connection, inline edit, and node insertion
   - typing inside inline editors does not trigger canvas shortcuts
+  - resized asset nodes can still be dragged after resize
+  - list full mode renders as a real editable sheet
+  - template full mode keeps chips, editor, and merge preview contained
 - imports an SVG asset through the live preload bridge
 - navigates through assets, queue, project settings, and app settings through native menu commands
 - verifies:
@@ -69,13 +72,18 @@ What it does:
   - queue screen renders
   - project settings render with project metadata only
   - provider credentials render in app settings
-- writes screenshots into the temp app-data directory
+- writes screenshots into the temp app-data directory, including dedicated adaptive-node visual artifacts
 
 Expected output:
 - JSON summary printed to stdout with:
   - `projectId`
   - `appDataRoot`
   - `canvasScreenshotPath`
+  - `modelPreviewScreenshotPath`
+  - `modelFullScreenshotPath`
+  - `listFullScreenshotPath`
+  - `templateFullScreenshotPath`
+  - `resizedAssetScreenshotPath`
   - `assetsScreenshotPath`
   - `queueScreenshotPath`
   - `projectSettingsScreenshotPath`
@@ -110,6 +118,9 @@ What it does:
   - app settings render with provider credentials before any project exists
   - project creation
   - canvas round-trip
+  - model full screenshot capture
+  - list full screenshot capture
+  - template full screenshot capture
   - asset import and assets view render
   - queue view render
   - project settings render without provider credentials
@@ -200,20 +211,22 @@ Run this when touching workflow or asset UX:
 13. Click into a prompt, note, list cell, or template textarea and confirm canvas shortcuts do not fire while typing.
 14. Resize a text/list/template/asset node and confirm the size persists after deselecting or reloading.
 15. Open a template node with a connected list and confirm variable chips, compatibility state, and merge preview render inline.
-16. Confirm phantom output previews appear only for the active node and disappear when you deselect or change selection.
-17. Use `Cmd/Ctrl+Z` and `Cmd/Ctrl+Shift+Z` to undo/redo one move, one connection, and one inline edit.
-18. Import an asset.
-19. Open the Assets view and confirm the imported asset appears.
-20. Open Project Settings and confirm the project metadata renders and provider credentials do not appear there.
-21. Open App Settings and confirm provider credentials render there.
-22. If testing on macOS, confirm:
+16. Open a list node in full mode and confirm it behaves like an inline editable sheet instead of the old stacked field controls.
+17. Resize an asset node, then drag it directly from the media surface and confirm it still moves cleanly.
+18. Confirm phantom output previews appear only for the active node and disappear when you deselect or change selection.
+19. Use `Cmd/Ctrl+Z` and `Cmd/Ctrl+Shift+Z` to undo/redo one move, one connection, and one inline edit.
+20. Import an asset.
+21. Open the Assets view and confirm the imported asset appears.
+22. Open Project Settings and confirm the project metadata renders and provider credentials do not appear there.
+23. Open App Settings and confirm provider credentials render there.
+24. If testing on macOS, confirm:
    - `File`, `Project`, `Canvas`, `Edit`, `View`, and `Window` menus appear
    - `Cmd+,` opens App Settings
    - `File > New Project` opens a new project
    - `Project > Home` returns to app home
    - `Project > Assets` / `Queue` / `Project Settings` match the in-app menu behavior
    - `Canvas > Add Node…`, `Connect Selected Nodes`, `Duplicate Selected Node`, `Undo Canvas Change`, and `Redo Canvas Change` enable or disable correctly on canvas
-23. If API keys are configured, run at least one real provider job and verify:
+25. If API keys are configured, run at least one real provider job and verify:
    - queue row created
    - state changes visible
    - output lands on canvas or in assets as appropriate
@@ -259,6 +272,13 @@ npm run smoke:electron
 ```
 
 and inspect the printed temp `appDataRoot` plus screenshots.
+
+When adaptive-node work changes, inspect these screenshot artifacts first:
+- `canvas-model-preview.png`
+- `canvas-model-full.png`
+- `canvas-list-full.png`
+- `canvas-template-full.png`
+- `canvas-resized-asset.png`
 
 ## When To Update This Doc
 Update this protocol when any of these change:
