@@ -1,6 +1,16 @@
 import type { MenuCommand } from "@/lib/ipc-contract";
 
-export type CanvasMenuCommand = Extract<MenuCommand, { type: "canvas.add-node" }>;
+export type CanvasMenuCommand = Extract<
+  MenuCommand,
+  | { type: "canvas.open-insert-menu" }
+  | { type: "canvas.connect-selected" }
+  | { type: "canvas.duplicate-selected" }
+  | { type: "canvas.delete-selection" }
+  | { type: "canvas.open-primary-editor" }
+  | { type: "canvas.undo" }
+  | { type: "canvas.redo" }
+  | { type: "canvas.add-node" }
+>;
 
 const listeners = new Set<(command: CanvasMenuCommand) => void>();
 

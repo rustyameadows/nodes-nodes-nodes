@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   createProject,
@@ -13,6 +13,7 @@ import { queryKeys } from "@/renderer/query";
 import { useRouter } from "@/renderer/navigation";
 import { buildAppSettingsRoute, buildWorkspaceRoute, inferWorkspaceRoute } from "@/renderer/workspace-route";
 import { publishCanvasMenuCommand } from "@/renderer/canvas-menu-command-bus";
+import { subscribeToCanvasMenuState } from "@/renderer/canvas-menu-context-bus";
 import { useLocation } from "@tanstack/react-router";
 
 function resolveTargetProject(projects: Project[], routeProjectId: string | null) {
@@ -31,6 +32,13 @@ function resolveTargetProject(projects: Project[], routeProjectId: string | null
 export function NativeMenuBridge() {
   const router = useRouter();
   const location = useLocation();
+  const [canvasMenuState, setCanvasMenuState] = useState({
+    selectedNodeCount: 0,
+    canConnectSelected: false,
+    canDuplicateSelected: false,
+    canUndo: false,
+    canRedo: false,
+  });
   const { data: projects = [] } = useQuery<Project[]>({
     queryKey: queryKeys.projects,
     queryFn: getProjects,
@@ -47,8 +55,13 @@ export function NativeMenuBridge() {
       projectId: targetProject?.id || null,
       view: routeState.view,
       hasProjects: projects.length > 0,
+      selectedNodeCount: routeState.view === "canvas" ? canvasMenuState.selectedNodeCount : 0,
+      canConnectSelected: routeState.view === "canvas" ? canvasMenuState.canConnectSelected : false,
+      canDuplicateSelected: routeState.view === "canvas" ? canvasMenuState.canDuplicateSelected : false,
+      canUndo: routeState.view === "canvas" ? canvasMenuState.canUndo : false,
+      canRedo: routeState.view === "canvas" ? canvasMenuState.canRedo : false,
     }),
-    [projects.length, routeState.view, targetProject?.id]
+    [canvasMenuState, projects.length, routeState.view, targetProject?.id]
   );
 
   useEffect(() => {
@@ -56,6 +69,12 @@ export function NativeMenuBridge() {
       console.error("Failed to sync native menu context", error);
     });
   }, [menuContext]);
+
+  useEffect(() => {
+    return subscribeToCanvasMenuState((nextState) => {
+      setCanvasMenuState(nextState);
+    });
+  }, []);
 
   const resolveCurrentView = useCallback(
     (): WorkspaceView => (routeState.view && routeState.view !== "app-settings" ? routeState.view : "canvas"),

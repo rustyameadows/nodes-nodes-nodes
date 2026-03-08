@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { _electron as electron, chromium, type Browser, type Page } from "playwright";
 
-const APP_NAME = "Nodes Node Nodes";
+const APP_NAME = "Nodes Nodes Nodes";
 const PACKAGED_REMOTE_DEBUGGING_PORT = 9339;
 const FILTERS = {
   type: "all" as const,
@@ -20,6 +20,7 @@ type RuntimeController = {
   getPage: () => Promise<Page>;
   getMetadata: () => Promise<{ name: string; version: string; exePath: string }>;
   getNativeMenuLabels?: () => Promise<string[]>;
+  getNativeMenuItemState?: (itemId: string) => Promise<{ enabled: boolean; accelerator?: string }>;
   triggerNativeMenuItem?: (itemId: string) => Promise<void>;
   close: () => Promise<void>;
 };
@@ -42,6 +43,57 @@ function projectRoutePattern(projectId?: string, view?: "canvas" | "assets" | "q
 
 function appSettingsRoutePattern() {
   return /#?\/settings\/app$/;
+}
+
+type SmokeCanvasNode = {
+  id: string;
+  label: string;
+  prompt: string;
+  x: number;
+  y: number;
+  promptSourceNodeId: string | null;
+  upstreamNodeIds: string[];
+};
+
+function getRequiredCanvasNodeId(nodes: SmokeCanvasNode[], label: string) {
+  const node = nodes.find((candidate) => candidate.label === label);
+  assert.ok(node, `Expected canvas node with label "${label}".`);
+  return node.id;
+}
+
+async function getCanvasNodes(window: Page, projectId: string) {
+  return window.evaluate(async (activeProjectId) => {
+    const snapshot = await window.nodeInterface.getWorkspaceSnapshot(activeProjectId);
+    const nodes = Array.isArray(
+      (snapshot.canvas?.canvasDocument as { workflow?: { nodes?: SmokeCanvasNode[] } } | null)?.workflow?.nodes
+    )
+      ? ((snapshot.canvas?.canvasDocument as { workflow?: { nodes?: SmokeCanvasNode[] } }).workflow?.nodes || [])
+      : [];
+    return nodes;
+  }, projectId);
+}
+
+async function clickCanvasNode(window: Page, label: string, options?: { shiftKey?: boolean; doubleClick?: boolean }) {
+  const node = window.locator("div[role='button']").filter({ hasText: label }).first();
+  await node.waitFor({ state: "visible", timeout: 15_000 });
+  const box = await node.boundingBox();
+  assert.ok(box, `Expected canvas node bounds for ${label}.`);
+  const clickX = box.x + box.width / 2;
+  const clickY = box.y + box.height / 2;
+
+  if (options?.shiftKey) {
+    await window.keyboard.down("Shift");
+  }
+
+  if (options?.doubleClick) {
+    await window.mouse.dblclick(clickX, clickY);
+  } else {
+    await window.mouse.click(clickX, clickY);
+  }
+
+  if (options?.shiftKey) {
+    await window.keyboard.up("Shift");
+  }
 }
 
 function getPackagedExecutablePath() {
@@ -231,6 +283,53 @@ async function launchUnpackagedRuntime(launchTarget: string, appDataRoot: string
         }),
         15_000
       ),
+    getNativeMenuItemState: async (itemId: string) =>
+      withTimeout(
+        `electron.menuItemState.${itemId}`,
+        electronApp.evaluate(
+          ({ Menu }, targetItemId) => {
+            const menu = Menu.getApplicationMenu();
+            if (!menu) {
+              throw new Error("Application menu is unavailable.");
+            }
+
+            const stack = [...menu.items];
+            while (stack.length > 0) {
+              const candidate = stack.shift() as
+                | {
+                    id: string;
+                    enabled: boolean;
+                    accelerator?: string;
+                    submenu?: { items: unknown[] } | null;
+                  }
+                | undefined;
+
+              if (!candidate) {
+                continue;
+              }
+
+              if (candidate.id === targetItemId) {
+                return {
+                  enabled: candidate.enabled,
+                  accelerator: candidate.accelerator,
+                };
+              }
+
+              const submenuItems = (candidate.submenu?.items || []) as Array<{
+                id: string;
+                enabled: boolean;
+                accelerator?: string;
+                submenu?: { items: unknown[] } | null;
+              }>;
+              stack.unshift(...submenuItems);
+            }
+
+            throw new Error(`Menu item not found: ${targetItemId}`);
+          },
+          itemId
+        ),
+        15_000
+      ),
     triggerNativeMenuItem: async (itemId: string) =>
       withTimeout(
         `electron.menuItem.${itemId}`,
@@ -325,7 +424,7 @@ async function main() {
     if (isPackagedMacMode()) {
       assert.match(
         appMetadata.exePath,
-        /Nodes Node Nodes\.app\/Contents\/MacOS\/Nodes Node Nodes$/,
+        /Nodes Nodes Nodes\.app\/Contents\/MacOS\/Nodes Nodes Nodes$/,
         "Expected packaged executable path."
       );
     }
@@ -479,7 +578,7 @@ async function main() {
                 sourceJobId: null,
                 sourceOutputIndex: null,
                 processingState: null,
-                promptSourceNodeId: "smoke-text-note",
+                promptSourceNodeId: null,
                 upstreamNodeIds: [],
                 upstreamAssetIds: [],
                 x: 420,
@@ -504,6 +603,211 @@ async function main() {
     await window.reload();
     await withTimeout("canvas reload", window.waitForLoadState("domcontentloaded"));
     await window.waitForTimeout(800);
+    await withTimeout(
+      "canvas test hook",
+      window.waitForFunction(
+        () =>
+          Boolean(
+            (window as typeof window & {
+              __NND_CANVAS_TEST__?: unknown;
+            }).__NND_CANVAS_TEST__
+          ),
+        undefined,
+        { timeout: 15_000 }
+      )
+    );
+
+    await window.keyboard.press("a");
+    await withTimeout(
+      "canvas insert menu via keyboard",
+      window.getByRole("button", { name: "Add Model Node" }).waitFor({ state: "visible", timeout: 15_000 })
+    );
+    await window.keyboard.press("Escape");
+    console.log("Canvas keyboard shortcut A verified");
+
+    const interactionNodes = await getCanvasNodes(window, projectId);
+    const promptNodeId = getRequiredCanvasNodeId(interactionNodes, "Smoke Prompt");
+    const modelNodeId = getRequiredCanvasNodeId(interactionNodes, "Smoke Image Model");
+    const modelNode = window.locator("div[role='button']").filter({ hasText: "Smoke Image Model" }).first();
+    await modelNode.waitFor({ state: "visible", timeout: 15_000 });
+    await withTimeout(
+      "canvas nodes after reload",
+      window.waitForFunction(
+        async (activeProjectId) => {
+          const snapshot = await window.nodeInterface.getWorkspaceSnapshot(activeProjectId);
+          const nodes = ((snapshot.canvas?.canvasDocument as { workflow?: { nodes?: unknown[] } } | null)?.workflow?.nodes ||
+            []) as unknown[];
+          return nodes.length >= 2;
+        },
+        projectId,
+        { timeout: 15_000 }
+      )
+    );
+    await window.evaluate((nodeIds: string[]) => {
+      const api = (window as typeof window & {
+        __NND_CANVAS_TEST__?: {
+          selectNodes: (nodeIds: string[]) => void;
+          getState: () => { selectedNodeIds: string[] };
+        };
+      }).__NND_CANVAS_TEST__;
+      api?.selectNodes(nodeIds);
+    }, [promptNodeId, modelNodeId]);
+    await window.waitForTimeout(150);
+    const multiSelectCount = await window.evaluate(() => {
+      const api = (window as typeof window & {
+        __NND_CANVAS_TEST__?: { getState: () => { selectedNodeIds: string[] } };
+      }).__NND_CANVAS_TEST__;
+      return api?.getState().selectedNodeIds.length || 0;
+    });
+    assert.equal(multiSelectCount, 2, "Expected two selected nodes in canvas test hook state.");
+
+    await window.evaluate(() => {
+      const api = (window as typeof window & {
+        __NND_CANVAS_TEST__?: { moveSelectedNodesBy: (deltaX: number, deltaY: number) => void };
+      }).__NND_CANVAS_TEST__;
+      api?.moveSelectedNodesBy(96, 72);
+    });
+    await window.waitForTimeout(900);
+
+    const movedNodes = await getCanvasNodes(window, projectId);
+    const movedPromptNode = movedNodes.find((node) => node.id === promptNodeId);
+    const movedModelNode = movedNodes.find((node) => node.id === modelNodeId);
+    assert.ok(movedPromptNode && movedModelNode, "Expected moved smoke nodes.");
+    const movedDeltaX = movedPromptNode.x - 120;
+    const movedDeltaY = movedPromptNode.y - 120;
+    assert.notEqual(movedDeltaX, 0, "Expected group drag to move the prompt node.");
+    assert.notEqual(movedDeltaY, 0, "Expected group drag to move the prompt node vertically.");
+    assert.equal(movedModelNode.x - 420, movedDeltaX, "Expected group drag to preserve relative X spacing.");
+    assert.equal(movedModelNode.y - 120, movedDeltaY, "Expected group drag to preserve relative Y spacing.");
+    console.log("Canvas multi-node drag verified");
+
+    await window.keyboard.press(`${process.platform === "darwin" ? "Meta" : "Control"}+z`);
+    await window.waitForTimeout(900);
+    const undoMoveNodes = await getCanvasNodes(window, projectId);
+    assert.equal(undoMoveNodes.find((node) => node.id === promptNodeId)?.x, 120);
+    assert.equal(undoMoveNodes.find((node) => node.id === modelNodeId)?.x, 420);
+    await window.keyboard.press(`${process.platform === "darwin" ? "Meta+Shift" : "Control+Shift"}+z`);
+    await window.waitForTimeout(900);
+    const redoMoveNodes = await getCanvasNodes(window, projectId);
+    assert.equal(redoMoveNodes.find((node) => node.id === promptNodeId)?.x, movedPromptNode.x);
+    assert.equal(redoMoveNodes.find((node) => node.id === modelNodeId)?.x, movedModelNode.x);
+    console.log("Canvas undo/redo for batch move verified");
+
+    await window.evaluate((nodeIds: string[]) => {
+      const api = (window as typeof window & {
+        __NND_CANVAS_TEST__?: {
+          selectNodes: (nodeIds: string[]) => void;
+          getState: () => { selectedNodeIds: string[] };
+        };
+      }).__NND_CANVAS_TEST__;
+      api?.selectNodes(nodeIds);
+    }, [promptNodeId, modelNodeId]);
+    await window.waitForTimeout(150);
+    const reselectedCount = await window.evaluate(() => {
+      const api = (window as typeof window & {
+        __NND_CANVAS_TEST__?: { getState: () => { selectedNodeIds: string[] } };
+      }).__NND_CANVAS_TEST__;
+      return api?.getState().selectedNodeIds.length || 0;
+    });
+    assert.equal(reselectedCount, 2, "Expected two selected nodes before connect shortcut.");
+    await window.keyboard.press("c");
+    await window.waitForTimeout(900);
+
+    const connectedNodes = await getCanvasNodes(window, projectId);
+    assert.equal(
+      connectedNodes.find((node) => node.id === modelNodeId)?.promptSourceNodeId,
+      promptNodeId,
+      "Expected C shortcut to connect oldest selected node into newest selected node."
+    );
+    console.log("Canvas keyboard shortcut C verified");
+
+    await window.keyboard.press(`${process.platform === "darwin" ? "Meta" : "Control"}+z`);
+    await window.waitForTimeout(900);
+    const disconnectedNodes = await getCanvasNodes(window, projectId);
+    assert.equal(disconnectedNodes.find((node) => node.id === modelNodeId)?.promptSourceNodeId, null);
+    await window.keyboard.press(`${process.platform === "darwin" ? "Meta+Shift" : "Control+Shift"}+z`);
+    await window.waitForTimeout(900);
+    const reconnectedNodes = await getCanvasNodes(window, projectId);
+    assert.equal(reconnectedNodes.find((node) => node.id === modelNodeId)?.promptSourceNodeId, promptNodeId);
+    console.log("Canvas undo/redo for connection verified");
+
+    await window.evaluate((nodeId: string) => {
+      const api = (window as typeof window & {
+        __NND_CANVAS_TEST__?: {
+          selectNodes: (nodeIds: string[]) => void;
+          getState: () => { selectedNodeIds: string[] };
+        };
+      }).__NND_CANVAS_TEST__;
+      api?.selectNodes([nodeId]);
+    }, modelNodeId);
+    await window.waitForTimeout(150);
+    const singleSelectCount = await window.evaluate(() => {
+      const api = (window as typeof window & {
+        __NND_CANVAS_TEST__?: { getState: () => { selectedNodeIds: string[] } };
+      }).__NND_CANVAS_TEST__;
+      return api?.getState().selectedNodeIds.length || 0;
+    });
+    assert.equal(singleSelectCount, 1, "Expected one selected node before Enter shortcut.");
+    await window.keyboard.press("Enter");
+    await withTimeout(
+      "model prompt editor",
+      window.locator("#canvas-bar-prompt").waitFor({ state: "visible", timeout: 15_000 })
+    );
+    const promptEditor = window.locator("#canvas-bar-prompt");
+    await promptEditor.fill("Updated smoke prompt from bottom bar");
+    await window.keyboard.press("Escape");
+    await window.waitForTimeout(900);
+    const editedNodes = await getCanvasNodes(window, projectId);
+    assert.equal(
+      editedNodes.find((node) => node.id === modelNodeId)?.prompt,
+      "Updated smoke prompt from bottom bar"
+    );
+    console.log("Canvas Enter shortcut and bottom-bar edit verified");
+
+    await window.keyboard.press(`${process.platform === "darwin" ? "Meta" : "Control"}+z`);
+    await window.waitForTimeout(900);
+    const undoPromptNodes = await getCanvasNodes(window, projectId);
+    assert.equal(undoPromptNodes.find((node) => node.id === modelNodeId)?.prompt, "");
+    await window.keyboard.press(`${process.platform === "darwin" ? "Meta+Shift" : "Control+Shift"}+z`);
+    await window.waitForTimeout(900);
+    const redoPromptNodes = await getCanvasNodes(window, projectId);
+    assert.equal(
+      redoPromptNodes.find((node) => node.id === modelNodeId)?.prompt,
+      "Updated smoke prompt from bottom bar"
+    );
+    console.log("Canvas undo/redo for bottom-bar edit verified");
+
+    await clickCanvasNode(window, "Draw a red square on a blue background.", { doubleClick: true });
+    await withTimeout(
+      "note editor via double click",
+      window.getByText("Note Text").waitFor({ state: "visible", timeout: 15_000 })
+    );
+    await window.keyboard.press("Escape");
+    await window.evaluate(() => {
+      const activeElement = document.activeElement;
+      if (activeElement instanceof HTMLElement) {
+        activeElement.blur();
+      }
+    });
+    console.log("Canvas node double-click editor verified");
+
+    await window.keyboard.press("a");
+    await withTimeout(
+      "canvas insert menu before add list",
+      window.getByRole("button", { name: "Add List" }).waitFor({ state: "visible", timeout: 15_000 })
+    );
+    await window.getByRole("button", { name: "Add List" }).click();
+    await window.waitForTimeout(900);
+    const addedListNodes = await getCanvasNodes(window, projectId);
+    assert.equal(addedListNodes.length, 3, "Expected Add Node menu to insert a third node.");
+    await window.keyboard.press(`${process.platform === "darwin" ? "Meta" : "Control"}+z`);
+    await window.waitForTimeout(900);
+    assert.equal((await getCanvasNodes(window, projectId)).length, 2, "Expected undo to remove inserted node.");
+    await window.keyboard.press(`${process.platform === "darwin" ? "Meta+Shift" : "Control+Shift"}+z`);
+    await window.waitForTimeout(900);
+    assert.equal((await getCanvasNodes(window, projectId)).length, 3, "Expected redo to restore inserted node.");
+    console.log("Canvas add-node menu and undo/redo verified");
+
     await window.screenshot({ path: canvasScreenshotPath, fullPage: true });
     console.log("Canvas screenshot:", canvasScreenshotPath);
 

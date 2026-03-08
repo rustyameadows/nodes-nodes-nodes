@@ -70,7 +70,19 @@ import {
   isGeneratedModelTextNoteNode,
   isGeneratedTextNoteNode,
 } from "@/lib/list-template";
+import { canConnectCanvasNodes } from "@/lib/canvas-connection-rules";
+import {
+  applyCanvasHistoryPatch,
+  createCanvasHistoryPatch,
+  type CanvasHistoryPatch,
+  type CanvasHistoryState,
+} from "@/lib/canvas-history";
+import {
+  resolvePrimaryCanvasEditorId,
+  type CanvasBottomBarPopoverId,
+} from "@/lib/canvas-primary-editor";
 import { subscribeToCanvasMenuCommand } from "@/renderer/canvas-menu-command-bus";
+import { publishCanvasMenuState, resetCanvasMenuState } from "@/renderer/canvas-menu-context-bus";
 import styles from "./canvas-view.module.css";
 
 const supportedOutputOrder = ["image", "video", "text"] as const;
@@ -79,6 +91,8 @@ const generatedNodeColumnOffsetX = 40;
 const generatedNodeOffsetY = 38;
 const generatedTextNodeOffsetX = 320;
 const generatedTextNodeOffsetY = 172;
+const CANVAS_HISTORY_LIMIT = 100;
+const COALESCED_HISTORY_DELAY_MS = 450;
 
 type Props = {
   projectId: string;
@@ -103,6 +117,17 @@ type AssetPickerState = {
 type PreviewFrameSummary = NonNullable<Job["latestPreviewFrames"]>[number];
 type CanvasSemanticType = WorkflowNode["outputType"] | "function" | "citrus";
 const canvasSemanticTypeOrder: CanvasSemanticType[] = ["text", "image", "video", "function", "citrus"];
+
+type CanvasHistoryStacks = {
+  undo: CanvasHistoryPatch<CanvasConnection>[];
+  redo: CanvasHistoryPatch<CanvasConnection>[];
+};
+
+type PendingCoalescedCanvasHistory = {
+  key: string;
+  beforeState: CanvasHistoryState<CanvasConnection>;
+  afterState: CanvasHistoryState<CanvasConnection>;
+};
 
 function getNodeSemanticOutputType(node: WorkflowNode): CanvasSemanticType {
   if (node.kind === "text-template") {
@@ -556,6 +581,11 @@ export function CanvasView({ projectId }: Props) {
   const [assetPickerLoading, setAssetPickerLoading] = useState(false);
   const [assetPickerError, setAssetPickerError] = useState<string | null>(null);
   const [selectedConnection, setSelectedConnection] = useState<CanvasConnection | null>(null);
+  const [openBottomBarPopoverId, setOpenBottomBarPopoverId] = useState<CanvasBottomBarPopoverId | null>(null);
+  const [historyStacks, setHistoryStacks] = useState<CanvasHistoryStacks>({
+    undo: [],
+    redo: [],
+  });
 
   const saveTimer = useRef<NodeJS.Timeout | null>(null);
   const hasLoadedCanvasRef = useRef(false);
@@ -565,6 +595,254 @@ export function CanvasView({ projectId }: Props) {
   const pendingUploadAnchorRef = useRef<{ x: number; y: number; connectToModelNodeId?: string } | null>(null);
   const canvasSurfaceRef = useRef<HTMLDivElement | null>(null);
   const nativeMenuInsertCountRef = useRef(0);
+  const canvasDocRef = useRef(canvasDoc);
+  const selectedNodeIdsRef = useRef(selectedNodeIds);
+  const selectedConnectionRef = useRef(selectedConnection);
+  const historyStacksRef = useRef(historyStacks);
+  const pendingCoalescedHistoryRef = useRef<PendingCoalescedCanvasHistory | null>(null);
+  const historyTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    canvasDocRef.current = canvasDoc;
+  }, [canvasDoc]);
+
+  useEffect(() => {
+    selectedNodeIdsRef.current = selectedNodeIds;
+  }, [selectedNodeIds]);
+
+  useEffect(() => {
+    selectedConnectionRef.current = selectedConnection;
+  }, [selectedConnection]);
+
+  useEffect(() => {
+    historyStacksRef.current = historyStacks;
+  }, [historyStacks]);
+
+  const persistCanvas = useCallback(
+    async (doc: CanvasDocument) => {
+      await putCanvasWorkspace(projectId, {
+        canvasDocument: doc,
+      });
+    },
+    [projectId]
+  );
+
+  const queueCanvasSave = useCallback(
+    (doc: CanvasDocument) => {
+      if (!hasLoadedCanvasRef.current) {
+        pendingCanvasSaveRef.current = doc;
+        return;
+      }
+
+      if (saveTimer.current) {
+        clearTimeout(saveTimer.current);
+      }
+
+      saveTimer.current = setTimeout(() => {
+        persistCanvas(doc).catch((error) => {
+          console.error("Failed to persist canvas", error);
+        });
+      }, 360);
+    },
+    [persistCanvas]
+  );
+
+  const setTrackedSelectedNodeIds = useCallback((nextSelectedNodeIds: string[]) => {
+    selectedNodeIdsRef.current = nextSelectedNodeIds;
+    setSelectedNodeIds(nextSelectedNodeIds);
+  }, []);
+
+  const setTrackedSelectedConnection = useCallback((nextSelectedConnection: CanvasConnection | null) => {
+    selectedConnectionRef.current = nextSelectedConnection;
+    setSelectedConnection(nextSelectedConnection);
+  }, []);
+
+  const syncHistoryStacks = useCallback((nextStacks: CanvasHistoryStacks) => {
+    historyStacksRef.current = nextStacks;
+    setHistoryStacks(nextStacks);
+  }, []);
+
+  const applyCanvasDocWithoutHistory = useCallback(
+    (
+      nextDoc: CanvasDocument,
+      options?: {
+        persist?: boolean;
+        selectedNodeIds?: string[];
+        selectedConnection?: CanvasConnection | null;
+      }
+    ) => {
+      canvasDocRef.current = nextDoc;
+      setCanvasDoc(nextDoc);
+      if (options?.selectedNodeIds !== undefined) {
+        setTrackedSelectedNodeIds(options.selectedNodeIds);
+      }
+      if (options?.selectedConnection !== undefined) {
+        setTrackedSelectedConnection(options.selectedConnection);
+      }
+      if (options?.persist !== false) {
+        queueCanvasSave(nextDoc);
+      }
+    },
+    [queueCanvasSave, setTrackedSelectedConnection, setTrackedSelectedNodeIds]
+  );
+
+  const captureCanvasHistoryState = useCallback(
+    (overrides?: Partial<CanvasHistoryState<CanvasConnection>>): CanvasHistoryState<CanvasConnection> => ({
+      canvasDoc: overrides?.canvasDoc ?? canvasDocRef.current,
+      selectedNodeIds: [...(overrides?.selectedNodeIds ?? selectedNodeIdsRef.current)],
+      selectedConnection:
+        overrides?.selectedConnection === undefined ? selectedConnectionRef.current : overrides.selectedConnection,
+    }),
+    []
+  );
+
+  const clearPendingCoalescedHistoryTimer = useCallback(() => {
+    if (historyTimerRef.current) {
+      clearTimeout(historyTimerRef.current);
+      historyTimerRef.current = null;
+    }
+  }, []);
+
+  const applyCanvasHistoryState = useCallback(
+    (
+      nextState: CanvasHistoryState<CanvasConnection>,
+      options?: {
+        persist?: boolean;
+      }
+    ) => {
+      canvasDocRef.current = nextState.canvasDoc;
+      setCanvasDoc(nextState.canvasDoc);
+      setTrackedSelectedNodeIds(nextState.selectedNodeIds);
+      setTrackedSelectedConnection(nextState.selectedConnection);
+
+      if (options?.persist !== false) {
+        queueCanvasSave(nextState.canvasDoc);
+      }
+    },
+    [queueCanvasSave, setTrackedSelectedConnection, setTrackedSelectedNodeIds]
+  );
+
+  const commitPendingCoalescedHistory = useCallback(() => {
+    clearPendingCoalescedHistoryTimer();
+
+    const pendingEntry = pendingCoalescedHistoryRef.current;
+    if (!pendingEntry) {
+      return;
+    }
+
+    pendingCoalescedHistoryRef.current = null;
+    const patch = createCanvasHistoryPatch(pendingEntry.beforeState, pendingEntry.afterState);
+    if (!patch) {
+      return;
+    }
+
+    syncHistoryStacks({
+      undo: [...historyStacksRef.current.undo, patch].slice(-CANVAS_HISTORY_LIMIT),
+      redo: [],
+    });
+  }, [clearPendingCoalescedHistoryTimer, syncHistoryStacks]);
+
+  const scheduleCoalescedHistory = useCallback(
+    (
+      key: string,
+      beforeState: CanvasHistoryState<CanvasConnection>,
+      afterState: CanvasHistoryState<CanvasConnection>
+    ) => {
+      const pendingEntry = pendingCoalescedHistoryRef.current;
+      if (pendingEntry && pendingEntry.key === key) {
+        pendingCoalescedHistoryRef.current = {
+          ...pendingEntry,
+          afterState,
+        };
+      } else {
+        commitPendingCoalescedHistory();
+        pendingCoalescedHistoryRef.current = {
+          key,
+          beforeState,
+          afterState,
+        };
+      }
+
+      clearPendingCoalescedHistoryTimer();
+      historyTimerRef.current = setTimeout(() => {
+        commitPendingCoalescedHistory();
+      }, COALESCED_HISTORY_DELAY_MS);
+    },
+    [clearPendingCoalescedHistoryTimer, commitPendingCoalescedHistory]
+  );
+
+  const recordImmediateHistory = useCallback(
+    (
+      beforeState: CanvasHistoryState<CanvasConnection>,
+      afterState: CanvasHistoryState<CanvasConnection>
+    ) => {
+      commitPendingCoalescedHistory();
+      const patch = createCanvasHistoryPatch(beforeState, afterState);
+      if (!patch) {
+        return;
+      }
+
+      syncHistoryStacks({
+        undo: [...historyStacksRef.current.undo, patch].slice(-CANVAS_HISTORY_LIMIT),
+        redo: [],
+      });
+    },
+    [commitPendingCoalescedHistory, syncHistoryStacks]
+  );
+
+  const resetCanvasHistory = useCallback(() => {
+    pendingCoalescedHistoryRef.current = null;
+    clearPendingCoalescedHistoryTimer();
+    syncHistoryStacks({
+      undo: [],
+      redo: [],
+    });
+  }, [clearPendingCoalescedHistoryTimer, syncHistoryStacks]);
+
+  const runUserCanvasMutation = useCallback(
+    (
+      buildNextState: (
+        currentState: CanvasHistoryState<CanvasConnection>
+      ) =>
+        | {
+            canvasDoc: CanvasDocument;
+            selectedNodeIds?: string[];
+            selectedConnection?: CanvasConnection | null;
+          }
+        | null,
+      options?: {
+        historyMode?: "immediate" | "coalesced";
+        historyKey?: string;
+        persist?: boolean;
+      }
+    ) => {
+      const beforeState = captureCanvasHistoryState();
+      const nextStateCandidate = buildNextState(beforeState);
+      if (!nextStateCandidate) {
+        return false;
+      }
+
+      const afterState = captureCanvasHistoryState({
+        canvasDoc: nextStateCandidate.canvasDoc,
+        selectedNodeIds: nextStateCandidate.selectedNodeIds ?? beforeState.selectedNodeIds,
+        selectedConnection:
+          nextStateCandidate.selectedConnection === undefined
+            ? beforeState.selectedConnection
+            : nextStateCandidate.selectedConnection,
+      });
+
+      applyCanvasHistoryState(afterState, { persist: options?.persist });
+
+      if (options?.historyMode === "coalesced" && options.historyKey) {
+        scheduleCoalescedHistory(options.historyKey, beforeState, afterState);
+      } else {
+        recordImmediateHistory(beforeState, afterState);
+      }
+
+      return true;
+    },
+    [applyCanvasHistoryState, captureCanvasHistoryState, recordImmediateHistory, scheduleCoalescedHistory]
+  );
 
   const groupedProviders = useMemo(() => {
     return providers.reduce<Record<string, ProviderModel[]>>((acc, model) => {
@@ -966,15 +1244,6 @@ export function CanvasView({ projectId }: Props) {
     [selectedModelParameters]
   );
 
-  const persistCanvas = useCallback(
-    async (doc: CanvasDocument) => {
-      await putCanvasWorkspace(projectId, {
-        canvasDocument: doc,
-      });
-    },
-    [projectId]
-  );
-
   const fetchCanvas = useCallback(async () => {
     const data = await getCanvasWorkspace(projectId);
     const raw = (data.canvas?.canvasDocument || {}) as Record<string, unknown>;
@@ -987,7 +1256,7 @@ export function CanvasView({ projectId }: Props) {
       .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
       .map((node, index) => normalizeNode(node, index));
 
-    setCanvasDoc({
+    const nextDoc: CanvasDocument = {
       canvasViewport: {
         x: typeof viewportRaw.x === "number" ? viewportRaw.x : defaultCanvasDocument.canvasViewport.x,
         y: typeof viewportRaw.y === "number" ? viewportRaw.y : defaultCanvasDocument.canvasViewport.y,
@@ -999,7 +1268,14 @@ export function CanvasView({ projectId }: Props) {
       workflow: {
         nodes,
       },
-    });
+    };
+
+    canvasDocRef.current = nextDoc;
+    setCanvasDoc(nextDoc);
+    setTrackedSelectedConnection(null);
+    setTrackedSelectedNodeIds(selectedNodeIdsRef.current.filter((nodeId) => nodes.some((node) => node.id === nodeId)));
+    setOpenBottomBarPopoverId(null);
+    resetCanvasHistory();
 
     hasLoadedCanvasRef.current = true;
 
@@ -1008,65 +1284,58 @@ export function CanvasView({ projectId }: Props) {
       pendingCanvasSaveRef.current = null;
       await persistCanvas(pendingDoc);
     }
-
-    setSelectedNodeIds((current) => current.filter((nodeId) => nodes.some((node) => node.id === nodeId)));
-  }, [persistCanvas, projectId]);
+  }, [persistCanvas, projectId, resetCanvasHistory, setTrackedSelectedConnection, setTrackedSelectedNodeIds]);
 
   const fetchJobs = useCallback(async () => {
     const nextJobs = await getJobs(projectId);
     setJobs(nextJobs);
   }, [projectId]);
 
-  const queueCanvasSave = useCallback(
-    (doc: CanvasDocument) => {
-      if (!hasLoadedCanvasRef.current) {
-        pendingCanvasSaveRef.current = doc;
-        return;
-      }
-
-      if (saveTimer.current) {
-        clearTimeout(saveTimer.current);
-      }
-
-      saveTimer.current = setTimeout(() => {
-        persistCanvas(doc).catch((error) => {
-          console.error("Failed to persist canvas", error);
-        });
-      }, 360);
-    },
-    [persistCanvas]
-  );
-
   const selectSingleNode = useCallback((nodeId: string | null) => {
-    setSelectedConnection(null);
-    setSelectedNodeIds(nodeId ? [nodeId] : []);
-  }, []);
+    commitPendingCoalescedHistory();
+    setTrackedSelectedConnection(null);
+    setTrackedSelectedNodeIds(nodeId ? [nodeId] : []);
+    setOpenBottomBarPopoverId(null);
+  }, [commitPendingCoalescedHistory, setTrackedSelectedConnection, setTrackedSelectedNodeIds]);
 
   const toggleNodeSelection = useCallback((nodeId: string) => {
-    setSelectedConnection(null);
-    setSelectedNodeIds((prev) => {
-      if (prev.includes(nodeId)) {
-        return prev.filter((id) => id !== nodeId);
-      }
-      return [...prev, nodeId];
-    });
-  }, []);
+    commitPendingCoalescedHistory();
+    setTrackedSelectedConnection(null);
+    setTrackedSelectedNodeIds(
+      selectedNodeIdsRef.current.includes(nodeId)
+        ? selectedNodeIdsRef.current.filter((id) => id !== nodeId)
+        : [...selectedNodeIdsRef.current, nodeId]
+    );
+    setOpenBottomBarPopoverId(null);
+  }, [commitPendingCoalescedHistory, setTrackedSelectedConnection, setTrackedSelectedNodeIds]);
 
   const addNodesToSelection = useCallback((nodeIds: string[]) => {
-    setSelectedConnection(null);
-    setSelectedNodeIds((prev) => {
-      const seen = new Set(prev);
-      const merged = [...prev];
-      for (const nodeId of nodeIds) {
-        if (seen.has(nodeId)) {
-          continue;
-        }
-        seen.add(nodeId);
-        merged.push(nodeId);
+    commitPendingCoalescedHistory();
+    setTrackedSelectedConnection(null);
+    const seen = new Set(selectedNodeIdsRef.current);
+    const merged = [...selectedNodeIdsRef.current];
+    for (const nodeId of nodeIds) {
+      if (seen.has(nodeId)) {
+        continue;
       }
-      return merged;
-    });
-  }, []);
+      seen.add(nodeId);
+      merged.push(nodeId);
+    }
+    setTrackedSelectedNodeIds(merged);
+    setOpenBottomBarPopoverId(null);
+  }, [commitPendingCoalescedHistory, setTrackedSelectedConnection, setTrackedSelectedNodeIds]);
+
+  const selectCanvasConnection = useCallback(
+    (nextConnection: CanvasConnection | null) => {
+      commitPendingCoalescedHistory();
+      setTrackedSelectedConnection(nextConnection);
+      if (nextConnection) {
+        setTrackedSelectedNodeIds([]);
+      }
+      setOpenBottomBarPopoverId(null);
+    },
+    [commitPendingCoalescedHistory, setTrackedSelectedConnection, setTrackedSelectedNodeIds]
+  );
 
   const buildNodeRunRequest = useCallback(
     (node: WorkflowNode) => {
@@ -1263,7 +1532,7 @@ export function CanvasView({ projectId }: Props) {
 
     const targetNode = canvasDoc.workflow.nodes.find((node) => node.id === selectedConnection.targetNodeId);
     if (!targetNode) {
-      setSelectedConnection(null);
+      setTrackedSelectedConnection(null);
       return;
     }
 
@@ -1273,19 +1542,19 @@ export function CanvasView({ projectId }: Props) {
         : targetNode.upstreamNodeIds.includes(selectedConnection.sourceNodeId);
 
     if (!exists) {
-      setSelectedConnection(null);
+      setTrackedSelectedConnection(null);
     }
-  }, [canvasDoc.workflow.nodes, selectedConnection]);
+  }, [canvasDoc.workflow.nodes, selectedConnection, setTrackedSelectedConnection]);
 
   useEffect(() => {
     if (jobs.length === 0) {
       return;
     }
 
-    setCanvasDoc((prev) => {
-      const jobById = new Map(jobs.map((job) => [job.id, job]));
-      const workingNodes = [...prev.workflow.nodes];
-      let didChange = false;
+    const prev = canvasDocRef.current;
+    const jobById = new Map(jobs.map((job) => [job.id, job]));
+    const workingNodes = [...prev.workflow.nodes];
+    let didChange = false;
 
       const existingGeneratedImageCountByModelNodeId = new Map<string, number>();
       const existingGeneratedTextCountByModelNodeId = new Map<string, number>();
@@ -1502,21 +1771,19 @@ export function CanvasView({ projectId }: Props) {
         return nextNode;
       });
 
-      if (!didChange) {
-        return prev;
-      }
+    if (!didChange) {
+      return;
+    }
 
-      const nextDoc: CanvasDocument = {
-        ...prev,
-        workflow: {
-          nodes: updatedNodes,
-        },
-      };
+    const nextDoc: CanvasDocument = {
+      ...prev,
+      workflow: {
+        nodes: updatedNodes,
+      },
+    };
 
-      queueCanvasSave(nextDoc);
-      return nextDoc;
-    });
-  }, [jobs, queueCanvasSave]);
+    applyCanvasDocWithoutHistory(nextDoc);
+  }, [applyCanvasDocWithoutHistory, jobs]);
 
   useEffect(() => {
     const onPointerDown = (event: PointerEvent) => {
@@ -1602,7 +1869,8 @@ export function CanvasView({ projectId }: Props) {
     (position?: { x: number; y: number }, options?: { connectFromNodeId?: string }) => {
       const defaultProvider = fallbackProviderModel(providers);
 
-      setCanvasDoc((prev) => {
+      runUserCanvasMutation((currentState) => {
+        const prev = currentState.canvasDoc;
         const outputType = resolveOutputType(undefined, getModelSupportedOutputs(defaultProvider));
         const nextPosition = nextCanvasNodePosition(prev.workflow.nodes.length, position);
         const connectFromNode = options?.connectFromNodeId
@@ -1641,21 +1909,24 @@ export function CanvasView({ projectId }: Props) {
           },
         };
 
-        queueCanvasSave(nextDoc);
-        setSelectedNodeIds([node.id]);
-        setSelectedConnection(null);
-        setInsertMenu(null);
-        return nextDoc;
+        return {
+          canvasDoc: nextDoc,
+          selectedNodeIds: [node.id],
+          selectedConnection: null,
+        };
       });
+      setInsertMenu(null);
+      setOpenBottomBarPopoverId(null);
     },
-    [providers, queueCanvasSave]
+    [providers, runUserCanvasMutation]
   );
 
   const addTextNote = useCallback(
     (position?: { x: number; y: number }, options?: { connectToModelNodeId?: string }) => {
       const defaultProvider = fallbackProviderModel(providers);
 
-      setCanvasDoc((prev) => {
+      runUserCanvasMutation((currentState) => {
+        const prev = currentState.canvasDoc;
         const nextPosition = nextCanvasNodePosition(prev.workflow.nodes.length, position);
         const node: WorkflowNode = {
           id: uid(),
@@ -1697,21 +1968,24 @@ export function CanvasView({ projectId }: Props) {
           },
         };
 
-        queueCanvasSave(nextDoc);
-        setSelectedNodeIds([node.id]);
-        setSelectedConnection(null);
-        setInsertMenu(null);
-        return nextDoc;
+        return {
+          canvasDoc: nextDoc,
+          selectedNodeIds: [node.id],
+          selectedConnection: null,
+        };
       });
+      setInsertMenu(null);
+      setOpenBottomBarPopoverId(null);
     },
-    [providers, queueCanvasSave]
+    [providers, runUserCanvasMutation]
   );
 
   const addListNode = useCallback(
     (position?: { x: number; y: number }, options?: { connectToTemplateNodeId?: string }) => {
       const defaultProvider = fallbackProviderModel(providers);
 
-      setCanvasDoc((prev) => {
+      runUserCanvasMutation((currentState) => {
+        const prev = currentState.canvasDoc;
         const nextPosition = nextCanvasNodePosition(prev.workflow.nodes.length, position);
         const node: WorkflowNode = {
           id: uid(),
@@ -1754,21 +2028,24 @@ export function CanvasView({ projectId }: Props) {
           },
         };
 
-        queueCanvasSave(nextDoc);
-        setSelectedNodeIds([node.id]);
-        setSelectedConnection(null);
-        setInsertMenu(null);
-        return nextDoc;
+        return {
+          canvasDoc: nextDoc,
+          selectedNodeIds: [node.id],
+          selectedConnection: null,
+        };
       });
+      setInsertMenu(null);
+      setOpenBottomBarPopoverId(null);
     },
-    [providers, queueCanvasSave]
+    [providers, runUserCanvasMutation]
   );
 
   const addTextTemplateNode = useCallback(
     (position?: { x: number; y: number }, options?: { connectFromListNodeId?: string }) => {
       const defaultProvider = fallbackProviderModel(providers);
 
-      setCanvasDoc((prev) => {
+      runUserCanvasMutation((currentState) => {
+        const prev = currentState.canvasDoc;
         const nextPosition = nextCanvasNodePosition(prev.workflow.nodes.length, position);
         const connectFromNode =
           options?.connectFromListNodeId
@@ -1803,77 +2080,228 @@ export function CanvasView({ projectId }: Props) {
           },
         };
 
-        queueCanvasSave(nextDoc);
-        setSelectedNodeIds([node.id]);
-        setSelectedConnection(null);
-        setInsertMenu(null);
-        return nextDoc;
+        return {
+          canvasDoc: nextDoc,
+          selectedNodeIds: [node.id],
+          selectedConnection: null,
+        };
       });
+      setInsertMenu(null);
+      setOpenBottomBarPopoverId(null);
     },
-    [providers, queueCanvasSave]
+    [providers, runUserCanvasMutation]
+  );
+
+  const getCanvasViewportCenterAnchor = useCallback(
+    (options?: { stagger?: boolean }) => {
+      const offsetIndex = options?.stagger ? nativeMenuInsertCountRef.current++ : 0;
+      const rect = canvasSurfaceRef.current?.getBoundingClientRect();
+      if (!rect || rect.width === 0 || rect.height === 0) {
+        const fallbackPosition = nextCanvasNodePosition(canvasDoc.workflow.nodes.length);
+        return {
+          clientX: 0,
+          clientY: 0,
+          worldX: fallbackPosition.x + (offsetIndex % 3) * 44,
+          worldY: fallbackPosition.y + (Math.floor(offsetIndex / 3) % 3) * 36,
+        };
+      }
+
+      return {
+        clientX: rect.left + rect.width / 2,
+        clientY: rect.top + rect.height / 2,
+        worldX: Math.round(
+          (rect.width / 2 - canvasDoc.canvasViewport.x) / canvasDoc.canvasViewport.zoom + (offsetIndex % 3) * 44
+        ),
+        worldY: Math.round(
+          (rect.height / 2 - canvasDoc.canvasViewport.y) / canvasDoc.canvasViewport.zoom +
+            (Math.floor(offsetIndex / 3) % 3) * 36
+        ),
+      };
+    },
+    [canvasDoc.canvasViewport, canvasDoc.workflow.nodes.length]
   );
 
   const getNativeMenuInsertPosition = useCallback(() => {
-    const rect = canvasSurfaceRef.current?.getBoundingClientRect();
-    if (!rect || rect.width === 0 || rect.height === 0) {
-      return nextCanvasNodePosition(canvasDoc.workflow.nodes.length);
-    }
-
-    const offsetIndex = nativeMenuInsertCountRef.current;
-    nativeMenuInsertCountRef.current += 1;
-
+    const anchor = getCanvasViewportCenterAnchor({ stagger: true });
     return {
-      x: Math.round((rect.width / 2 - canvasDoc.canvasViewport.x) / canvasDoc.canvasViewport.zoom + (offsetIndex % 3) * 44),
-      y: Math.round(
-        (rect.height / 2 - canvasDoc.canvasViewport.y) / canvasDoc.canvasViewport.zoom +
-          (Math.floor(offsetIndex / 3) % 3) * 36
-      ),
+      x: anchor.worldX,
+      y: anchor.worldY,
     };
-  }, [canvasDoc.canvasViewport, canvasDoc.workflow.nodes.length]);
+  }, [getCanvasViewportCenterAnchor]);
 
-  useEffect(() => {
-    return subscribeToCanvasMenuCommand((command) => {
-      if (isLoading) {
-        return;
-      }
-
-      const position = getNativeMenuInsertPosition();
-
-      if (command.nodeType === "model") {
-        addModelNode(position);
-        return;
-      }
-
-      if (command.nodeType === "text-note") {
-        addTextNote(position);
-        return;
-      }
-
-      if (command.nodeType === "list") {
-        addListNode(position);
-        return;
-      }
-
-      addTextTemplateNode(position);
+  const openCanvasInsertMenu = useCallback(() => {
+    commitPendingCoalescedHistory();
+    const anchor = getCanvasViewportCenterAnchor();
+    setTrackedSelectedConnection(null);
+    setOpenBottomBarPopoverId(null);
+    setAssetPicker(null);
+    setInsertMenu({
+      clientX: anchor.clientX,
+      clientY: anchor.clientY,
+      worldX: anchor.worldX,
+      worldY: anchor.worldY,
+      mode: "canvas",
     });
-  }, [addListNode, addModelNode, addTextNote, addTextTemplateNode, getNativeMenuInsertPosition, isLoading]);
+  }, [commitPendingCoalescedHistory, getCanvasViewportCenterAnchor, setTrackedSelectedConnection]);
 
   const updateNode = useCallback(
-    (nodeId: string, patch: Partial<WorkflowNode>) => {
-      setCanvasDoc((prev) => {
-        const nextDoc: CanvasDocument = {
-          ...prev,
-          workflow: {
-            nodes: prev.workflow.nodes.map((node) => (node.id === nodeId ? { ...node, ...patch } : node)),
+    (
+      nodeId: string,
+      patch: Partial<WorkflowNode>,
+      options?: {
+        historyMode?: "immediate" | "coalesced";
+        historyKey?: string;
+      }
+    ) => {
+      runUserCanvasMutation(
+        (currentState) => {
+          const prev = currentState.canvasDoc;
+          let didChange = false;
+          const nextNodes = prev.workflow.nodes.map((node) => {
+            if (node.id !== nodeId) {
+              return node;
+            }
+
+            const nextNode = { ...node, ...patch };
+            if (JSON.stringify(nextNode) === JSON.stringify(node)) {
+              return node;
+            }
+
+            didChange = true;
+            return nextNode;
+          });
+
+          if (!didChange) {
+            return null;
+          }
+
+          return {
+            canvasDoc: {
+              ...prev,
+              workflow: {
+                nodes: nextNodes,
+              },
+            },
+          };
+        },
+        options
+      );
+    },
+    [runUserCanvasMutation]
+  );
+
+  const commitNodePositions = useCallback(
+    (positions: Record<string, { x: number; y: number }>) => {
+      runUserCanvasMutation((currentState) => {
+        const prev = currentState.canvasDoc;
+        let didChange = false;
+        const nextNodes = prev.workflow.nodes.map((node) => {
+          const nextPosition = positions[node.id];
+          if (!nextPosition) {
+            return node;
+          }
+
+          if (node.x === nextPosition.x && node.y === nextPosition.y) {
+            return node;
+          }
+
+          didChange = true;
+          return {
+            ...node,
+            x: nextPosition.x,
+            y: nextPosition.y,
+          };
+        });
+
+        if (!didChange) {
+          return null;
+        }
+
+        return {
+          canvasDoc: {
+            ...prev,
+            workflow: {
+              nodes: nextNodes,
+            },
           },
         };
-
-        queueCanvasSave(nextDoc);
-        return nextDoc;
       });
     },
-    [queueCanvasSave]
+    [runUserCanvasMutation]
   );
+
+  const canConnectNodePair = useCallback(
+    (sourceNodeId: string, targetNodeId: string) => {
+      return canConnectCanvasNodes(nodesById[sourceNodeId], nodesById[targetNodeId]);
+    },
+    [nodesById]
+  );
+
+  const canConnectSelected = useMemo(() => {
+    return selectedNodeIds.length === 2 && canConnectNodePair(selectedNodeIds[0], selectedNodeIds[1]);
+  }, [canConnectNodePair, selectedNodeIds]);
+
+  const canDuplicateSelected = selectedNodeIds.length === 1;
+
+  const undoCanvasChange = useCallback(() => {
+    commitPendingCoalescedHistory();
+    const patch = historyStacksRef.current.undo.at(-1);
+    if (!patch) {
+      return;
+    }
+
+    const nextState = applyCanvasHistoryPatch(captureCanvasHistoryState(), patch, "undo");
+    applyCanvasHistoryState(nextState);
+    syncHistoryStacks({
+      undo: historyStacksRef.current.undo.slice(0, -1),
+      redo: [...historyStacksRef.current.redo, patch].slice(-CANVAS_HISTORY_LIMIT),
+    });
+    setOpenBottomBarPopoverId(null);
+  }, [applyCanvasHistoryState, captureCanvasHistoryState, commitPendingCoalescedHistory, syncHistoryStacks]);
+
+  const redoCanvasChange = useCallback(() => {
+    commitPendingCoalescedHistory();
+    const patch = historyStacksRef.current.redo.at(-1);
+    if (!patch) {
+      return;
+    }
+
+    const nextState = applyCanvasHistoryPatch(captureCanvasHistoryState(), patch, "redo");
+    applyCanvasHistoryState(nextState);
+    syncHistoryStacks({
+      undo: [...historyStacksRef.current.undo, patch].slice(-CANVAS_HISTORY_LIMIT),
+      redo: historyStacksRef.current.redo.slice(0, -1),
+    });
+    setOpenBottomBarPopoverId(null);
+  }, [applyCanvasHistoryState, captureCanvasHistoryState, commitPendingCoalescedHistory, syncHistoryStacks]);
+
+  const openPrimaryEditorForNode = useCallback(
+    (nodeId: string) => {
+      const node = nodesById[nodeId];
+      if (!node) {
+        return;
+      }
+
+      commitPendingCoalescedHistory();
+      setTrackedSelectedNodeIds([nodeId]);
+      setTrackedSelectedConnection(null);
+      setInsertMenu(null);
+      setAssetPicker(null);
+      setOpenBottomBarPopoverId(
+        resolvePrimaryCanvasEditorId(node, {
+          hasSourceJob: Boolean(getNodeSourceJobId(node)),
+        })
+      );
+    },
+    [commitPendingCoalescedHistory, nodesById, setTrackedSelectedConnection, setTrackedSelectedNodeIds]
+  );
+
+  const openPrimaryEditorForSelection = useCallback(() => {
+    if (selectedNodeIdsRef.current.length !== 1) {
+      return;
+    }
+    openPrimaryEditorForNode(selectedNodeIdsRef.current[0]!);
+  }, [openPrimaryEditorForNode]);
 
   const updateSelectedModelParameter = useCallback(
     (parameterKey: string, value: string | number | null) => {
@@ -1892,9 +2320,16 @@ export function CanvasView({ projectId }: Props) {
       }
 
       const effectiveSettings = resolveModelSettings(selectedModel, nextSettings, selectedNodeExecutionMode);
-      updateNode(selectedNode.id, {
-        settings: effectiveSettings,
-      });
+      updateNode(
+        selectedNode.id,
+        {
+          settings: effectiveSettings,
+        },
+        {
+          historyMode: typeof value === "string" ? "coalesced" : "immediate",
+          historyKey: `node:${selectedNode.id}:parameter:${parameterKey}`,
+        }
+      );
     },
     [selectedModel, selectedNode, selectedNodeExecutionMode, selectedNodeIsModel, updateNode]
   );
@@ -1925,7 +2360,14 @@ export function CanvasView({ projectId }: Props) {
       if (!selectedNode) {
         return;
       }
-      updateNode(selectedNode.id, { label });
+      updateNode(
+        selectedNode.id,
+        { label },
+        {
+          historyMode: "coalesced",
+          historyKey: `node:${selectedNode.id}:label`,
+        }
+      );
     },
     [selectedNode, updateNode]
   );
@@ -1935,7 +2377,14 @@ export function CanvasView({ projectId }: Props) {
       if (!selectedNode) {
         return;
       }
-      updateNode(selectedNode.id, { prompt });
+      updateNode(
+        selectedNode.id,
+        { prompt },
+        {
+          historyMode: "coalesced",
+          historyKey: `node:${selectedNode.id}:prompt`,
+        }
+      );
     },
     [selectedNode, updateNode]
   );
@@ -1954,17 +2403,23 @@ export function CanvasView({ projectId }: Props) {
         : selectedNode.upstreamNodeIds;
       const nextExecutionMode = getExecutionModeForModel(model, nextUpstreamNodeIds);
 
-      updateNode(selectedNode.id, {
-        providerId,
-        modelId: model?.modelId || "",
-        outputType,
-        nodeType: nodeTypeFromOutput(outputType),
-        upstreamNodeIds: nextUpstreamNodeIds,
-        upstreamAssetIds: isRunnableOpenAiTextModel(model?.providerId, model?.modelId)
-          ? []
-          : buildAssetRefsFromNodes(nextUpstreamNodeIds, canvasDoc.workflow.nodes),
-        settings: resolveModelSettings(model, selectedNode.settings, nextExecutionMode),
-      });
+      updateNode(
+        selectedNode.id,
+        {
+          providerId,
+          modelId: model?.modelId || "",
+          outputType,
+          nodeType: nodeTypeFromOutput(outputType),
+          upstreamNodeIds: nextUpstreamNodeIds,
+          upstreamAssetIds: isRunnableOpenAiTextModel(model?.providerId, model?.modelId)
+            ? []
+            : buildAssetRefsFromNodes(nextUpstreamNodeIds, canvasDoc.workflow.nodes),
+          settings: resolveModelSettings(model, selectedNode.settings, nextExecutionMode),
+        },
+        {
+          historyMode: "immediate",
+        }
+      );
     },
     [canvasDoc.workflow.nodes, getExecutionModeForModel, groupedProviders, selectedNode, selectedNodeIsModel, updateNode]
   );
@@ -1985,16 +2440,22 @@ export function CanvasView({ projectId }: Props) {
         : selectedNode.upstreamNodeIds;
       const nextExecutionMode = getExecutionModeForModel(model, nextUpstreamNodeIds);
 
-      updateNode(selectedNode.id, {
-        modelId,
-        outputType,
-        nodeType: nodeTypeFromOutput(outputType),
-        upstreamNodeIds: nextUpstreamNodeIds,
-        upstreamAssetIds: isRunnableOpenAiTextModel(model?.providerId, model?.modelId)
-          ? []
-          : buildAssetRefsFromNodes(nextUpstreamNodeIds, canvasDoc.workflow.nodes),
-        settings: resolveModelSettings(model, selectedNode.settings, nextExecutionMode),
-      });
+      updateNode(
+        selectedNode.id,
+        {
+          modelId,
+          outputType,
+          nodeType: nodeTypeFromOutput(outputType),
+          upstreamNodeIds: nextUpstreamNodeIds,
+          upstreamAssetIds: isRunnableOpenAiTextModel(model?.providerId, model?.modelId)
+            ? []
+            : buildAssetRefsFromNodes(nextUpstreamNodeIds, canvasDoc.workflow.nodes),
+          settings: resolveModelSettings(model, selectedNode.settings, nextExecutionMode),
+        },
+        {
+          historyMode: "immediate",
+        }
+      );
     },
     [canvasDoc.workflow.nodes, getExecutionModeForModel, groupedProviders, selectedNode, selectedNodeIsModel, updateNode]
   );
@@ -2005,19 +2466,31 @@ export function CanvasView({ projectId }: Props) {
     }
 
     if (selectedNodeIsModel) {
-      updateNode(selectedNode.id, {
-        upstreamNodeIds: [],
-        upstreamAssetIds: [],
-        promptSourceNodeId: null,
-      });
+      updateNode(
+        selectedNode.id,
+        {
+          upstreamNodeIds: [],
+          upstreamAssetIds: [],
+          promptSourceNodeId: null,
+        },
+        {
+          historyMode: "immediate",
+        }
+      );
       return;
     }
 
     if (selectedNodeIsTextTemplate) {
-      updateNode(selectedNode.id, {
-        upstreamNodeIds: [],
-        upstreamAssetIds: [],
-      });
+      updateNode(
+        selectedNode.id,
+        {
+          upstreamNodeIds: [],
+          upstreamAssetIds: [],
+        },
+        {
+          historyMode: "immediate",
+        }
+      );
     }
   }, [selectedNode, selectedNodeIsModel, selectedNodeIsTextTemplate, updateNode]);
 
@@ -2036,11 +2509,10 @@ export function CanvasView({ projectId }: Props) {
         );
 
         const defaultProvider = fallbackProviderModel(providers);
-        setCanvasDoc((prev) => {
-          const baseX =
-            position?.x ?? Math.round(120 + (prev.workflow.nodes.length % 4) * 260);
-          const baseY =
-            position?.y ?? Math.round(120 + Math.floor(prev.workflow.nodes.length / 4) * 170);
+        runUserCanvasMutation((currentState) => {
+          const prev = currentState.canvasDoc;
+          const baseX = position?.x ?? Math.round(120 + (prev.workflow.nodes.length % 4) * 260);
+          const baseY = position?.y ?? Math.round(120 + Math.floor(prev.workflow.nodes.length / 4) * 170);
 
           const sourceNodes = uploaded.map(({ file, asset }, index) => {
             const outputType = outputTypeFromAssetType(asset.type);
@@ -2085,27 +2557,27 @@ export function CanvasView({ projectId }: Props) {
             };
           });
 
-          const nextDoc: CanvasDocument = {
-            ...prev,
-            workflow: {
-              nodes: [...nextNodes, ...sourceNodes],
-            },
-          };
-
-          queueCanvasSave(nextDoc);
           const lastSourceNode = sourceNodes[sourceNodes.length - 1];
-          setSelectedNodeIds(lastSourceNode ? [lastSourceNode.id] : []);
-          setSelectedConnection(null);
-          setInsertMenu(null);
-          return nextDoc;
+          return {
+            canvasDoc: {
+              ...prev,
+              workflow: {
+                nodes: [...nextNodes, ...sourceNodes],
+              },
+            },
+            selectedNodeIds: lastSourceNode ? [lastSourceNode.id] : [],
+            selectedConnection: null,
+          };
         });
+        setInsertMenu(null);
+        setOpenBottomBarPopoverId(null);
       } catch (error) {
         console.error(error);
       } finally {
         pendingUploadAnchorRef.current = null;
       }
     },
-    [projectId, providers, queueCanvasSave]
+    [projectId, providers, runUserCanvasMutation]
   );
 
   const addImportedAssetsToCanvas = useCallback(
@@ -2119,7 +2591,8 @@ export function CanvasView({ projectId }: Props) {
       }
 
       const defaultProvider = fallbackProviderModel(providers);
-      setCanvasDoc((prev) => {
+      runUserCanvasMutation((currentState) => {
+        const prev = currentState.canvasDoc;
         const baseX = position?.x ?? Math.round(120 + (prev.workflow.nodes.length % 4) * 260);
         const baseY = position?.y ?? Math.round(120 + Math.floor(prev.workflow.nodes.length / 4) * 170);
 
@@ -2166,22 +2639,22 @@ export function CanvasView({ projectId }: Props) {
           };
         });
 
-        const nextDoc: CanvasDocument = {
-          ...prev,
-          workflow: {
-            nodes: [...nextNodes, ...sourceNodes],
-          },
-        };
-
-        queueCanvasSave(nextDoc);
         const lastSourceNode = sourceNodes[sourceNodes.length - 1];
-        setSelectedNodeIds(lastSourceNode ? [lastSourceNode.id] : []);
-        setSelectedConnection(null);
-        setInsertMenu(null);
-        return nextDoc;
+        return {
+          canvasDoc: {
+            ...prev,
+            workflow: {
+              nodes: [...nextNodes, ...sourceNodes],
+            },
+          },
+          selectedNodeIds: lastSourceNode ? [lastSourceNode.id] : [],
+          selectedConnection: null,
+        };
       });
+      setInsertMenu(null);
+      setOpenBottomBarPopoverId(null);
     },
-    [providers, queueCanvasSave]
+    [providers, runUserCanvasMutation]
   );
 
   const spawnAssetPointerNodes = useCallback(
@@ -2191,7 +2664,8 @@ export function CanvasView({ projectId }: Props) {
       }
 
       const defaultProvider = fallbackProviderModel(providers);
-      setCanvasDoc((prev) => {
+      runUserCanvasMutation((currentState) => {
+        const prev = currentState.canvasDoc;
         const baseX = position?.x ?? Math.round(120 + (prev.workflow.nodes.length % 4) * 260);
         const baseY = position?.y ?? Math.round(120 + Math.floor(prev.workflow.nodes.length / 4) * 170);
 
@@ -2247,27 +2721,29 @@ export function CanvasView({ projectId }: Props) {
           };
         });
 
-        const nextDoc: CanvasDocument = {
-          ...prev,
-          workflow: {
-            nodes: [...nextNodes, ...sourceNodes],
-          },
-        };
-
-        queueCanvasSave(nextDoc);
         const lastSourceNode = sourceNodes[sourceNodes.length - 1];
-        setSelectedNodeIds(lastSourceNode ? [lastSourceNode.id] : []);
-        setSelectedConnection(null);
-        setAssetPicker(null);
-        return nextDoc;
+        return {
+          canvasDoc: {
+            ...prev,
+            workflow: {
+              nodes: [...nextNodes, ...sourceNodes],
+            },
+          },
+          selectedNodeIds: lastSourceNode ? [lastSourceNode.id] : [],
+          selectedConnection: null,
+        };
       });
+      setAssetPicker(null);
+      setOpenBottomBarPopoverId(null);
     },
-    [providers, queueCanvasSave]
+    [providers, runUserCanvasMutation]
   );
 
   const handleCanvasInsertRequest = useCallback(
     (request: CanvasInsertRequest) => {
-      setSelectedConnection(null);
+      commitPendingCoalescedHistory();
+      setTrackedSelectedConnection(null);
+      setOpenBottomBarPopoverId(null);
 
       if (request.connectionNodeId && request.connectionPort === "output") {
         const sourceNode = nodesById[request.connectionNodeId];
@@ -2317,7 +2793,7 @@ export function CanvasView({ projectId }: Props) {
         mode: "canvas",
       });
     },
-    [addModelNode, addTextTemplateNode, nodesById]
+    [addModelNode, addTextTemplateNode, commitPendingCoalescedHistory, nodesById, setTrackedSelectedConnection]
   );
 
   const removeConnection = useCallback(
@@ -2326,7 +2802,8 @@ export function CanvasView({ projectId }: Props) {
         return;
       }
 
-      setCanvasDoc((prev) => {
+      runUserCanvasMutation((currentState) => {
+        const prev = currentState.canvasDoc;
         const nextNodes = prev.workflow.nodes.map((node) => {
           if (node.id !== connection.targetNodeId) {
             return node;
@@ -2347,28 +2824,27 @@ export function CanvasView({ projectId }: Props) {
           };
         });
 
-        const nextDoc: CanvasDocument = {
-          ...prev,
-          workflow: {
-            nodes: nextNodes,
+        return {
+          canvasDoc: {
+            ...prev,
+            workflow: {
+              nodes: nextNodes,
+            },
           },
+          selectedConnection: null,
         };
-
-        queueCanvasSave(nextDoc);
-        return nextDoc;
       });
-
-      setSelectedConnection(null);
     },
-    [queueCanvasSave]
+    [runUserCanvasMutation]
   );
 
   const duplicateNode = useCallback(
     (nodeId: string) => {
-      setCanvasDoc((prev) => {
+      runUserCanvasMutation((currentState) => {
+        const prev = currentState.canvasDoc;
         const sourceNode = prev.workflow.nodes.find((node) => node.id === nodeId);
         if (!sourceNode) {
-          return prev;
+          return null;
         }
 
         const duplicateBase =
@@ -2407,52 +2883,36 @@ export function CanvasView({ projectId }: Props) {
           y: Math.round(sourceNode.y + 36),
         };
 
-        const nextDoc: CanvasDocument = {
-          ...prev,
-          workflow: {
-            nodes: [...prev.workflow.nodes, duplicate],
+        return {
+          canvasDoc: {
+            ...prev,
+            workflow: {
+              nodes: [...prev.workflow.nodes, duplicate],
+            },
           },
+          selectedNodeIds: [duplicate.id],
+          selectedConnection: null,
         };
-
-        queueCanvasSave(nextDoc);
-        setSelectedNodeIds([duplicate.id]);
-        setSelectedConnection(null);
-        return nextDoc;
       });
     },
-    [queueCanvasSave]
+    [runUserCanvasMutation]
   );
 
   const connectNodes = useCallback(
     (sourceNodeId: string, targetNodeId: string) => {
-      if (sourceNodeId === targetNodeId) {
+      if (!canConnectNodePair(sourceNodeId, targetNodeId)) {
         return;
       }
 
-      setCanvasDoc((prev) => {
+      runUserCanvasMutation((currentState) => {
+        const prev = currentState.canvasDoc;
         const sourceNode = prev.workflow.nodes.find((node) => node.id === sourceNodeId);
         const targetNode = prev.workflow.nodes.find((node) => node.id === targetNodeId);
         if (!sourceNode || !targetNode) {
-          return prev;
-        }
-
-        if (targetNode.kind === "list") {
-          return prev;
+          return null;
         }
 
         if (targetNode.kind === "text-note") {
-          const generatedModelTextSettings = getGeneratedModelTextNoteSettings(targetNode.settings);
-          const generatedTemplateTextSettings = getGeneratedTextNoteSettings(targetNode.settings);
-          const acceptsGeneratedInput = Boolean(generatedModelTextSettings || generatedTemplateTextSettings);
-
-          if (!acceptsGeneratedInput) {
-            return prev;
-          }
-
-          if (sourceNode.kind !== "model" && sourceNode.kind !== "text-template") {
-            return prev;
-          }
-
           const nextNodes = prev.workflow.nodes.map((node) =>
             node.id === targetNodeId
               ? {
@@ -2463,22 +2923,17 @@ export function CanvasView({ projectId }: Props) {
               : node
           );
 
-          const nextDoc: CanvasDocument = {
-            ...prev,
-            workflow: {
-              nodes: nextNodes,
+          return {
+            canvasDoc: {
+              ...prev,
+              workflow: {
+                nodes: nextNodes,
+              },
             },
           };
-
-          queueCanvasSave(nextDoc);
-          return nextDoc;
         }
 
         if (sourceNode.kind === "text-note") {
-          if (targetNode.kind !== "model") {
-            return prev;
-          }
-
           const nextNodes = prev.workflow.nodes.map((node) =>
             node.id === targetNodeId
               ? {
@@ -2488,26 +2943,17 @@ export function CanvasView({ projectId }: Props) {
               : node
           );
 
-          const nextDoc: CanvasDocument = {
-            ...prev,
-            workflow: {
-              nodes: nextNodes,
+          return {
+            canvasDoc: {
+              ...prev,
+              workflow: {
+                nodes: nextNodes,
+              },
             },
           };
-
-          queueCanvasSave(nextDoc);
-          return nextDoc;
-        }
-
-        if (targetNode.kind === "model" && isRunnableOpenAiTextModel(targetNode.providerId, targetNode.modelId)) {
-          return prev;
         }
 
         if (sourceNode.kind === "list") {
-          if (targetNode.kind !== "text-template") {
-            return prev;
-          }
-
           const nextNodes = prev.workflow.nodes.map((node) =>
             node.id === targetNodeId
               ? {
@@ -2518,27 +2964,14 @@ export function CanvasView({ projectId }: Props) {
               : node
           );
 
-          const nextDoc: CanvasDocument = {
-            ...prev,
-            workflow: {
-              nodes: nextNodes,
+          return {
+            canvasDoc: {
+              ...prev,
+              workflow: {
+                nodes: nextNodes,
+              },
             },
           };
-
-          queueCanvasSave(nextDoc);
-          return nextDoc;
-        }
-
-        if (targetNode.kind === "text-template") {
-          return prev;
-        }
-
-        if (sourceNode.kind === "text-template") {
-          return prev;
-        }
-
-        if (sourceNode.kind === "model" && isRunnableOpenAiTextModel(sourceNode.providerId, sourceNode.modelId)) {
-          return prev;
         }
 
         const nextNodes = prev.workflow.nodes.map((node) => {
@@ -2553,18 +2986,17 @@ export function CanvasView({ projectId }: Props) {
           };
         });
 
-        const nextDoc: CanvasDocument = {
-          ...prev,
-          workflow: {
-            nodes: nextNodes,
+        return {
+          canvasDoc: {
+            ...prev,
+            workflow: {
+              nodes: nextNodes,
+            },
           },
         };
-
-        queueCanvasSave(nextDoc);
-        return nextDoc;
       });
     },
-    [queueCanvasSave]
+    [canConnectNodePair, runUserCanvasMutation]
   );
 
   const removeNodes = useCallback(
@@ -2574,7 +3006,8 @@ export function CanvasView({ projectId }: Props) {
       }
       const nodeIdSet = new Set(nodeIds);
 
-      setCanvasDoc((prev) => {
+      runUserCanvasMutation((currentState) => {
+        const prev = currentState.canvasDoc;
         const remainingNodes = prev.workflow.nodes.filter((node) => !nodeIdSet.has(node.id));
         const nextNodes = remainingNodes.map((node) => {
           const upstreamNodeIds = node.upstreamNodeIds.filter((upstreamNodeId) => !nodeIdSet.has(upstreamNodeId));
@@ -2586,24 +3019,121 @@ export function CanvasView({ projectId }: Props) {
           };
         });
 
-        const nextDoc: CanvasDocument = {
-          ...prev,
-          workflow: {
-            nodes: nextNodes,
+        return {
+          canvasDoc: {
+            ...prev,
+            workflow: {
+              nodes: nextNodes,
+            },
           },
+          selectedNodeIds: currentState.selectedNodeIds.filter((nodeId) => !nodeIdSet.has(nodeId)),
+          selectedConnection:
+            currentState.selectedConnection &&
+            (nodeIdSet.has(currentState.selectedConnection.sourceNodeId) ||
+              nodeIdSet.has(currentState.selectedConnection.targetNodeId))
+              ? null
+              : currentState.selectedConnection,
         };
-
-        queueCanvasSave(nextDoc);
-        return nextDoc;
       });
-
-      setSelectedNodeIds((current) => current.filter((nodeId) => !nodeIdSet.has(nodeId)));
-      setSelectedConnection((current) =>
-        current && (nodeIdSet.has(current.sourceNodeId) || nodeIdSet.has(current.targetNodeId)) ? null : current
-      );
     },
-    [queueCanvasSave]
+    [runUserCanvasMutation]
   );
+
+  const connectSelectedNodes = useCallback(() => {
+    if (!canConnectSelected) {
+      return;
+    }
+
+    const [sourceNodeId, targetNodeId] = selectedNodeIdsRef.current;
+    if (!sourceNodeId || !targetNodeId) {
+      return;
+    }
+
+    connectNodes(sourceNodeId, targetNodeId);
+  }, [canConnectSelected, connectNodes]);
+
+  useEffect(() => {
+    return subscribeToCanvasMenuCommand((command) => {
+      if (isLoading) {
+        return;
+      }
+
+      if (command.type === "canvas.open-insert-menu") {
+        openCanvasInsertMenu();
+        return;
+      }
+
+      if (command.type === "canvas.connect-selected") {
+        connectSelectedNodes();
+        return;
+      }
+
+      if (command.type === "canvas.duplicate-selected") {
+        if (selectedNodeIdsRef.current.length === 1) {
+          duplicateNode(selectedNodeIdsRef.current[0]!);
+        }
+        return;
+      }
+
+      if (command.type === "canvas.delete-selection") {
+        if (selectedConnectionRef.current) {
+          removeConnection(selectedConnectionRef.current);
+          return;
+        }
+
+        removeNodes(selectedNodeIdsRef.current);
+        return;
+      }
+
+      if (command.type === "canvas.open-primary-editor") {
+        openPrimaryEditorForSelection();
+        return;
+      }
+
+      if (command.type === "canvas.undo") {
+        undoCanvasChange();
+        return;
+      }
+
+      if (command.type === "canvas.redo") {
+        redoCanvasChange();
+        return;
+      }
+
+      const position = getNativeMenuInsertPosition();
+      if (command.nodeType === "model") {
+        addModelNode(position);
+        return;
+      }
+
+      if (command.nodeType === "text-note") {
+        addTextNote(position);
+        return;
+      }
+
+      if (command.nodeType === "list") {
+        addListNode(position);
+        return;
+      }
+
+      addTextTemplateNode(position);
+    });
+  }, [
+    addListNode,
+    addModelNode,
+    addTextNote,
+    addTextTemplateNode,
+    connectSelectedNodes,
+    duplicateNode,
+    getNativeMenuInsertPosition,
+    isLoading,
+    openCanvasInsertMenu,
+    openPrimaryEditorForSelection,
+    redoCanvasChange,
+    removeConnection,
+    removeNodes,
+    undoCanvasChange,
+  ]);
 
   const handleDeleteSelected = useCallback(() => {
     if (selectedNodeIds.length === 0) {
@@ -2614,26 +3144,63 @@ export function CanvasView({ projectId }: Props) {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      const isEditableTarget = isInputLikeElement(event.target);
+
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "z" && !isEditableTarget) {
+        event.preventDefault();
+        if (event.shiftKey) {
+          redoCanvasChange();
+        } else {
+          undoCanvasChange();
+        }
+        return;
+      }
+
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "d") {
-        if (selectedNodeIds.length !== 1 || isInputLikeElement(event.target)) {
+        if (selectedNodeIds.length !== 1 || isEditableTarget) {
           return;
         }
 
         event.preventDefault();
-        duplicateNode(selectedNodeIds[0]);
+        duplicateNode(selectedNodeIds[0]!);
         return;
       }
 
-      if (event.key === "Escape" && selectedConnection) {
-        event.preventDefault();
-        setSelectedConnection(null);
+      if (!event.metaKey && !event.ctrlKey && !event.altKey && !isEditableTarget) {
+        if (event.key.toLowerCase() === "a") {
+          event.preventDefault();
+          openCanvasInsertMenu();
+          return;
+        }
+
+        if (event.key.toLowerCase() === "c") {
+          event.preventDefault();
+          connectSelectedNodes();
+          return;
+        }
+
+        if (event.key === "Enter") {
+          event.preventDefault();
+          openPrimaryEditorForSelection();
+          return;
+        }
+      }
+
+      if (event.key === "Escape") {
+        if (selectedConnection || insertMenu || assetPicker || openBottomBarPopoverId) {
+          event.preventDefault();
+        }
+        setTrackedSelectedConnection(null);
+        setInsertMenu(null);
+        setAssetPicker(null);
+        setOpenBottomBarPopoverId(null);
         return;
       }
 
       if (event.key !== "Delete" && event.key !== "Backspace") {
         return;
       }
-      if (isInputLikeElement(event.target)) {
+      if (isEditableTarget) {
         return;
       }
 
@@ -2655,178 +3222,194 @@ export function CanvasView({ projectId }: Props) {
     return () => {
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [duplicateNode, removeConnection, removeNodes, selectedConnection, selectedNodeIds]);
+  }, [
+    assetPicker,
+    connectSelectedNodes,
+    duplicateNode,
+    insertMenu,
+    openBottomBarPopoverId,
+    openCanvasInsertMenu,
+    openPrimaryEditorForSelection,
+    redoCanvasChange,
+    removeConnection,
+    removeNodes,
+    selectedConnection,
+    selectedNodeIds,
+    setTrackedSelectedConnection,
+    undoCanvasChange,
+  ]);
 
   const updateViewport = useCallback(
     (nextViewport: CanvasDocument["canvasViewport"]) => {
-      setCanvasDoc((prev) => {
-        const nextDoc: CanvasDocument = {
-          ...prev,
-          canvasViewport: nextViewport,
-        };
-
-        queueCanvasSave(nextDoc);
-        return nextDoc;
+      applyCanvasDocWithoutHistory({
+        ...canvasDocRef.current,
+        canvasViewport: nextViewport,
       });
     },
-    [queueCanvasSave]
+    [applyCanvasDocWithoutHistory]
   );
 
   const insertGeneratedOutputPlaceholder = useCallback(
     (job: Job, sourceNodeId: string, outputCount: number) => {
-      setCanvasDoc((prev) => {
-        if (
-          prev.workflow.nodes.filter(
-            (node) =>
-              getNodeSourceJobId(node) === job.id &&
-              (typeof node.settings.sourceModelNodeId === "string" || node.upstreamNodeIds.includes(sourceNodeId))
-          ).length >= outputCount
-        ) {
-          return prev;
-        }
-
-        const modelNode = prev.workflow.nodes.find((node) => node.id === sourceNodeId && node.kind === "model");
-        if (!modelNode) {
-          return prev;
-        }
-
-        const generatedCount = prev.workflow.nodes.filter(
+      const prev = canvasDocRef.current;
+      if (
+        prev.workflow.nodes.filter(
           (node) =>
-            isGeneratedAssetNode(node) &&
-            (node.settings.sourceModelNodeId === sourceNodeId || node.upstreamNodeIds.includes(sourceNodeId))
-        ).length;
+            getNodeSourceJobId(node) === job.id &&
+            (typeof node.settings.sourceModelNodeId === "string" || node.upstreamNodeIds.includes(sourceNodeId))
+        ).length >= outputCount
+      ) {
+        return;
+      }
 
-        const outputNodes: WorkflowNode[] = Array.from({ length: outputCount }, (_, outputOffset) => {
-          const outputIndex = outputOffset;
-          const visualIndex = generatedCount + outputOffset;
-          return {
-            id: uid(),
-            label: getGeneratedNodeLabel(visualIndex),
-            kind: "asset-source",
-            providerId: modelNode.providerId,
-            modelId: modelNode.modelId,
-            nodeType: "transform",
-            outputType: "image",
-            prompt: "",
-            settings: {
-              source: "generated",
-              sourceJobId: job.id,
-              sourceModelNodeId: sourceNodeId,
-              outputIndex,
-            },
-            sourceAssetId: null,
-            sourceAssetMimeType: null,
+      const modelNode = prev.workflow.nodes.find((node) => node.id === sourceNodeId && node.kind === "model");
+      if (!modelNode) {
+        return;
+      }
+
+      const generatedCount = prev.workflow.nodes.filter(
+        (node) =>
+          isGeneratedAssetNode(node) &&
+          (node.settings.sourceModelNodeId === sourceNodeId || node.upstreamNodeIds.includes(sourceNodeId))
+      ).length;
+
+      const outputNodes: WorkflowNode[] = Array.from({ length: outputCount }, (_, outputOffset) => {
+        const outputIndex = outputOffset;
+        const visualIndex = generatedCount + outputOffset;
+        return {
+          id: uid(),
+          label: getGeneratedNodeLabel(visualIndex),
+          kind: "asset-source",
+          providerId: modelNode.providerId,
+          modelId: modelNode.modelId,
+          nodeType: "transform",
+          outputType: "image",
+          prompt: "",
+          settings: {
+            source: "generated",
             sourceJobId: job.id,
-            sourceOutputIndex: outputIndex,
-            processingState: "queued",
-            promptSourceNodeId: null,
-            upstreamNodeIds: [sourceNodeId],
-            upstreamAssetIds: [`node:${sourceNodeId}`],
-            x: Math.round(
-              modelNode.x + generatedNodeBaseOffsetX + Math.floor(visualIndex / 4) * generatedNodeColumnOffsetX
-            ),
-            y: Math.round(modelNode.y + (visualIndex % 4) * generatedNodeOffsetY),
-          };
-        });
-
-        const nextDoc: CanvasDocument = {
-          ...prev,
-          workflow: {
-            nodes: [...prev.workflow.nodes, ...outputNodes],
+            sourceModelNodeId: sourceNodeId,
+            outputIndex,
           },
+          sourceAssetId: null,
+          sourceAssetMimeType: null,
+          sourceJobId: job.id,
+          sourceOutputIndex: outputIndex,
+          processingState: "queued",
+          promptSourceNodeId: null,
+          upstreamNodeIds: [sourceNodeId],
+          upstreamAssetIds: [`node:${sourceNodeId}`],
+          x: Math.round(modelNode.x + generatedNodeBaseOffsetX + Math.floor(visualIndex / 4) * generatedNodeColumnOffsetX),
+          y: Math.round(modelNode.y + (visualIndex % 4) * generatedNodeOffsetY),
         };
+      });
 
-        queueCanvasSave(nextDoc);
-        return nextDoc;
+      applyCanvasDocWithoutHistory({
+        ...prev,
+        workflow: {
+          nodes: [...prev.workflow.nodes, ...outputNodes],
+        },
       });
     },
-    [queueCanvasSave]
+    [applyCanvasDocWithoutHistory]
   );
 
   const insertGeneratedTextOutputPlaceholder = useCallback(
     (job: Job, sourceNodeId: string, outputCount: number) => {
-      setCanvasDoc((prev) => {
-        if (
-          prev.workflow.nodes.filter(
-            (node) => getNodeSourceJobId(node) === job.id && Boolean(getGeneratedModelTextNoteSettings(node.settings))
-          ).length >= outputCount
-        ) {
-          return prev;
-        }
+      const prev = canvasDocRef.current;
+      if (
+        prev.workflow.nodes.filter(
+          (node) => getNodeSourceJobId(node) === job.id && Boolean(getGeneratedModelTextNoteSettings(node.settings))
+        ).length >= outputCount
+      ) {
+        return;
+      }
 
-        const modelNode = prev.workflow.nodes.find((node) => node.id === sourceNodeId && node.kind === "model");
-        if (!modelNode) {
-          return prev;
-        }
+      const modelNode = prev.workflow.nodes.find((node) => node.id === sourceNodeId && node.kind === "model");
+      if (!modelNode) {
+        return;
+      }
 
-        const generatedCount = getGeneratedModelTextOutputCount(prev.workflow.nodes, sourceNodeId);
-        const outputNodes: WorkflowNode[] = Array.from({ length: outputCount }, (_, outputOffset) =>
-          createGeneratedModelTextOutputNode(modelNode, job, sourceNodeId, outputOffset, generatedCount + outputOffset)
-        );
+      const generatedCount = getGeneratedModelTextOutputCount(prev.workflow.nodes, sourceNodeId);
+      const outputNodes: WorkflowNode[] = Array.from({ length: outputCount }, (_, outputOffset) =>
+        createGeneratedModelTextOutputNode(modelNode, job, sourceNodeId, outputOffset, generatedCount + outputOffset)
+      );
 
-        const nextDoc: CanvasDocument = {
-          ...prev,
-          workflow: {
-            nodes: [...prev.workflow.nodes, ...outputNodes],
-          },
-        };
-
-        queueCanvasSave(nextDoc);
-        return nextDoc;
+      applyCanvasDocWithoutHistory({
+        ...prev,
+        workflow: {
+          nodes: [...prev.workflow.nodes, ...outputNodes],
+        },
       });
     },
-    [queueCanvasSave]
+    [applyCanvasDocWithoutHistory]
   );
 
   const updateSelectedListSettings = useCallback(
-    (nextSettings: ListNodeSettings) => {
+    (nextSettings: ListNodeSettings, options?: { historyMode?: "immediate" | "coalesced"; historyKey?: string }) => {
       if (!selectedNode || !selectedNodeIsList) {
         return;
       }
 
-      updateNode(selectedNode.id, {
-        settings: nextSettings,
-      });
+      updateNode(
+        selectedNode.id,
+        {
+          settings: nextSettings,
+        },
+        options
+      );
     },
     [selectedNode, selectedNodeIsList, updateNode]
   );
 
   const updateSelectedListColumnLabel = useCallback(
     (columnId: string, label: string) => {
-      if (!selectedListSettings) {
+      if (!selectedListSettings || !selectedNode) {
         return;
       }
 
-      updateSelectedListSettings({
-        ...selectedListSettings,
-        columns: selectedListSettings.columns.map((column) => (column.id === columnId ? { ...column, label } : column)),
-      });
+      updateSelectedListSettings(
+        {
+          ...selectedListSettings,
+          columns: selectedListSettings.columns.map((column) => (column.id === columnId ? { ...column, label } : column)),
+        },
+        {
+          historyMode: "coalesced",
+          historyKey: `node:${selectedNode.id}:list-column:${columnId}`,
+        }
+      );
     },
-    [selectedListSettings, updateSelectedListSettings]
+    [selectedListSettings, selectedNode, updateSelectedListSettings]
   );
 
   const updateSelectedListCell = useCallback(
     (rowId: string, columnId: string, value: string) => {
-      if (!selectedListSettings) {
+      if (!selectedListSettings || !selectedNode) {
         return;
       }
 
-      updateSelectedListSettings({
-        ...selectedListSettings,
-        rows: selectedListSettings.rows.map((row) =>
-          row.id === rowId
-            ? {
-                ...row,
-                values: {
-                  ...row.values,
-                  [columnId]: value,
-                },
-              }
-            : row
-        ),
-      });
+      updateSelectedListSettings(
+        {
+          ...selectedListSettings,
+          rows: selectedListSettings.rows.map((row) =>
+            row.id === rowId
+              ? {
+                  ...row,
+                  values: {
+                    ...row.values,
+                    [columnId]: value,
+                  },
+                }
+              : row
+          ),
+        },
+        {
+          historyMode: "coalesced",
+          historyKey: `node:${selectedNode.id}:list-cell:${rowId}:${columnId}`,
+        }
+      );
     },
-    [selectedListSettings, updateSelectedListSettings]
+    [selectedListSettings, selectedNode, updateSelectedListSettings]
   );
 
   const addSelectedListColumn = useCallback(() => {
@@ -2839,17 +3422,22 @@ export function CanvasView({ projectId }: Props) {
       label: `Column ${selectedListSettings.columns.length + 1}`,
     };
 
-    updateSelectedListSettings({
-      ...selectedListSettings,
-      columns: [...selectedListSettings.columns, nextColumn],
-      rows: selectedListSettings.rows.map((row) => ({
-        ...row,
-        values: {
-          ...row.values,
-          [nextColumn.id]: "",
-        },
-      })),
-    });
+    updateSelectedListSettings(
+      {
+        ...selectedListSettings,
+        columns: [...selectedListSettings.columns, nextColumn],
+        rows: selectedListSettings.rows.map((row) => ({
+          ...row,
+          values: {
+            ...row.values,
+            [nextColumn.id]: "",
+          },
+        })),
+      },
+      {
+        historyMode: "immediate",
+      }
+    );
   }, [selectedListSettings, updateSelectedListSettings]);
 
   const removeSelectedListColumn = useCallback(
@@ -2858,18 +3446,23 @@ export function CanvasView({ projectId }: Props) {
         return;
       }
 
-      updateSelectedListSettings({
-        ...selectedListSettings,
-        columns: selectedListSettings.columns.filter((column) => column.id !== columnId),
-        rows: selectedListSettings.rows.map((row) => {
-          const nextValues = { ...row.values };
-          delete nextValues[columnId];
-          return {
-            ...row,
-            values: nextValues,
-          };
-        }),
-      });
+      updateSelectedListSettings(
+        {
+          ...selectedListSettings,
+          columns: selectedListSettings.columns.filter((column) => column.id !== columnId),
+          rows: selectedListSettings.rows.map((row) => {
+            const nextValues = { ...row.values };
+            delete nextValues[columnId];
+            return {
+              ...row,
+              values: nextValues,
+            };
+          }),
+        },
+        {
+          historyMode: "immediate",
+        }
+      );
     },
     [selectedListSettings, updateSelectedListSettings]
   );
@@ -2879,19 +3472,24 @@ export function CanvasView({ projectId }: Props) {
       return;
     }
 
-    updateSelectedListSettings({
-      ...selectedListSettings,
-      rows: [
-        ...selectedListSettings.rows,
-        {
-          id: uid(),
-          values: selectedListSettings.columns.reduce<Record<string, string>>((acc, column) => {
-            acc[column.id] = "";
-            return acc;
-          }, {}),
-        },
-      ],
-    });
+    updateSelectedListSettings(
+      {
+        ...selectedListSettings,
+        rows: [
+          ...selectedListSettings.rows,
+          {
+            id: uid(),
+            values: selectedListSettings.columns.reduce<Record<string, string>>((acc, column) => {
+              acc[column.id] = "";
+              return acc;
+            }, {}),
+          },
+        ],
+      },
+      {
+        historyMode: "immediate",
+      }
+    );
   }, [selectedListSettings, updateSelectedListSettings]);
 
   const removeSelectedListRow = useCallback(
@@ -2900,20 +3498,26 @@ export function CanvasView({ projectId }: Props) {
         return;
       }
 
-      updateSelectedListSettings({
-        ...selectedListSettings,
-        rows: selectedListSettings.rows.filter((row) => row.id !== rowId),
-      });
+      updateSelectedListSettings(
+        {
+          ...selectedListSettings,
+          rows: selectedListSettings.rows.filter((row) => row.id !== rowId),
+        },
+        {
+          historyMode: "immediate",
+        }
+      );
     },
     [selectedListSettings, updateSelectedListSettings]
   );
 
   const generateTextTemplateOutputs = useCallback(
     (nodeId: string) => {
-      setCanvasDoc((prev) => {
+      runUserCanvasMutation((currentState) => {
+        const prev = currentState.canvasDoc;
         const templateNode = prev.workflow.nodes.find((node) => node.id === nodeId && node.kind === "text-template");
         if (!templateNode) {
-          return prev;
+          return null;
         }
 
         const listNode = templateNode.upstreamNodeIds
@@ -2925,7 +3529,7 @@ export function CanvasView({ projectId }: Props) {
         );
 
         if (!listNode || preview.disabledReason) {
-          return prev;
+          return null;
         }
 
         const existingGeneratedCount = getGeneratedTextOutputCount(prev.workflow.nodes, templateNode.id);
@@ -2942,23 +3546,22 @@ export function CanvasView({ projectId }: Props) {
         );
 
         if (outputNodes.length === 0) {
-          return prev;
+          return null;
         }
 
-        const nextDoc: CanvasDocument = {
-          ...prev,
-          workflow: {
-            nodes: [...prev.workflow.nodes, ...outputNodes],
+        return {
+          canvasDoc: {
+            ...prev,
+            workflow: {
+              nodes: [...prev.workflow.nodes, ...outputNodes],
+            },
           },
+          selectedNodeIds: [outputNodes[outputNodes.length - 1]!.id],
+          selectedConnection: null,
         };
-
-        queueCanvasSave(nextDoc);
-        setSelectedNodeIds(outputNodes.length > 0 ? [outputNodes[outputNodes.length - 1].id] : []);
-        setSelectedConnection(null);
-        return nextDoc;
       });
     },
-    [queueCanvasSave]
+    [runUserCanvasMutation]
   );
 
   const runNode = useCallback(
@@ -3076,6 +3679,96 @@ export function CanvasView({ projectId }: Props) {
   const insertMenuAllowsAssetInputs = insertMenu
     ? insertMenu.mode === "canvas" || (insertMenu.mode === "model-input" && !insertMenuTargetIsOpenAiTextModel)
     : false;
+  const canUndo = historyStacks.undo.length > 0;
+  const canRedo = historyStacks.redo.length > 0;
+
+  useEffect(() => {
+    publishCanvasMenuState({
+      selectedNodeCount: selectedNodeIds.length,
+      canConnectSelected,
+      canDuplicateSelected,
+      canUndo,
+      canRedo,
+    });
+  }, [canConnectSelected, canDuplicateSelected, canRedo, canUndo, selectedNodeIds.length]);
+
+  useEffect(() => {
+    return () => {
+      resetCanvasMenuState();
+    };
+  }, []);
+
+  useEffect(() => {
+    const testingWindow = window as Window & {
+      __NND_CANVAS_TEST__?: {
+        selectNodes: (nodeIds: string[]) => void;
+        moveSelectedNodesBy: (deltaX: number, deltaY: number) => void;
+        connectSelected: () => void;
+        openPrimaryEditor: (nodeId: string) => void;
+        getState: () => {
+          selectedNodeIds: string[];
+          openPopoverId: CanvasBottomBarPopoverId | null;
+          canUndo: boolean;
+          canRedo: boolean;
+        };
+      };
+    };
+
+    const api = {
+      selectNodes: (nodeIds: string[]) => {
+        commitPendingCoalescedHistory();
+        setTrackedSelectedConnection(null);
+        const validNodeIds = new Set(canvasDocRef.current.workflow.nodes.map((node) => node.id));
+        setTrackedSelectedNodeIds(nodeIds.filter((nodeId) => validNodeIds.has(nodeId)));
+        setOpenBottomBarPopoverId(null);
+      },
+      moveSelectedNodesBy: (deltaX: number, deltaY: number) => {
+        const positions = selectedNodeIdsRef.current.reduce<Record<string, { x: number; y: number }>>((acc, nodeId) => {
+          const node = canvasDocRef.current.workflow.nodes.find((candidate) => candidate.id === nodeId);
+          if (!node) {
+            return acc;
+          }
+
+          acc[nodeId] = {
+            x: Math.round(node.x + deltaX),
+            y: Math.round(node.y + deltaY),
+          };
+          return acc;
+        }, {});
+
+        commitNodePositions(positions);
+      },
+      connectSelected: () => {
+        connectSelectedNodes();
+      },
+      openPrimaryEditor: (nodeId: string) => {
+        if (canvasDocRef.current.workflow.nodes.some((node) => node.id === nodeId)) {
+          openPrimaryEditorForNode(nodeId);
+        }
+      },
+      getState: () => ({
+        selectedNodeIds: [...selectedNodeIdsRef.current],
+        openPopoverId: openBottomBarPopoverId,
+        canUndo: historyStacksRef.current.undo.length > 0,
+        canRedo: historyStacksRef.current.redo.length > 0,
+      }),
+    };
+
+    testingWindow.__NND_CANVAS_TEST__ = api;
+    return () => {
+      if (testingWindow.__NND_CANVAS_TEST__ === api) {
+        delete testingWindow.__NND_CANVAS_TEST__;
+      }
+    };
+  }, [
+    commitNodePositions,
+    commitPendingCoalescedHistory,
+    connectSelectedNodes,
+    openBottomBarPopoverId,
+    openPrimaryEditorForNode,
+    setTrackedSelectedConnection,
+    setTrackedSelectedNodeIds,
+  ]);
 
   return (
     <WorkspaceShell
@@ -3098,15 +3791,25 @@ export function CanvasView({ projectId }: Props) {
               onSelectSingleNode={selectSingleNode}
               onToggleNodeSelection={toggleNodeSelection}
               onMarqueeSelectNodes={addNodesToSelection}
-              onUpdateTextNote={(nodeId, prompt) => updateNode(nodeId, { prompt })}
+              onUpdateTextNote={(nodeId, prompt) =>
+                updateNode(
+                  nodeId,
+                  { prompt },
+                  {
+                    historyMode: "coalesced",
+                    historyKey: `node:${nodeId}:prompt`,
+                  }
+                )
+              }
               onRequestInsertMenu={handleCanvasInsertRequest}
               onDropFiles={(files, position) => {
                 uploadFilesToCanvas(files, position).catch(console.error);
               }}
               onViewportChange={updateViewport}
-              onNodePositionChange={(nodeId, nodePosition) => updateNode(nodeId, nodePosition)}
+              onCommitNodePositions={commitNodePositions}
               onConnectNodes={connectNodes}
-              onSelectConnection={setSelectedConnection}
+              onSelectConnection={selectCanvasConnection}
+              onNodeDoubleClick={openPrimaryEditorForNode}
             />
           )}
         </div>
@@ -3368,6 +4071,9 @@ export function CanvasView({ projectId }: Props) {
           onDownloadAssets={downloadAssets}
           onOpenCompare={openCompare}
           onOpenQueueInspect={openQueueInspect}
+          openPopoverId={openBottomBarPopoverId}
+          onOpenPopoverChange={setOpenBottomBarPopoverId}
+          onCommitTextEdits={commitPendingCoalescedHistory}
         />
       </div>
     </WorkspaceShell>

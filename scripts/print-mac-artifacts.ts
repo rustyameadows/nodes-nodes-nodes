@@ -1,7 +1,7 @@
 import { access, readFile } from "node:fs/promises";
 import path from "node:path";
 
-const APP_NAME = "Nodes Node Nodes";
+const APP_NAME = "Nodes Nodes Nodes";
 
 async function readPackageVersion() {
   const pkg = JSON.parse(await readFile(path.resolve("package.json"), "utf8")) as { version?: string };

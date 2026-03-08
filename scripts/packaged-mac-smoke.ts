@@ -9,7 +9,7 @@ import { Builder, By, until, type WebDriver } from "selenium-webdriver";
 import chrome from "selenium-webdriver/chrome.js";
 
 const execFile = promisify(execFileCallback);
-const APP_NAME = "Nodes Node Nodes";
+const APP_NAME = "Nodes Nodes Nodes";
 const APP_ID = "com.rustymeadows.nodesnodenodes";
 const FILTERS = {
   type: "all" as const,

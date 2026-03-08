@@ -32,12 +32,24 @@ export type MenuCommand =
   | { type: "project.settings" }
   | { type: "view.open"; view: WorkspaceView }
   | { type: "assets.import" }
+  | { type: "canvas.open-insert-menu" }
+  | { type: "canvas.connect-selected" }
+  | { type: "canvas.duplicate-selected" }
+  | { type: "canvas.delete-selection" }
+  | { type: "canvas.open-primary-editor" }
+  | { type: "canvas.undo" }
+  | { type: "canvas.redo" }
   | { type: "canvas.add-node"; nodeType: CanvasMenuNodeType };
 
 export type MenuContext = {
   projectId: string | null;
   view: AppRouteView | null;
   hasProjects: boolean;
+  selectedNodeCount: number;
+  canConnectSelected: boolean;
+  canDuplicateSelected: boolean;
+  canUndo: boolean;
+  canRedo: boolean;
 };
 
 export type WorkspaceSnapshotResponse = {

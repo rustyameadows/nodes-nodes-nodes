@@ -1,12 +1,13 @@
 import path from "node:path";
 import { fork, type ChildProcess } from "node:child_process";
+import { mkdirSync } from "node:fs";
 import { eq } from "drizzle-orm";
 import { app, BrowserWindow, dialog, ipcMain, Menu, protocol, type MenuItemConstructorOptions } from "electron";
 import type { AppEventPayload, CreateJobRequest, ImportAssetInput, MenuCommand, MenuContext } from "@/lib/ipc-contract";
 import type { AssetFilterState } from "@/components/workspace/types";
 import { createAppIcon } from "@/electron/brand";
 import { buildNativeMenuTemplate, type NativeMenuItemDescriptor } from "@/electron/native-menu";
-import { APP_ID, APP_NAME } from "@/lib/runtime/app-meta";
+import { APP_ID, APP_NAME, APP_USER_DATA_DIRNAME } from "@/lib/runtime/app-meta";
 import { getDb } from "@/lib/db/client";
 import { jobPreviewFrames } from "@/lib/db/schema";
 import { readAssetContent } from "@/lib/storage/local-storage";
@@ -34,11 +35,28 @@ const defaultMenuContext: MenuContext = {
   projectId: null,
   view: null,
   hasProjects: false,
+  selectedNodeCount: 0,
+  canConnectSelected: false,
+  canDuplicateSelected: false,
+  canUndo: false,
+  canRedo: false,
 };
+
+function configureStableUserDataPath() {
+  if (process.env.NODE_INTERFACE_APP_DATA) {
+    return;
+  }
+
+  // Keep desktop data on a stable on-disk path that does not move when display
+  // branding changes. This preserves existing local SQLite/assets storage.
+  const stableUserDataPath = path.join(app.getPath("appData"), APP_USER_DATA_DIRNAME);
+  mkdirSync(stableUserDataPath, { recursive: true });
+  app.setPath("userData", stableUserDataPath);
+}
 
 function ensureAppEnvironment() {
   if (!process.env.NODE_INTERFACE_APP_DATA) {
-    process.env.NODE_INTERFACE_APP_DATA = path.join(app.getPath("userData"), "node-interface-demo");
+    process.env.NODE_INTERFACE_APP_DATA = path.join(app.getPath("appData"), APP_USER_DATA_DIRNAME, "node-interface-demo");
   }
 }
 
@@ -398,6 +416,8 @@ function registerIpc() {
     return handler(...(args as never[]));
   });
 }
+
+configureStableUserDataPath();
 
 app.whenReady().then(async () => {
   ensureAppEnvironment();

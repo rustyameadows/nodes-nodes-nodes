@@ -147,6 +147,15 @@ export type WorkflowNodeSelectionState = {
   primarySelectedNodeId: string | null;
 };
 
+export type CanvasConnectionSelection = {
+  id: string;
+  kind: "input" | "prompt";
+  sourceNodeId: string;
+  targetNodeId: string;
+  semanticType: "text" | "image" | "video" | "function" | "citrus" | "neutral";
+  lineStyle: "solid" | "dashed";
+};
+
 export type CanvasDocument = {
   canvasViewport: {
     x: number;

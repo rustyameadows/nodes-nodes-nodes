@@ -54,3 +54,13 @@
 - Decision: automate the packaged `.app` verification path with Selenium plus `electron-chromedriver`.
 - Rationale: the packaged app is more stable to drive through WebDriver than Playwright's Electron attachment path in this environment.
 - Consequence: `npm run smoke:packaged:mac` launches the bundled `.app` through ChromeDriver and verifies the packaged lifecycle against a temporary app-data root.
+
+## 2026-03-08 - Canvas Undo/Redo Stays Local and Scoped
+- Decision: keep undo/redo as renderer-local canvas history instead of a persisted app-wide history system.
+- Rationale: the first pass needs reliable canvas editing recovery without coupling async worker hydration, queue changes, or viewport movement into a global command log.
+- Consequence: undo/redo covers user-initiated canvas graph edits and bottom-bar node edits only, and resets when the canvas view is reloaded or the session changes.
+
+## 2026-03-08 - Desktop Data Path Is Pinned Independently From Branding
+- Decision: pin Electron `userData` to a stable on-disk directory instead of letting it follow the display name.
+- Rationale: Electron defaults `userData` from the app name, and a branding-only rename should never make the app look blank or silently switch SQLite/assets folders.
+- Consequence: the packaged app name can change without moving live local data, and the macOS data root intentionally stays at the compatibility path `~/Library/Application Support/Nodes Node Nodes/node-interface-demo`.

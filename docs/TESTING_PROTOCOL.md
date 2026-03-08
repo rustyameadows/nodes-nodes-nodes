@@ -42,6 +42,13 @@ What it does:
 - creates a project from the native `File > New Project` menu
 - triggers one native `Canvas > Add Model Node` command on canvas
 - writes a canvas snapshot with two nodes through the live preload bridge
+- verifies canvas interaction behavior in the real Electron window:
+  - `A` opens the insert menu
+  - multi-selected nodes move as one batch
+  - `C` connects exactly two selected nodes
+  - `Enter` opens the selected node's primary bottom-bar editor
+  - node double-click opens the same primary editor mapping
+  - `Cmd/Ctrl+Z` and `Cmd/Ctrl+Shift+Z` undo/redo batch move, connection, bottom-bar edit, and node insertion
 - imports an SVG asset through the live preload bridge
 - navigates through assets, queue, project settings, and app settings through native menu commands
 - verifies:
@@ -51,6 +58,7 @@ What it does:
   - SQLite file is created
   - native new-project and add-node commands round-trip into the renderer
   - canvas data round-trips
+  - canvas shortcuts stay canvas-scoped and only run after editable controls are blurred
   - asset metadata exists
   - asset file exists on disk
   - queue screen renders
@@ -176,17 +184,22 @@ Run this when touching workflow or asset UX:
 2. Create a project from the launcher.
 3. Confirm the canvas route loads.
 4. Add or restore at least one text note and one model node.
-5. Import an asset.
-6. Open the Assets view and confirm the imported asset appears.
-7. Open Project Settings and confirm the project metadata renders and provider credentials do not appear there.
-8. Open App Settings and confirm provider credentials render there.
-9. If testing on macOS, confirm:
+5. Multi-select two nodes and drag them together.
+6. Press `C` with exactly two selected nodes and confirm a connection is created.
+7. Press `Enter` on a single selected node and confirm the expected bottom-bar tray opens.
+8. Double-click a node and confirm it opens the same primary tray as `Enter`.
+9. Use `Cmd/Ctrl+Z` and `Cmd/Ctrl+Shift+Z` to undo/redo one move, one connection, and one bottom-bar edit.
+10. Import an asset.
+11. Open the Assets view and confirm the imported asset appears.
+12. Open Project Settings and confirm the project metadata renders and provider credentials do not appear there.
+13. Open App Settings and confirm provider credentials render there.
+14. If testing on macOS, confirm:
    - `File`, `Project`, `Canvas`, `Edit`, `View`, and `Window` menus appear
    - `Cmd+,` opens App Settings
    - `File > New Project` opens a new project
    - `Project > Assets` / `Queue` / `Project Settings` match the in-app menu behavior
-   - `Canvas` add-node items work on canvas and are disabled off-canvas
-10. If API keys are configured, run at least one real provider job and verify:
+   - `Canvas > Add Node…`, `Connect Selected Nodes`, `Duplicate Selected Node`, `Undo Canvas Change`, and `Redo Canvas Change` enable or disable correctly on canvas
+15. If API keys are configured, run at least one real provider job and verify:
    - queue row created
    - state changes visible
    - output lands on canvas or in assets as appropriate
@@ -194,7 +207,7 @@ Run this when touching workflow or asset UX:
 ## Manual Packaged-App Checklist
 Run this against the packaged `.app` after `npm run package:mac`:
 
-1. Open `release/mac-arm64/Nodes Node Nodes.app` from Finder.
+1. Open `release/mac-arm64/Nodes Nodes Nodes.app` from Finder.
 2. Confirm the app name and pink icon appear in macOS chrome.
 3. Open App Settings.
 4. Save an OpenAI or Topaz key to Keychain.

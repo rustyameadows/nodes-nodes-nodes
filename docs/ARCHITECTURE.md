@@ -21,12 +21,14 @@
    - claims jobs, heartbeats while running, calls provider adapters, persists preview frames and final outputs
 
 ## App Data Layout
-- App data root: Electron `userData` plus `/node-interface-demo`
+- App data root: explicit path under Electron `appData`, pinned to `~/Library/Application Support/Nodes Node Nodes/node-interface-demo` on macOS
 - SQLite file: `app.sqlite`
 - Asset binaries: `assets/<projectId>/...`
 - Preview frames: `previews/<jobId>/...`
 
 The runtime also works outside Electron for tests and CLI builds by falling back to a repo-local `.local-desktop` folder.
+
+On macOS desktop runs, local project data is resolved from a stable compatibility path instead of following the display name. This prevents branding changes from moving the live SQLite/assets directory.
 
 ## Core Services
 - `projects`
@@ -64,13 +66,40 @@ Available events:
 - `providers.changed`
 
 Native menu flow:
-- renderer reports `{ projectId, view, hasProjects }` through `setMenuContext`
+- renderer reports `{ projectId, view, hasProjects, selectedNodeCount, canConnectSelected, canDuplicateSelected, canUndo, canRedo }` through `setMenuContext`
 - main rebuilds the macOS app menu with project-aware enabled states and dynamic project submenus
 - main emits native menu commands back to renderer through `subscribeMenuCommand`
-- canvas-specific native menu commands are forwarded inside the renderer to `CanvasView`, which reuses the same insert helpers as the in-canvas insert popup
+- canvas-specific native menu commands are forwarded inside the renderer to `CanvasView`, which reuses the same insert helpers as the in-canvas insert popup and the same canvas command path as keyboard shortcuts
 - `App Settings` is a dedicated global route at `/settings/app`, separate from project-scoped settings
 
 TanStack Query owns persisted app data in the renderer and is invalidated from those desktop events.
+
+## Canvas Interaction Model
+- `CanvasView` owns a local canvas command layer for native menu commands and canvas-scoped keyboard shortcuts.
+- `InfiniteCanvas` renders live drag previews, but committed node movement is written back once per drag through `onCommitNodePositions`.
+- Multi-node drag uses the current selection as a batch and preserves relative spacing across the moved nodes.
+- `CanvasBottomBar` is partially controlled by `CanvasView` so `Enter` and node double-click can open deterministic primary editor trays.
+- Primary editor routing is resolved by node type:
+  - model -> `prompt`
+  - text note -> `note`
+  - list -> `list`
+  - text template -> `template`
+  - uploaded asset source -> `asset-details`
+  - generated asset / generated text -> `source-call`
+
+## Canvas History Model
+- Undo/redo is renderer-local and scoped to the active canvas document.
+- Each history entry stores:
+  - `canvasDoc`
+  - `selectedNodeIds`
+  - `selectedConnection`
+- Structural graph changes push immediate history entries.
+- Typing-like bottom-bar edits are coalesced by field and committed on blur, tray close, selection change, or a short idle timeout.
+- Undo/redo intentionally excludes:
+  - viewport pan/zoom
+  - worker-driven queue updates
+  - polling-driven generated output hydration
+  - async placeholder reconciliation for generated nodes
 
 ## Asset Delivery
 - Assets and preview frames are served through the read-only `app-asset://` protocol.

@@ -12,6 +12,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { getAssetFileUrl } from "@/components/workspace/client-api";
+import type { CanvasConnectionSelection } from "@/components/workspace/types";
 import { isRunnableOpenAiImageModel, parseImageSize } from "@/lib/openai-image-settings";
 import { isRunnableTopazGigapixelModel } from "@/lib/topaz-gigapixel-settings";
 import styles from "./infinite-canvas.module.css";
@@ -68,16 +69,9 @@ export type CanvasInsertRequest = {
   connectionPort?: "input" | "output";
 };
 
-type CanvasAccentType = "text" | "image" | "video" | "function" | "citrus" | "neutral";
+type CanvasAccentType = CanvasConnectionSelection["semanticType"];
 
-export type CanvasConnection = {
-  id: string;
-  kind: "input" | "prompt";
-  sourceNodeId: string;
-  targetNodeId: string;
-  semanticType: CanvasAccentType;
-  lineStyle: "solid" | "dashed";
-};
+export type CanvasConnection = CanvasConnectionSelection;
 
 type Props = {
   nodes: CanvasNode[];
@@ -91,9 +85,10 @@ type Props = {
   onRequestInsertMenu: (request: CanvasInsertRequest) => void;
   onDropFiles: (files: File[], position: { x: number; y: number }) => void;
   onViewportChange: (viewport: CanvasViewport) => void;
-  onNodePositionChange: (nodeId: string, position: { x: number; y: number }) => void;
+  onCommitNodePositions: (positions: Record<string, { x: number; y: number }>) => void;
   onConnectNodes: (sourceNodeId: string, targetNodeId: string) => void;
   onSelectConnection: (connection: CanvasConnection | null) => void;
+  onNodeDoubleClick: (nodeId: string) => void;
 };
 
 type InteractionState =
@@ -108,9 +103,13 @@ type InteractionState =
     }
   | {
       type: "drag";
-      nodeId: string;
+      nodeIds: string[];
+      anchorNodeId: string;
+      anchorStartX: number;
+      anchorStartY: number;
       pointerOffsetX: number;
       pointerOffsetY: number;
+      initialPositions: Record<string, { x: number; y: number }>;
     }
   | {
       type: "connect";
@@ -520,9 +519,10 @@ export function InfiniteCanvas({
   onRequestInsertMenu,
   onDropFiles,
   onViewportChange,
-  onNodePositionChange,
+  onCommitNodePositions,
   onConnectNodes,
   onSelectConnection,
+  onNodeDoubleClick,
 }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const nodeElementRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -557,6 +557,7 @@ export function InfiniteCanvas({
     targetX: number;
     targetY: number;
   } | null>(null);
+  const [dragDraftPositions, setDragDraftPositions] = useState<Record<string, { x: number; y: number }> | null>(null);
   const [marqueeDraft, setMarqueeDraft] = useState<{
     startX: number;
     startY: number;
@@ -564,12 +565,28 @@ export function InfiniteCanvas({
     endY: number;
   } | null>(null);
 
+  const displayNodes = useMemo(() => {
+    if (!dragDraftPositions) {
+      return nodes;
+    }
+
+    return nodes.map((node) =>
+      dragDraftPositions[node.id]
+        ? {
+            ...node,
+            x: dragDraftPositions[node.id].x,
+            y: dragDraftPositions[node.id].y,
+          }
+        : node
+    );
+  }, [dragDraftPositions, nodes]);
+
   const nodesById = useMemo(() => {
-    return nodes.reduce<Record<string, CanvasNode>>((acc, node) => {
+    return displayNodes.reduce<Record<string, CanvasNode>>((acc, node) => {
       acc[node.id] = node;
       return acc;
     }, {});
-  }, [nodes]);
+  }, [displayNodes]);
 
   const getNodeSize = useCallback(
     (nodeId: string) => {
@@ -580,7 +597,7 @@ export function InfiniteCanvas({
 
   useLayoutEffect(() => {
     const next: Record<string, { width: number; height: number }> = {};
-    for (const node of nodes) {
+    for (const node of displayNodes) {
       const element = nodeElementRefs.current[node.id];
       if (!element) {
         continue;
@@ -608,10 +625,10 @@ export function InfiniteCanvas({
 
       return prev;
     });
-  }, [nodes, selectedNodeIds]);
+  }, [displayNodes, selectedNodeIds]);
 
   const edges = useMemo(() => {
-    return nodes.flatMap((targetNode) => {
+    return displayNodes.flatMap((targetNode) => {
       const connections: CanvasConnection[] = [
         ...targetNode.upstreamNodeIds.map((sourceNodeId) => ({
           id: `input:${sourceNodeId}->${targetNode.id}`,
@@ -672,7 +689,7 @@ export function InfiniteCanvas({
           ): edge is NonNullable<typeof edge> => Boolean(edge)
         );
     });
-  }, [getNodeSize, nodes, nodesById]);
+  }, [displayNodes, getNodeSize, nodesById]);
 
   useEffect(() => {
     setView(viewport);
@@ -791,10 +808,25 @@ export function InfiniteCanvas({
 
       if (interaction.type === "drag") {
         const point = toWorldPoint(event.clientX, event.clientY);
-        onNodePositionChange(interaction.nodeId, {
-          x: point.x - interaction.pointerOffsetX,
-          y: point.y - interaction.pointerOffsetY,
-        });
+        const nextAnchorX = point.x - interaction.pointerOffsetX;
+        const nextAnchorY = point.y - interaction.pointerOffsetY;
+        const deltaX = nextAnchorX - interaction.anchorStartX;
+        const deltaY = nextAnchorY - interaction.anchorStartY;
+
+        setDragDraftPositions(
+          interaction.nodeIds.reduce<Record<string, { x: number; y: number }>>((acc, nodeId) => {
+            const startPosition = interaction.initialPositions[nodeId];
+            if (!startPosition) {
+              return acc;
+            }
+
+            acc[nodeId] = {
+              x: Math.round(startPosition.x + deltaX),
+              y: Math.round(startPosition.y + deltaY),
+            };
+            return acc;
+          }, {})
+        );
         return;
       }
 
@@ -824,7 +856,7 @@ export function InfiniteCanvas({
         targetY: point.y,
       });
     },
-    [onNodePositionChange, scheduleViewportCommit, toWorldPoint]
+    [scheduleViewportCommit, toWorldPoint]
   );
 
   const handlePointerUp = useCallback((event: PointerEvent) => {
@@ -841,6 +873,13 @@ export function InfiniteCanvas({
         });
       }
       clearConnectionDraft();
+    }
+
+    if (interaction.type === "drag") {
+      if (dragDraftPositions && Object.keys(dragDraftPositions).length > 0) {
+        onCommitNodePositions(dragDraftPositions);
+      }
+      setDragDraftPositions(null);
     }
 
     if (interaction.type === "marquee") {
@@ -869,7 +908,17 @@ export function InfiniteCanvas({
     }
 
     interactionRef.current = { type: "idle" };
-  }, [clearConnectionDraft, getNodeSize, isCanvasBackgroundTarget, nodes, onMarqueeSelectNodes, onRequestInsertMenu, toWorldPoint]);
+  }, [
+    clearConnectionDraft,
+    dragDraftPositions,
+    getNodeSize,
+    isCanvasBackgroundTarget,
+    nodes,
+    onCommitNodePositions,
+    onMarqueeSelectNodes,
+    onRequestInsertMenu,
+    toWorldPoint,
+  ]);
 
   useEffect(() => {
     window.addEventListener("pointermove", handlePointerMove);
@@ -1067,6 +1116,7 @@ export function InfiniteCanvas({
       if (event.shiftKey) {
         event.preventDefault();
         window.getSelection()?.removeAllRanges();
+        setDragDraftPositions(null);
         const point = toWorldPoint(event.clientX, event.clientY);
         interactionRef.current = {
           type: "marquee",
@@ -1085,6 +1135,7 @@ export function InfiniteCanvas({
       }
 
       onSelectSingleNode(null);
+      setDragDraftPositions(null);
       interactionRef.current = {
         type: "pan",
         startClientX: event.clientX,
@@ -1106,16 +1157,34 @@ export function InfiniteCanvas({
       }
 
       const point = toWorldPoint(event.clientX, event.clientY);
+      const draggingSelectedGroup = selectedNodeIds.includes(node.id) && selectedNodeIds.length > 1;
+      const draggedNodeIds = draggingSelectedGroup ? selectedNodeIds : [node.id];
+      const initialPositions = draggedNodeIds.reduce<Record<string, { x: number; y: number }>>((acc, nodeId) => {
+        const currentNode = nodesById[nodeId];
+        if (currentNode) {
+          acc[nodeId] = {
+            x: currentNode.x,
+            y: currentNode.y,
+          };
+        }
+        return acc;
+      }, {});
       interactionRef.current = {
         type: "drag",
-        nodeId: node.id,
+        nodeIds: draggedNodeIds,
+        anchorNodeId: node.id,
+        anchorStartX: node.x,
+        anchorStartY: node.y,
         pointerOffsetX: point.x - node.x,
         pointerOffsetY: point.y - node.y,
+        initialPositions,
       };
 
-      onSelectSingleNode(node.id);
+      if (!draggingSelectedGroup) {
+        onSelectSingleNode(node.id);
+      }
     },
-    [onSelectConnection, onSelectSingleNode, onToggleNodeSelection, toWorldPoint]
+    [nodesById, onSelectConnection, onSelectSingleNode, onToggleNodeSelection, selectedNodeIds, toWorldPoint]
   );
 
   const onPortPointerDown = useCallback(
@@ -1287,7 +1356,7 @@ export function InfiniteCanvas({
           ) : null}
         </svg>
 
-        {nodes.map((node) => {
+        {displayNodes.map((node) => {
           const isTextNote = node.kind === "text-note";
           const isListNode = node.kind === "list";
           const isTextTemplateNode = node.kind === "text-template";
@@ -1408,6 +1477,7 @@ export function InfiniteCanvas({
               }}
               onDoubleClick={(event) => {
                 event.stopPropagation();
+                onNodeDoubleClick(node.id);
               }}
               onPointerDown={(event) => onNodePointerDown(node, event)}
               onKeyDown={(event) => {

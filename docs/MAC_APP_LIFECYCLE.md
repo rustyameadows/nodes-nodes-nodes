@@ -26,9 +26,9 @@ npm run package:mac
 ```
 
 Expected artifacts:
-- `release/mac-arm64/Nodes Node Nodes.app`
-- `release/Nodes Node Nodes-<version>-arm64-mac.zip`
-- `release/Nodes Node Nodes-<version>-arm64-mac.zip.blockmap`
+- `release/mac-arm64/Nodes Nodes Nodes.app`
+- `release/Nodes Nodes Nodes-<version>-arm64-mac.zip`
+- `release/Nodes Nodes Nodes-<version>-arm64-mac.zip.blockmap`
 
 ## Automated Verification
 Run the packaged smoke:
@@ -59,8 +59,8 @@ npm run verify:mac-lifecycle
 That prints the final artifact paths after the packaged smoke passes.
 
 ## Finder Walkthrough
-1. Open `release/mac-arm64/Nodes Node Nodes.app` from Finder.
-2. Confirm the app name reads `Nodes Node Nodes`.
+1. Open `release/mac-arm64/Nodes Nodes Nodes.app` from Finder.
+2. Confirm the app name reads `Nodes Nodes Nodes`.
 3. Confirm the temporary pink square icon is used for the app.
 4. Create a project or open an existing packaged-app project.
 
@@ -113,5 +113,5 @@ To clear packaged-app credentials:
 
 ## Source-Run vs Packaged App
 - `npm run dev` launches the unpackaged source-run Electron app.
-- Finder or `release/mac-arm64/Nodes Node Nodes.app` launches the packaged app.
+- Finder or `release/mac-arm64/Nodes Nodes Nodes.app` launches the packaged app.
 - They are different processes and should be treated as different lifecycle stages during testing.
