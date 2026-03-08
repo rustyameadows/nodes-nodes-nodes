@@ -4,11 +4,22 @@ export function buildWorkspaceRoute(projectId: string, view: WorkspaceView) {
   return `/projects/${projectId}/${view}`;
 }
 
+export function buildAppHomeRoute() {
+  return "/";
+}
+
 export function buildAppSettingsRoute() {
   return "/settings/app";
 }
 
 export function inferWorkspaceRoute(pathname: string) {
+  if (pathname === buildAppHomeRoute()) {
+    return {
+      projectId: null,
+      view: "home" as AppRouteView,
+    } as const;
+  }
+
   if (pathname === buildAppSettingsRoute()) {
     return {
       projectId: null,

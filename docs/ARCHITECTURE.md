@@ -70,6 +70,7 @@ Native menu flow:
 - main rebuilds the macOS app menu with project-aware enabled states and dynamic project submenus
 - main emits native menu commands back to renderer through `subscribeMenuCommand`
 - canvas-specific native menu commands are forwarded inside the renderer to `CanvasView`, which reuses the same insert helpers as the in-canvas insert popup and the same canvas command path as keyboard shortcuts
+- `Home` is a dedicated app-level route at `/`
 - `App Settings` is a dedicated global route at `/settings/app`, separate from project-scoped settings
 
 TanStack Query owns persisted app data in the renderer and is invalidated from those desktop events.
@@ -135,7 +136,8 @@ TanStack Query owns persisted app data in the renderer and is invalidated from t
 4. `app-asset://` is registered.
 5. IPC handlers are registered.
 6. Worker is spawned.
-7. Renderer window is created and routed to the last-open project or launcher.
+7. Renderer window is created and routed to app home.
+8. App home lists projects and opens a selected project onto its canvas.
 
 ## Configuration
 Provider credentials resolve in this order:

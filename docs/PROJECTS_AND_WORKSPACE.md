@@ -20,9 +20,10 @@ Support multiple local projects with strict isolation and exactly one open works
 ## Workspace Rules
 - Only one project can be open at a time.
 - Opening a project does not merge state from any other project.
-- Startup restores the currently open project when available.
-- If no project exists, the launcher is shown.
+- Startup always lands on app home at `/`.
+- App home shows a create-project panel, active project cards, and a separate archived-project section when archived projects exist.
 - The native macOS `Project` menu mirrors the in-canvas `Menu` pill for view switching and project switching.
+- `Home` is available from the in-canvas `Menu` pill, app settings, and the native macOS `Project` menu.
 - Native project switching preserves the current workspace view when that view is project-scoped.
 
 ## Persisted State
@@ -56,5 +57,6 @@ Deleting a project removes:
 ## Startup Behavior
 1. Desktop runtime initializes SQLite and provider metadata.
 2. Renderer requests projects.
-3. If an open or last-active project exists, the app routes to that project canvas.
-4. Otherwise the launcher is shown.
+3. Renderer routes to app home at `/`.
+4. App home shows any existing projects and lets the user create or open a project.
+5. Opening a project routes to that project's canvas.

@@ -37,8 +37,8 @@ What it does:
 - launches the real Electron app from `dist/electron/main.cjs`
 - uses a temporary `NODE_INTERFACE_APP_DATA` directory
 - inspects the native application menu from Electron main
-- waits for the launcher
-- opens app settings from the launcher before any project exists
+- waits for app home
+- opens app settings from app home before any project exists
 - creates a project from the native `File > New Project` menu
 - triggers one native `Canvas > Add Model Node` command on canvas
 - writes a canvas snapshot with two nodes through the live preload bridge
@@ -54,7 +54,11 @@ What it does:
 - verifies:
   - preload bridge exists
   - native `File`, `Project`, `Canvas`, `View`, and `Window` menus exist
-  - launcher app settings works without a project
+  - app home app settings works without a project
+  - reloading `/` with existing projects stays on app home
+  - app home shows archived projects in a separate section when archived projects exist
+  - app home can reopen an existing project card
+  - `Home` works from the workspace Menu pill and native mac menu
   - SQLite file is created
   - native new-project and add-node commands round-trip into the renderer
   - canvas data round-trips
@@ -101,7 +105,7 @@ What it does:
 - verifies:
   - branded bundle metadata and icon wiring
   - preload bridge availability
-  - launcher render
+  - app home render
   - app settings render with provider credentials before any project exists
   - project creation
   - canvas round-trip
@@ -170,7 +174,7 @@ When debugging renderer UI separate from preload/main:
 2. open `http://localhost:5173`
 
 The renderer has a browser fallback bridge for smoke inspection only. Use this for:
-- launcher rendering
+- app home rendering
 - route rendering
 - CSS/token verification
 - quick TanStack Router/Query checks
@@ -181,25 +185,30 @@ Do not treat browser fallback mode as a substitute for Electron smoke.
 Run this when touching workflow or asset UX:
 
 1. Launch `npm run dev`.
-2. Create a project from the launcher.
-3. Confirm the canvas route loads.
-4. Add or restore at least one text note and one model node.
-5. Multi-select two nodes and drag them together.
-6. Press `C` with exactly two selected nodes and confirm a connection is created.
-7. Press `Enter` on a single selected node and confirm the expected bottom-bar tray opens.
-8. Double-click a node and confirm it opens the same primary tray as `Enter`.
-9. Use `Cmd/Ctrl+Z` and `Cmd/Ctrl+Shift+Z` to undo/redo one move, one connection, and one bottom-bar edit.
-10. Import an asset.
-11. Open the Assets view and confirm the imported asset appears.
-12. Open Project Settings and confirm the project metadata renders and provider credentials do not appear there.
-13. Open App Settings and confirm provider credentials render there.
-14. If testing on macOS, confirm:
+2. Confirm app home renders.
+3. Open App Settings from home and return to home.
+4. Create a project from app home.
+5. Confirm the canvas route loads.
+6. Open Home from the in-app `Menu` pill and confirm the project card is visible.
+7. Reopen the project from home.
+8. Add or restore at least one text note and one model node.
+9. Multi-select two nodes and drag them together.
+10. Press `C` with exactly two selected nodes and confirm a connection is created.
+11. Press `Enter` on a single selected node and confirm the expected bottom-bar tray opens.
+12. Double-click a node and confirm it opens the same primary tray as `Enter`.
+13. Use `Cmd/Ctrl+Z` and `Cmd/Ctrl+Shift+Z` to undo/redo one move, one connection, and one bottom-bar edit.
+14. Import an asset.
+15. Open the Assets view and confirm the imported asset appears.
+16. Open Project Settings and confirm the project metadata renders and provider credentials do not appear there.
+17. Open App Settings and confirm provider credentials render there.
+18. If testing on macOS, confirm:
    - `File`, `Project`, `Canvas`, `Edit`, `View`, and `Window` menus appear
    - `Cmd+,` opens App Settings
    - `File > New Project` opens a new project
+   - `Project > Home` returns to app home
    - `Project > Assets` / `Queue` / `Project Settings` match the in-app menu behavior
    - `Canvas > Add Node…`, `Connect Selected Nodes`, `Duplicate Selected Node`, `Undo Canvas Change`, and `Redo Canvas Change` enable or disable correctly on canvas
-15. If API keys are configured, run at least one real provider job and verify:
+19. If API keys are configured, run at least one real provider job and verify:
    - queue row created
    - state changes visible
    - output lands on canvas or in assets as appropriate

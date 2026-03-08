@@ -64,3 +64,8 @@
 - Decision: pin Electron `userData` to a stable on-disk directory instead of letting it follow the display name.
 - Rationale: Electron defaults `userData` from the app name, and a branding-only rename should never make the app look blank or silently switch SQLite/assets folders.
 - Consequence: the packaged app name can change without moving live local data, and the macOS data root intentionally stays at the compatibility path `~/Library/Application Support/Nodes Node Nodes/node-interface-demo`.
+
+## 2026-03-08 - Startup Lands On App Home
+- Decision: route desktop startup to a persistent app-level home view instead of auto-opening the last project route.
+- Rationale: a visible project picker is a better top-level desktop pattern now that the app supports multiple local projects plus app-level settings.
+- Consequence: `/` always renders app home, project picking moves onto a dedicated grid/list screen, and the open-project marker remains metadata rather than startup routing state.

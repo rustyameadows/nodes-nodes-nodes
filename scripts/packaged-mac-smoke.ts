@@ -156,13 +156,13 @@ async function main() {
         }));
     });
 
-    await waitForHeading(driver, "Start a Project");
+    await waitForHeading(driver, "App Home");
     await clickButton(driver, "App Settings");
     await waitForUrl(driver, /#?\/settings\/app$/);
     await waitForHeading(driver, "App Settings");
     await waitForHeading(driver, "Provider Credentials");
-    await clickButton(driver, "Back to Launcher");
-    await waitForHeading(driver, "Start a Project");
+    await clickButton(driver, "Back to Home");
+    await waitForHeading(driver, "App Home");
     await clickButton(driver, "Create Project");
     await waitForUrl(driver, /#\/projects\/[^/]+\/canvas$/);
 

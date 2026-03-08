@@ -2,7 +2,7 @@
 
 ## Workspace Views
 - `/`
-  - launcher or redirect to the current project
+  - app home with create-project actions, active project grid, and archived project section
 - `/settings/app`
   - app-wide provider credentials and readiness
 - `/projects/$projectId/canvas`
@@ -87,6 +87,8 @@ Controls:
 - filtering by type, provider, tag, flagged state, and rating
 
 ## Desktop-Specific UX Changes
+- app startup lands on the app home view instead of auto-resuming directly into a project route
+- app home is reachable from the in-canvas `Menu` pill, app settings, and the native macOS `Project` menu
 - browser uploads are replaced by native file dialogs
 - asset and preview rendering uses `app-asset://` URLs
 - renderer never sees raw local file paths

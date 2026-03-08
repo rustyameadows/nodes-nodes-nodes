@@ -50,6 +50,8 @@ test("builds project and canvas menu items with context-aware enabled states", (
 
   assert.equal(findMenuItem(template, "file.import-assets")?.enabled, true);
   assert.equal(findMenuItem(template, "app.settings")?.accelerator, "CommandOrControl+,");
+  assert.equal(findMenuItem(template, "project.home")?.enabled, true);
+  assert.equal(findMenuItem(template, "project.home")?.checked, false);
   assert.equal(findMenuItem(template, "project.view.canvas")?.checked, true);
   assert.equal(findMenuItem(template, "canvas.open-insert-menu")?.enabled, true);
   assert.equal(findMenuItem(template, "canvas.add.model")?.enabled, true);
@@ -125,7 +127,7 @@ test("keeps project-scoped actions separate from app settings", () => {
   assert.equal(findMenuItem(template, "app.settings")?.enabled, true);
 });
 
-test("keeps app settings available when no projects exist", () => {
+test("keeps app-level navigation available when no projects exist", () => {
   const template = buildNativeMenuTemplate({
     appName: "Nodes Nodes Nodes",
     isMac: true,
@@ -143,7 +145,38 @@ test("keeps app settings available when no projects exist", () => {
     projects: [],
   });
 
+  assert.equal(findMenuItem(template, "project.home")?.enabled, true);
   assert.equal(findMenuItem(template, "app.settings")?.enabled, true);
   assert.equal(findMenuItem(template, "file.import-assets")?.enabled, false);
   assert.equal(findMenuItem(template, "project.settings")?.enabled, false);
+});
+
+test("marks Home as the current project menu item on the app home route", () => {
+  const template = buildNativeMenuTemplate({
+    appName: "Nodes Nodes Nodes",
+    isMac: true,
+    isDev: false,
+    context: {
+      projectId: "project-1",
+      view: "home",
+      hasProjects: true,
+      selectedNodeCount: 0,
+      canConnectSelected: false,
+      canDuplicateSelected: false,
+      canUndo: false,
+      canRedo: false,
+    },
+    projects: [
+      {
+        id: "project-1",
+        name: "Alpha",
+        status: "active",
+        isOpen: true,
+      },
+    ],
+  });
+
+  assert.equal(findMenuItem(template, "project.home")?.checked, true);
+  assert.equal(findMenuItem(template, "project.view.canvas")?.checked, false);
+  assert.equal(findMenuItem(template, "project.settings")?.checked, false);
 });

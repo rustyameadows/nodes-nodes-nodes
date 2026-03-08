@@ -11,7 +11,12 @@ import {
 import type { Project, WorkspaceView } from "@/components/workspace/types";
 import { queryKeys } from "@/renderer/query";
 import { useRouter } from "@/renderer/navigation";
-import { buildAppSettingsRoute, buildWorkspaceRoute, inferWorkspaceRoute } from "@/renderer/workspace-route";
+import {
+  buildAppHomeRoute,
+  buildAppSettingsRoute,
+  buildWorkspaceRoute,
+  inferWorkspaceRoute,
+} from "@/renderer/workspace-route";
 import { publishCanvasMenuCommand } from "@/renderer/canvas-menu-command-bus";
 import { subscribeToCanvasMenuState } from "@/renderer/canvas-menu-context-bus";
 import { useLocation } from "@tanstack/react-router";
@@ -77,7 +82,10 @@ export function NativeMenuBridge() {
   }, []);
 
   const resolveCurrentView = useCallback(
-    (): WorkspaceView => (routeState.view && routeState.view !== "app-settings" ? routeState.view : "canvas"),
+    (): WorkspaceView =>
+      routeState.view && routeState.view !== "app-settings" && routeState.view !== "home"
+        ? routeState.view
+        : "canvas",
     [routeState.view]
   );
 
@@ -101,7 +109,7 @@ export function NativeMenuBridge() {
     (view: WorkspaceView) => {
       const projectId = resolveTargetProjectId();
       if (!projectId) {
-        router.push("/");
+        router.push(buildAppHomeRoute());
         return;
       }
 
@@ -113,12 +121,16 @@ export function NativeMenuBridge() {
   const handleOpenSettings = useCallback(() => {
     const projectId = resolveTargetProjectId();
     if (!projectId) {
-      router.push("/");
+      router.push(buildAppHomeRoute());
       return;
     }
 
     router.push(buildWorkspaceRoute(projectId, "settings"));
   }, [resolveTargetProjectId, router]);
+
+  const handleOpenHome = useCallback(() => {
+    router.push(buildAppHomeRoute());
+  }, [router]);
 
   const handleOpenAppSettings = useCallback(() => {
     router.push(buildAppSettingsRoute());
@@ -149,6 +161,11 @@ export function NativeMenuBridge() {
         return;
       }
 
+      if (command.type === "app.home") {
+        handleOpenHome();
+        return;
+      }
+
       if (command.type === "app.settings") {
         handleOpenAppSettings();
         return;
@@ -175,7 +192,15 @@ export function NativeMenuBridge() {
     });
 
     return unsubscribe;
-  }, [handleImportAssets, handleNewProject, handleOpenAppSettings, handleOpenProject, handleOpenSettings, handleOpenView]);
+  }, [
+    handleImportAssets,
+    handleNewProject,
+    handleOpenAppSettings,
+    handleOpenHome,
+    handleOpenProject,
+    handleOpenSettings,
+    handleOpenView,
+  ]);
 
   return null;
 }

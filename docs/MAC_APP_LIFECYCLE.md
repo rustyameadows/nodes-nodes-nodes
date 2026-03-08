@@ -40,7 +40,7 @@ npm run smoke:packaged:mac
 This packages the app, launches the bundled `.app` with Selenium + `electron-chromedriver`, and verifies:
 - bundle metadata and icon wiring
 - preload bridge availability
-- launcher render
+- app home render
 - app settings render with provider credentials before any project exists
 - project creation
 - canvas save/reload
@@ -62,7 +62,8 @@ That prints the final artifact paths after the packaged smoke passes.
 1. Open `release/mac-arm64/Nodes Nodes Nodes.app` from Finder.
 2. Confirm the app name reads `Nodes Nodes Nodes`.
 3. Confirm the temporary pink square icon is used for the app.
-4. Create a project or open an existing packaged-app project.
+4. Confirm app home lists any existing projects.
+5. Create a project or open an existing packaged-app project.
 
 ## Provider Credentials
 Open `App Settings` and use the `Provider Credentials` section.

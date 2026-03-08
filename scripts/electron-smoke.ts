@@ -45,6 +45,10 @@ function appSettingsRoutePattern() {
   return /#?\/settings\/app$/;
 }
 
+function appHomeRoutePattern() {
+  return /#?\/$/;
+}
+
 type SmokeCanvasNode = {
   id: string;
   label: string;
@@ -151,7 +155,7 @@ async function triggerWorkspaceView(
   runtime: RuntimeController,
   window: Page,
   itemId: string,
-  itemName: "Assets" | "Queue" | "Project Settings" | "App Settings"
+  itemName: "Home" | "Assets" | "Queue" | "Project Settings" | "App Settings"
 ) {
   if (runtime.triggerNativeMenuItem) {
     await runtime.triggerNativeMenuItem(itemId);
@@ -469,13 +473,13 @@ async function main() {
     console.log("Provider readiness:", JSON.stringify(providerSummary, null, 2));
 
     await withTimeout(
-      "launcher heading",
-      window.getByRole("heading", { name: "Start a Project" }).waitFor({ state: "visible", timeout: 15_000 })
+      "app home heading",
+      window.getByRole("heading", { name: "App Home" }).waitFor({ state: "visible", timeout: 15_000 })
     );
-    console.log("Launcher rendered");
+    console.log("App home rendered");
 
     await withTimeout(
-      "launcher app settings button",
+      "home app settings button",
       window.getByRole("button", { name: "App Settings" }).waitFor({ state: "visible", timeout: 15_000 })
     );
     await window.getByRole("button", { name: "App Settings" }).click();
@@ -488,14 +492,14 @@ async function main() {
       "provider credentials heading",
       window.getByRole("heading", { name: "Provider Credentials" }).waitFor({ state: "visible", timeout: 15_000 })
     );
-    console.log("Launcher app settings entry point verified");
+    console.log("Home app settings entry point verified");
 
-    await window.getByRole("button", { name: "Back to Launcher" }).click();
+    await window.getByRole("button", { name: "Back to Home" }).click();
     await withTimeout(
-      "launcher return",
-      window.getByRole("heading", { name: "Start a Project" }).waitFor({ state: "visible", timeout: 15_000 })
+      "home return",
+      window.getByRole("heading", { name: "App Home" }).waitFor({ state: "visible", timeout: 15_000 })
     );
-    console.log("Returned to launcher from app settings");
+    console.log("Returned to app home from app settings");
 
     if (runtime.triggerNativeMenuItem) {
       await runtime.triggerNativeMenuItem("file.new-project");
@@ -881,6 +885,58 @@ async function main() {
     );
     await window.screenshot({ path: projectSettingsScreenshotPath, fullPage: true });
     console.log("Project settings screenshot:", projectSettingsScreenshotPath);
+
+    await openMenuItem(window, "Home");
+    await withTimeout("home route from menu pill", window.waitForURL(appHomeRoutePattern()));
+    await withTimeout(
+      "home heading from menu pill",
+      window.getByRole("heading", { name: "App Home" }).waitFor({ state: "visible", timeout: 15_000 })
+    );
+    console.log("Workspace Menu pill Home navigation verified");
+
+    await window.reload();
+    await withTimeout("home reload", window.waitForLoadState("domcontentloaded"));
+    await withTimeout(
+      "home heading after reload",
+      window.getByRole("heading", { name: "App Home" }).waitFor({ state: "visible", timeout: 15_000 })
+    );
+    console.log("Home-first startup behavior verified after reload");
+
+    const archivedProjectId = await window.evaluate(async () => {
+      const archivedProject = await window.nodeInterface.createProject("Archived Smoke Project");
+      await window.nodeInterface.updateProject(archivedProject.id, { status: "archived" });
+      return archivedProject.id;
+    });
+    assert.ok(archivedProjectId, "Expected archived project id.");
+    await withTimeout(
+      "archived projects section",
+      window.getByRole("heading", { name: "Archived Projects" }).waitFor({ state: "visible", timeout: 15_000 })
+    );
+    await withTimeout(
+      "archived project card",
+      window.getByRole("button", { name: "Open project Archived Smoke Project" }).waitFor({
+        state: "visible",
+        timeout: 15_000,
+      })
+    );
+    console.log("Home archived projects section verified");
+
+    await window.getByRole("button", { name: `Open project ${projectNameValue}` }).click();
+    await withTimeout("canvas route from home card", window.waitForURL(projectRoutePattern(projectId, "canvas")));
+    console.log("Home project card navigation verified");
+
+    if (runtime.triggerNativeMenuItem) {
+      await runtime.triggerNativeMenuItem("project.home");
+      await withTimeout("native menu home route", window.waitForURL(appHomeRoutePattern()));
+      await withTimeout(
+        "native menu home heading",
+        window.getByRole("heading", { name: "App Home" }).waitFor({ state: "visible", timeout: 15_000 })
+      );
+      console.log("Native Project > Home navigation verified");
+
+      await window.getByRole("button", { name: `Open project ${projectNameValue}` }).click();
+      await withTimeout("canvas route after native home", window.waitForURL(projectRoutePattern(projectId, "canvas")));
+    }
 
     if (runtime.triggerNativeMenuItem) {
       await runtime.triggerNativeMenuItem("app.settings");

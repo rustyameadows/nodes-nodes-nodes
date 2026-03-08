@@ -113,6 +113,15 @@ export function buildNativeMenuTemplate({
       label: "Project",
       submenu: [
         {
+          id: "project.home",
+          label: "Home",
+          type: "checkbox",
+          checked: context.view === "home",
+          enabled: true,
+          command: { type: "app.home" },
+        },
+        { type: "separator" },
+        {
           id: "project.view.canvas",
           label: "Canvas",
           type: "checkbox",

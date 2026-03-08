@@ -26,6 +26,7 @@ export type AppEventPayload = {
 export type CanvasMenuNodeType = "model" | "text-note" | "list" | "text-template";
 
 export type MenuCommand =
+  | { type: "app.home" }
   | { type: "project.new" }
   | { type: "project.open"; projectId: string }
   | { type: "app.settings" }

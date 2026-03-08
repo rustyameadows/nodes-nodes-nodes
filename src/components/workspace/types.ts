@@ -18,7 +18,7 @@ export type ProviderRequirement = {
 };
 
 export type WorkspaceView = "canvas" | "assets" | "queue" | "settings";
-export type AppRouteView = WorkspaceView | "app-settings";
+export type AppRouteView = WorkspaceView | "home" | "app-settings";
 
 export type ProviderModelCapabilities = {
   text: boolean;

@@ -17,7 +17,7 @@ import type {
   ProviderModel,
 } from "@/components/workspace/types";
 import { queryKeys } from "@/renderer/query";
-import { buildWorkspaceRoute } from "@/renderer/workspace-route";
+import { buildAppHomeRoute, buildWorkspaceRoute } from "@/renderer/workspace-route";
 import styles from "./settings-view.module.css";
 
 const PROVIDER_LABELS: Record<ProviderCredentialKey, string> = {
@@ -130,11 +130,22 @@ export function AppSettingsView() {
                 return;
               }
 
-              router.push("/");
+              router.push(buildAppHomeRoute());
             }}
           >
-            {currentProject ? "Back to Workspace" : "Back to Launcher"}
+            {currentProject ? "Back to Workspace" : "Back to Home"}
           </button>
+
+          {currentProject ? (
+            <button
+              type="button"
+              onClick={() => {
+                router.push(buildAppHomeRoute());
+              }}
+            >
+              Home
+            </button>
+          ) : null}
 
           {currentProject ? (
             <button

@@ -15,15 +15,17 @@ Ship a local-first desktop app where one person can:
 - local SQLite metadata
 - local asset and preview storage
 - one open workspace at a time
+- app-level home screen for project creation and project picking
 
 ## Core User Flows
-1. Create a project and land on an empty canvas.
-2. Add text notes, models, list nodes, text templates, or asset pointers.
-3. Connect nodes and run a model node.
-4. Watch queue state and inspect the exact provider call.
-5. Review outputs in grid, 2-up, or 4-up modes.
-6. Rate, flag, tag, and filter assets.
-7. Switch projects and return later with state restored.
+1. Start on app home and create or reopen a project.
+2. Land on an empty or previously saved canvas for that project.
+3. Add text notes, models, list nodes, text templates, or asset pointers.
+4. Connect nodes and run a model node.
+5. Watch queue state and inspect the exact provider call.
+6. Review outputs in grid, 2-up, or 4-up modes.
+7. Rate, flag, tag, and filter assets.
+8. Return to app home and switch projects cleanly.
 
 ## In Scope
 - Single local user
