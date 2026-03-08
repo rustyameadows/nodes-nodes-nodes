@@ -11,6 +11,7 @@ import type {
   ProviderId,
   ProviderModel,
   RunnableWorkflowNodeType,
+  WorkspaceView,
   WorkflowNode,
 } from "@/components/workspace/types";
 
@@ -19,6 +20,22 @@ export type AppEventName = "projects.changed" | "workspace.changed" | "assets.ch
 export type AppEventPayload = {
   event: AppEventName;
   projectId?: string;
+};
+
+export type CanvasMenuNodeType = "model" | "text-note" | "list" | "text-template";
+
+export type MenuCommand =
+  | { type: "project.new" }
+  | { type: "project.open"; projectId: string }
+  | { type: "project.settings" }
+  | { type: "view.open"; view: WorkspaceView }
+  | { type: "assets.import" }
+  | { type: "canvas.add-node"; nodeType: CanvasMenuNodeType };
+
+export type MenuContext = {
+  projectId: string | null;
+  view: WorkspaceView | null;
+  hasProjects: boolean;
 };
 
 export type WorkspaceSnapshotResponse = {
@@ -88,5 +105,7 @@ export type NodeInterface = {
   listProviderCredentials: () => Promise<ProviderCredentialStatus[]>;
   saveProviderCredential: (key: ProviderCredentialKey, value: string) => Promise<void>;
   clearProviderCredential: (key: ProviderCredentialKey) => Promise<void>;
+  setMenuContext: (context: MenuContext) => Promise<void>;
   subscribe: (event: AppEventName, listener: (payload: AppEventPayload) => void) => () => void;
+  subscribeMenuCommand: (listener: (command: MenuCommand) => void) => () => void;
 };

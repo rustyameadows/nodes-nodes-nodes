@@ -36,14 +36,18 @@ What it does:
 - builds the app
 - launches the real Electron app from `dist/electron/main.cjs`
 - uses a temporary `NODE_INTERFACE_APP_DATA` directory
+- inspects the native application menu from Electron main
 - waits for the launcher
-- creates a project
+- creates a project from the native `File > New Project` menu
+- triggers one native `Canvas > Add Model Node` command on canvas
 - writes a canvas snapshot with two nodes through the live preload bridge
 - imports an SVG asset through the live preload bridge
-- navigates through assets, queue, and project settings
+- navigates through assets, queue, and project settings through native menu commands
 - verifies:
   - preload bridge exists
+  - native `File`, `Project`, `Canvas`, `View`, and `Window` menus exist
   - SQLite file is created
+  - native new-project and add-node commands round-trip into the renderer
   - canvas data round-trips
   - asset metadata exists
   - asset file exists on disk
@@ -169,7 +173,12 @@ Run this when touching workflow or asset UX:
 5. Import an asset.
 6. Open the Assets view and confirm the imported asset appears.
 7. Open Project Settings and confirm the project metadata renders.
-8. If API keys are configured, run at least one real provider job and verify:
+8. If testing on macOS, confirm:
+   - `File`, `Project`, `Canvas`, `Edit`, `View`, and `Window` menus appear
+   - `File > New Project` opens a new project
+   - `Project > Assets` / `Queue` / `Project Settings` match the in-app menu behavior
+   - `Canvas` add-node items work on canvas and are disabled off-canvas
+9. If API keys are configured, run at least one real provider job and verify:
    - queue row created
    - state changes visible
    - output lands on canvas or in assets as appropriate
@@ -187,6 +196,7 @@ Run this against the packaged `.app` after `npm run package:mac`:
 8. Confirm queue progress and final output persistence.
 9. Quit and relaunch the packaged app.
 10. Confirm the project reopens and Keychain-backed readiness persists.
+11. Confirm the native `Project` and `Canvas` menus behave the same as the unpackaged app.
 
 ## Troubleshooting
 

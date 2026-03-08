@@ -5,9 +5,15 @@ import { CanvasView } from "@/components/workspace/views/canvas-view";
 import { RootRouter } from "@/components/workspace/root-router";
 import { SettingsView } from "@/components/workspace/views/settings-view";
 import { QueueView } from "@/components/workspace/views/queue-view";
+import { NativeMenuBridge } from "@/renderer/native-menu-bridge";
 
 function RootLayout() {
-  return <Outlet />;
+  return (
+    <>
+      <NativeMenuBridge />
+      <Outlet />
+    </>
+  );
 }
 
 const rootRoute = createRootRoute({

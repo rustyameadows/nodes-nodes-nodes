@@ -19,6 +19,8 @@ const FILTERS = {
 type RuntimeController = {
   getPage: () => Promise<Page>;
   getMetadata: () => Promise<{ name: string; version: string; exePath: string }>;
+  getNativeMenuLabels?: () => Promise<string[]>;
+  triggerNativeMenuItem?: (itemId: string) => Promise<void>;
   close: () => Promise<void>;
 };
 
@@ -87,6 +89,20 @@ async function captureFailureState(window: Page | null, appDataRoot: string) {
 async function openMenuItem(window: Page, itemName: string) {
   await window.getByRole("button", { name: "Menu" }).click();
   await window.getByRole("button", { name: itemName }).click();
+}
+
+async function triggerWorkspaceView(
+  runtime: RuntimeController,
+  window: Page,
+  itemId: string,
+  itemName: "Assets" | "Queue" | "Project Settings"
+) {
+  if (runtime.triggerNativeMenuItem) {
+    await runtime.triggerNativeMenuItem(itemId);
+    return;
+  }
+
+  await openMenuItem(window, itemName);
 }
 
 async function readPackageVersion() {
@@ -202,6 +218,70 @@ async function launchUnpackagedRuntime(launchTarget: string, appDataRoot: string
         })),
         15_000
       ),
+    getNativeMenuLabels: async () =>
+      withTimeout(
+        "electron.menuLabels",
+        electronApp.evaluate(({ Menu }) => {
+          const menu = Menu.getApplicationMenu();
+          return (menu?.items || []).map((item) => item.label).filter((label): label is string => Boolean(label));
+        }),
+        15_000
+      ),
+    triggerNativeMenuItem: async (itemId: string) =>
+      withTimeout(
+        `electron.menuItem.${itemId}`,
+        electronApp.evaluate(
+          ({ BrowserWindow, Menu }, targetItemId) => {
+            const menu = Menu.getApplicationMenu();
+            if (!menu) {
+              throw new Error("Application menu is unavailable.");
+            }
+
+            const stack = [...menu.items];
+            let item:
+              | {
+                  id: string;
+                  click?: ((menuItem: unknown, browserWindow: unknown, event: unknown) => void) | undefined;
+                  submenu?: { items: unknown[] } | null;
+                }
+              | undefined;
+
+            while (stack.length > 0) {
+              const candidate = stack.shift() as
+                | {
+                    id: string;
+                    click?: ((menuItem: unknown, browserWindow: unknown, event: unknown) => void) | undefined;
+                    submenu?: { items: unknown[] } | null;
+                  }
+                | undefined;
+
+              if (!candidate) {
+                continue;
+              }
+
+              if (candidate.id === targetItemId) {
+                item = candidate;
+                break;
+              }
+
+              const submenuItems = (candidate.submenu?.items || []) as Array<{
+                id: string;
+                click?: ((menuItem: unknown, browserWindow: unknown, event: unknown) => void) | undefined;
+                submenu?: { items: unknown[] } | null;
+              }>;
+              stack.unshift(...submenuItems);
+            }
+
+            if (!item || !item.click) {
+              throw new Error(`Menu item not found or not clickable: ${targetItemId}`);
+            }
+
+            item.click(undefined, BrowserWindow.getFocusedWindow() || undefined, undefined);
+          },
+          itemId
+        ),
+        15_000
+      ),
     close: async () => {
       await electronApp.close();
     },
@@ -261,6 +341,16 @@ async function main() {
     );
     console.log("Preload bridge detected");
 
+    if (runtime.getNativeMenuLabels) {
+      const nativeMenuLabels = await runtime.getNativeMenuLabels();
+      assert.ok(nativeMenuLabels.includes("File"), "Expected File menu.");
+      assert.ok(nativeMenuLabels.includes("Project"), "Expected Project menu.");
+      assert.ok(nativeMenuLabels.includes("Canvas"), "Expected Canvas menu.");
+      assert.ok(nativeMenuLabels.includes("View"), "Expected View menu.");
+      assert.ok(nativeMenuLabels.includes("Window"), "Expected Window menu.");
+      console.log("Native menu verified:", nativeMenuLabels.join(", "));
+    }
+
     const providerSummary = await window.evaluate(async () => {
       const providers = await window.nodeInterface.listProviders();
       return providers
@@ -280,7 +370,11 @@ async function main() {
     );
     console.log("Launcher rendered");
 
-    await window.getByRole("button", { name: "Create Project" }).click();
+    if (runtime.triggerNativeMenuItem) {
+      await runtime.triggerNativeMenuItem("file.new-project");
+    } else {
+      await window.getByRole("button", { name: "Create Project" }).click();
+    }
     await withTimeout("canvas route", window.waitForURL(projectRoutePattern(undefined, "canvas")));
     console.log("Project created and canvas route loaded:", window.url());
 
@@ -290,6 +384,24 @@ async function main() {
     });
     assert.ok(projectId, "Expected a project id in the canvas route.");
     console.log("Active project:", projectId);
+
+    if (runtime.triggerNativeMenuItem) {
+      await runtime.triggerNativeMenuItem("canvas.add.model");
+      await withTimeout(
+        "native menu canvas insert",
+        window.waitForFunction(
+          async (activeProjectId) => {
+            const snapshot = await window.nodeInterface.getWorkspaceSnapshot(activeProjectId);
+            const nodes = ((snapshot.canvas?.canvasDocument as { workflow?: { nodes?: unknown[] } } | null)?.workflow?.nodes ||
+              []) as unknown[];
+            return nodes.length >= 1;
+          },
+          projectId,
+          { timeout: 15_000 }
+        )
+      );
+      console.log("Native Canvas menu insertion verified");
+    }
 
     const nodeLabels = await window.evaluate(async ({ activeProjectId }) => {
       await window.nodeInterface.saveWorkspaceSnapshot(activeProjectId, {
@@ -396,7 +508,7 @@ async function main() {
     assert.equal(assetCount, 1, "Expected one asset after import.");
     console.log("Asset listing verified");
 
-    await openMenuItem(window, "Assets");
+    await triggerWorkspaceView(runtime, window, "project.view.assets", "Assets");
     await withTimeout("assets route", window.waitForURL(projectRoutePattern(projectId, "assets")));
     await withTimeout(
       "asset preview",
@@ -409,7 +521,7 @@ async function main() {
     await window.screenshot({ path: assetsScreenshotPath, fullPage: true });
     console.log("Assets screenshot:", assetsScreenshotPath);
 
-    await openMenuItem(window, "Queue");
+    await triggerWorkspaceView(runtime, window, "project.view.queue", "Queue");
     await withTimeout("queue route", window.waitForURL(projectRoutePattern(projectId, "queue")));
     await withTimeout("queue heading", window.getByRole("heading", { name: "Queue" }).waitFor({ state: "visible", timeout: 15_000 }));
     await withTimeout(
@@ -419,7 +531,7 @@ async function main() {
     await window.screenshot({ path: queueScreenshotPath, fullPage: true });
     console.log("Queue screenshot:", queueScreenshotPath);
 
-    await openMenuItem(window, "Project Settings");
+    await triggerWorkspaceView(runtime, window, "project.settings", "Project Settings");
     await withTimeout("settings route", window.waitForURL(projectRoutePattern(projectId, "settings")));
     await withTimeout(
       "settings heading",

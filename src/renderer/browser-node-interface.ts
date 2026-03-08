@@ -8,7 +8,12 @@ import {
   type ProviderCredentialStatus,
   type ProviderModel,
 } from "@/components/workspace/types";
-import type { AppEventName, AppEventPayload, NodeInterface, WorkspaceSnapshotResponse } from "@/lib/ipc-contract";
+import type {
+  AppEventName,
+  AppEventPayload,
+  NodeInterface,
+  WorkspaceSnapshotResponse,
+} from "@/lib/ipc-contract";
 
 const STORAGE_KEY = "node-interface-browser-fallback";
 
@@ -251,6 +256,7 @@ export function installBrowserNodeInterface() {
       writeStore(store);
       broadcast("providers.changed");
     },
+    async setMenuContext() {},
     subscribe(eventName, listener) {
       const handler = (event: Event) => {
         const payload = (event as CustomEvent<AppEventPayload>).detail;
@@ -263,6 +269,9 @@ export function installBrowserNodeInterface() {
       return () => {
         window.removeEventListener("node-interface-browser-event", handler as EventListener);
       };
+    },
+    subscribeMenuCommand() {
+      return () => {};
     },
   };
 

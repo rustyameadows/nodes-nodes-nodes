@@ -70,6 +70,7 @@ import {
   isGeneratedModelTextNoteNode,
   isGeneratedTextNoteNode,
 } from "@/lib/list-template";
+import { subscribeToCanvasMenuCommand } from "@/renderer/canvas-menu-command-bus";
 import styles from "./canvas-view.module.css";
 
 const supportedOutputOrder = ["image", "video", "text"] as const;
@@ -562,6 +563,8 @@ export function CanvasView({ projectId }: Props) {
   const insertMenuRef = useRef<HTMLDivElement | null>(null);
   const assetPickerRef = useRef<HTMLDivElement | null>(null);
   const pendingUploadAnchorRef = useRef<{ x: number; y: number; connectToModelNodeId?: string } | null>(null);
+  const canvasSurfaceRef = useRef<HTMLDivElement | null>(null);
+  const nativeMenuInsertCountRef = useRef(0);
 
   const groupedProviders = useMemo(() => {
     return providers.reduce<Record<string, ProviderModel[]>>((acc, model) => {
@@ -1810,6 +1813,51 @@ export function CanvasView({ projectId }: Props) {
     [providers, queueCanvasSave]
   );
 
+  const getNativeMenuInsertPosition = useCallback(() => {
+    const rect = canvasSurfaceRef.current?.getBoundingClientRect();
+    if (!rect || rect.width === 0 || rect.height === 0) {
+      return nextCanvasNodePosition(canvasDoc.workflow.nodes.length);
+    }
+
+    const offsetIndex = nativeMenuInsertCountRef.current;
+    nativeMenuInsertCountRef.current += 1;
+
+    return {
+      x: Math.round((rect.width / 2 - canvasDoc.canvasViewport.x) / canvasDoc.canvasViewport.zoom + (offsetIndex % 3) * 44),
+      y: Math.round(
+        (rect.height / 2 - canvasDoc.canvasViewport.y) / canvasDoc.canvasViewport.zoom +
+          (Math.floor(offsetIndex / 3) % 3) * 36
+      ),
+    };
+  }, [canvasDoc.canvasViewport, canvasDoc.workflow.nodes.length]);
+
+  useEffect(() => {
+    return subscribeToCanvasMenuCommand((command) => {
+      if (isLoading) {
+        return;
+      }
+
+      const position = getNativeMenuInsertPosition();
+
+      if (command.nodeType === "model") {
+        addModelNode(position);
+        return;
+      }
+
+      if (command.nodeType === "text-note") {
+        addTextNote(position);
+        return;
+      }
+
+      if (command.nodeType === "list") {
+        addListNode(position);
+        return;
+      }
+
+      addTextTemplateNode(position);
+    });
+  }, [addListNode, addModelNode, addTextNote, addTextTemplateNode, getNativeMenuInsertPosition, isLoading]);
+
   const updateNode = useCallback(
     (nodeId: string, patch: Partial<WorkflowNode>) => {
       setCanvasDoc((prev) => {
@@ -3038,28 +3086,30 @@ export function CanvasView({ projectId }: Props) {
       queuePillPlacement="top-right"
     >
       <div className={styles.page}>
-        {isLoading ? (
-          <div className={styles.loading}>Loading canvas...</div>
-        ) : (
-          <InfiniteCanvas
-            nodes={canvasNodes}
-            selectedNodeIds={selectedNodeIds}
-            selectedConnectionId={selectedConnection?.id || null}
-            viewport={canvasDoc.canvasViewport}
-            onSelectSingleNode={selectSingleNode}
-            onToggleNodeSelection={toggleNodeSelection}
-            onMarqueeSelectNodes={addNodesToSelection}
-            onUpdateTextNote={(nodeId, prompt) => updateNode(nodeId, { prompt })}
-            onRequestInsertMenu={handleCanvasInsertRequest}
-            onDropFiles={(files, position) => {
-              uploadFilesToCanvas(files, position).catch(console.error);
-            }}
-            onViewportChange={updateViewport}
-            onNodePositionChange={(nodeId, nodePosition) => updateNode(nodeId, nodePosition)}
-            onConnectNodes={connectNodes}
-            onSelectConnection={setSelectedConnection}
-          />
-        )}
+        <div ref={canvasSurfaceRef} className={styles.canvasSurface}>
+          {isLoading ? (
+            <div className={styles.loading}>Loading canvas...</div>
+          ) : (
+            <InfiniteCanvas
+              nodes={canvasNodes}
+              selectedNodeIds={selectedNodeIds}
+              selectedConnectionId={selectedConnection?.id || null}
+              viewport={canvasDoc.canvasViewport}
+              onSelectSingleNode={selectSingleNode}
+              onToggleNodeSelection={toggleNodeSelection}
+              onMarqueeSelectNodes={addNodesToSelection}
+              onUpdateTextNote={(nodeId, prompt) => updateNode(nodeId, { prompt })}
+              onRequestInsertMenu={handleCanvasInsertRequest}
+              onDropFiles={(files, position) => {
+                uploadFilesToCanvas(files, position).catch(console.error);
+              }}
+              onViewportChange={updateViewport}
+              onNodePositionChange={(nodeId, nodePosition) => updateNode(nodeId, nodePosition)}
+              onConnectNodes={connectNodes}
+              onSelectConnection={setSelectedConnection}
+            />
+          )}
+        </div>
 
         {insertMenu ? (
           <div

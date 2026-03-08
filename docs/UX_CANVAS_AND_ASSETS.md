@@ -29,6 +29,12 @@
   - native asset import
   - generated asset pointer
   - uploaded asset pointer
+- macOS native `Canvas` menu mirrors the primary node insert actions:
+  - add model node
+  - add text note
+  - add list node
+  - add text template
+- native canvas insertions land at the current viewport center with a small stagger and use the same save/selection path as the insert popup
 - bottom settings bar remains the main node-configuration surface
 
 ## Queue Feedback

@@ -6,7 +6,7 @@ import {
   normalizeTextNoteSettings,
   getTextTemplateNodeSettings,
 } from "@/lib/list-template";
-import type { AppEventName } from "@/lib/ipc-contract";
+import type { AppEventName, MenuCommand, MenuContext } from "@/lib/ipc-contract";
 import type {
   AssetFilterState,
   CanvasDocument,
@@ -53,6 +53,10 @@ export async function saveProviderCredential(key: ProviderCredentialKey, value: 
 
 export async function clearProviderCredential(key: ProviderCredentialKey) {
   await window.nodeInterface.clearProviderCredential(key);
+}
+
+export async function setDesktopMenuContext(context: MenuContext) {
+  await window.nodeInterface.setMenuContext(context);
 }
 
 export async function getCanvasWorkspace(projectId: string) {
@@ -209,6 +213,10 @@ export function getPreviewFrameFileUrl(previewFrameId: string, createdAt: string
 
 export function subscribeToAppEvent(eventName: AppEventName, listener: (payload: { event: AppEventName; projectId?: string }) => void) {
   return window.nodeInterface.subscribe(eventName, listener);
+}
+
+export function subscribeToMenuCommand(listener: (command: MenuCommand) => void) {
+  return window.nodeInterface.subscribeMenuCommand(listener);
 }
 
 export function summarizeQueue(jobs: Job[]) {

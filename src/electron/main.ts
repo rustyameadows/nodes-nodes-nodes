@@ -1,10 +1,11 @@
 import path from "node:path";
 import { fork, type ChildProcess } from "node:child_process";
 import { eq } from "drizzle-orm";
-import { app, BrowserWindow, dialog, ipcMain, protocol } from "electron";
-import type { AppEventPayload, CreateJobRequest, ImportAssetInput } from "@/lib/ipc-contract";
+import { app, BrowserWindow, dialog, ipcMain, Menu, protocol, type MenuItemConstructorOptions } from "electron";
+import type { AppEventPayload, CreateJobRequest, ImportAssetInput, MenuCommand, MenuContext } from "@/lib/ipc-contract";
 import type { AssetFilterState } from "@/components/workspace/types";
 import { createAppIcon } from "@/electron/brand";
+import { buildNativeMenuTemplate, type NativeMenuItemDescriptor } from "@/electron/native-menu";
 import { APP_ID, APP_NAME } from "@/lib/runtime/app-meta";
 import { getDb } from "@/lib/db/client";
 import { jobPreviewFrames } from "@/lib/db/schema";
@@ -23,10 +24,17 @@ import { getWorkspaceSnapshot, saveWorkspaceSnapshot } from "@/lib/services/work
 
 const APP_EVENT_CHANNEL = "node-interface:event";
 const APP_INVOKE_CHANNEL = "node-interface:invoke";
+const MENU_COMMAND_CHANNEL = "node-interface:menu-command";
 
 let mainWindow: BrowserWindow | null = null;
 let workerProcess: ChildProcess | null = null;
 let isQuitting = false;
+const menuContextByWebContentsId = new Map<number, MenuContext>();
+const defaultMenuContext: MenuContext = {
+  projectId: null,
+  view: null,
+  hasProjects: false,
+};
 
 function ensureAppEnvironment() {
   if (!process.env.NODE_INTERFACE_APP_DATA) {
@@ -59,10 +67,81 @@ function broadcastEvent(payload: AppEventPayload) {
   }
 }
 
+function getMenuTargetWindow() {
+  return BrowserWindow.getFocusedWindow() || mainWindow || BrowserWindow.getAllWindows()[0] || null;
+}
+
+function emitMenuCommand(command: MenuCommand, window = getMenuTargetWindow()) {
+  if (!window || window.isDestroyed()) {
+    return;
+  }
+
+  window.webContents.send(MENU_COMMAND_CHANNEL, command);
+}
+
+function mapMenuDescriptorToElectronItem(descriptor: NativeMenuItemDescriptor): MenuItemConstructorOptions {
+  if (descriptor.type === "separator") {
+    return { type: "separator" };
+  }
+
+  const item: MenuItemConstructorOptions = {
+    ...(descriptor.id ? { id: descriptor.id } : {}),
+    ...(descriptor.label ? { label: descriptor.label } : {}),
+    ...(descriptor.role ? { role: descriptor.role as MenuItemConstructorOptions["role"] } : {}),
+    ...(descriptor.accelerator ? { accelerator: descriptor.accelerator } : {}),
+    ...(typeof descriptor.enabled === "boolean" ? { enabled: descriptor.enabled } : {}),
+    ...(typeof descriptor.checked === "boolean" ? { checked: descriptor.checked } : {}),
+    ...(descriptor.type ? { type: descriptor.type } : {}),
+    ...(descriptor.submenu
+      ? {
+          submenu: descriptor.submenu.map((itemDescriptor) => mapMenuDescriptorToElectronItem(itemDescriptor)),
+        }
+      : {}),
+  };
+
+  if (descriptor.command) {
+    item.click = () => {
+      emitMenuCommand(descriptor.command);
+    };
+  }
+
+  return item;
+}
+
+async function refreshApplicationMenu() {
+  try {
+    const targetWindow = getMenuTargetWindow();
+    const context = targetWindow
+      ? menuContextByWebContentsId.get(targetWindow.webContents.id) || defaultMenuContext
+      : defaultMenuContext;
+    const projects = await listProjects();
+    const template = buildNativeMenuTemplate({
+      appName: APP_NAME,
+      isMac: process.platform === "darwin",
+      isDev: process.env.NODE_ENV === "development",
+      context: {
+        ...context,
+        hasProjects: context.hasProjects || projects.length > 0,
+      },
+      projects: projects.map((project) => ({
+        id: project.id,
+        name: project.name,
+        status: project.status,
+        isOpen: Boolean(project.workspaceState?.isOpen),
+      })),
+    });
+
+    Menu.setApplicationMenu(
+      Menu.buildFromTemplate(template.map((descriptor) => mapMenuDescriptorToElectronItem(descriptor)))
+    );
+  } catch (error) {
+    console.error("Failed to refresh application menu", error);
+  }
+}
+
 async function createWindow() {
   const appIcon = createAppIcon();
-
-  mainWindow = new BrowserWindow({
+  const window = new BrowserWindow({
     title: APP_NAME,
     width: 1440,
     height: 960,
@@ -76,28 +155,41 @@ async function createWindow() {
       sandbox: false,
     },
   });
+  mainWindow = window;
 
-  mainWindow.webContents.on("console-message", (_event, level, message, line, sourceId) => {
+  window.on("focus", () => {
+    void refreshApplicationMenu();
+  });
+
+  window.on("closed", () => {
+    menuContextByWebContentsId.delete(window.webContents.id);
+    if (mainWindow === window) {
+      mainWindow = null;
+    }
+    void refreshApplicationMenu();
+  });
+
+  window.webContents.on("console-message", (_event, level, message, line, sourceId) => {
     console.log(`[renderer:${level}] ${message} (${sourceId}:${line})`);
   });
 
-  mainWindow.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedUrl) => {
+  window.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedUrl) => {
     console.error(`[renderer:load-failed] ${errorCode} ${errorDescription} (${validatedUrl})`);
   });
 
-  mainWindow.webContents.on("render-process-gone", (_event, details) => {
+  window.webContents.on("render-process-gone", (_event, details) => {
     console.error("[renderer:gone]", details.reason, details.exitCode);
   });
 
-  mainWindow.on("page-title-updated", (event) => {
+  window.on("page-title-updated", (event) => {
     event.preventDefault();
-    mainWindow?.setTitle(APP_NAME);
+    window.setTitle(APP_NAME);
   });
 
   if (process.env.NODE_ENV === "development") {
-    mainWindow.webContents.on("did-finish-load", async () => {
+    window.webContents.on("did-finish-load", async () => {
       try {
-        const state = await mainWindow.webContents.executeJavaScript(`
+        const state = await window.webContents.executeJavaScript(`
           ({
             title: document.title,
             bodyText: document.body?.innerText?.slice(0, 200) || "",
@@ -112,12 +204,14 @@ async function createWindow() {
   }
 
   if (process.env.NODE_ENV === "development") {
-    await mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL || "http://localhost:5173");
-    mainWindow.webContents.openDevTools({ mode: "detach" });
+    await window.loadURL(process.env.ELECTRON_RENDERER_URL || "http://localhost:5173");
+    window.webContents.openDevTools({ mode: "detach" });
+    await refreshApplicationMenu();
     return;
   }
 
-  await mainWindow.loadFile(path.join(__dirname, "../renderer/index.html"));
+  await window.loadFile(path.join(__dirname, "../renderer/index.html"));
+  await refreshApplicationMenu();
 }
 
 async function handleAssetProtocol(request: Request) {
@@ -193,21 +287,25 @@ function registerIpc() {
       const project = await createProject(name);
       broadcastEvent({ event: "projects.changed", projectId: project.id });
       broadcastEvent({ event: "workspace.changed", projectId: project.id });
+      await refreshApplicationMenu();
       return project;
     },
     updateProject: async (projectId: string, payload: { name?: string; status?: "active" | "archived" }) => {
       const project = await updateProject(projectId, payload);
       broadcastEvent({ event: "projects.changed", projectId });
+      await refreshApplicationMenu();
       return project;
     },
     deleteProject: async (projectId: string) => {
       await deleteProject(projectId);
       broadcastEvent({ event: "projects.changed", projectId });
+      await refreshApplicationMenu();
     },
     openProject: async (projectId: string) => {
       await openProject(projectId);
       broadcastEvent({ event: "projects.changed", projectId });
       broadcastEvent({ event: "workspace.changed", projectId });
+      await refreshApplicationMenu();
     },
     getWorkspaceSnapshot: async (projectId: string) => getWorkspaceSnapshot(projectId),
     saveWorkspaceSnapshot: async (
@@ -277,13 +375,26 @@ function registerIpc() {
       await clearProviderCredential(key);
       broadcastEvent({ event: "providers.changed" });
     },
+    setMenuContext: async (context: MenuContext, webContentsId?: number) => {
+      if (!webContentsId) {
+        return;
+      }
+
+      menuContextByWebContentsId.set(webContentsId, context);
+      await refreshApplicationMenu();
+    },
   } as const;
 
-  ipcMain.handle(APP_INVOKE_CHANNEL, async (_event, method: keyof typeof handlers, ...args: unknown[]) => {
+  ipcMain.handle(APP_INVOKE_CHANNEL, async (event, method: keyof typeof handlers, ...args: unknown[]) => {
     const handler = handlers[method];
     if (!handler) {
       throw new Error(`Unknown node interface method: ${String(method)}`);
     }
+
+    if (method === "setMenuContext") {
+      return handlers.setMenuContext(args[0] as MenuContext, event.sender.id);
+    }
+
     return handler(...(args as never[]));
   });
 }

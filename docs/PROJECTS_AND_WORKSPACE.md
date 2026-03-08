@@ -22,6 +22,8 @@ Support multiple local projects with strict isolation and exactly one open works
 - Opening a project does not merge state from any other project.
 - Startup restores the currently open project when available.
 - If no project exists, the launcher is shown.
+- The native macOS `Project` menu mirrors the in-canvas `Menu` pill for view switching and project switching.
+- Native project switching preserves the current workspace view when that view is project-scoped.
 
 ## Persisted State
 - Canvas document

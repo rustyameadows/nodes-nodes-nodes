@@ -13,6 +13,11 @@
   }
 }
 
+.canvasSurface {
+  position: absolute;
+  inset: 0;
+}
+
 .loading {
   position: absolute;
   inset: 0;

@@ -52,7 +52,9 @@ Available methods:
 - `listJobs`, `createJob`, `getJobDebug`
 - `listProviders`
 - `listProviderCredentials`, `saveProviderCredential`, `clearProviderCredential`
+- `setMenuContext`
 - `subscribe(eventName, listener)`
+- `subscribeMenuCommand(listener)`
 
 Available events:
 - `projects.changed`
@@ -60,6 +62,12 @@ Available events:
 - `assets.changed`
 - `jobs.changed`
 - `providers.changed`
+
+Native menu flow:
+- renderer reports `{ projectId, view, hasProjects }` through `setMenuContext`
+- main rebuilds the macOS app menu with project-aware enabled states and dynamic project submenus
+- main emits native menu commands back to renderer through `subscribeMenuCommand`
+- canvas-specific native menu commands are forwarded inside the renderer to `CanvasView`, which reuses the same insert helpers as the in-canvas insert popup
 
 TanStack Query owns persisted app data in the renderer and is invalidated from those desktop events.
 
