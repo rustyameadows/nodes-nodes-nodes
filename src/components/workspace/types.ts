@@ -10,6 +10,18 @@ export type ImageBackground = "auto" | "opaque" | "transparent";
 export type ImageModeration = "auto" | "low";
 export type ProviderRequirementKind = "env" | "executable";
 export type ProviderPromptMode = "required" | "optional" | "unsupported";
+export type ProviderModelBillingAvailability = "free_and_paid" | "paid_only";
+export type ProviderModelAccessStatus = "available" | "blocked" | "limited" | "unknown";
+export type ProviderModelAccessReason =
+  | "missing_key"
+  | "not_listed"
+  | "billing_required"
+  | "permission_denied"
+  | "quota_exhausted"
+  | "rate_limited"
+  | "temporary_unavailable"
+  | "invalid_input"
+  | "probe_failed";
 
 export type ProviderRequirement = {
   kind: ProviderRequirementKind;
@@ -27,6 +39,11 @@ export type ProviderModelCapabilities = {
   video: boolean;
   runnable: boolean;
   availability: "ready" | "coming_soon";
+  billingAvailability: ProviderModelBillingAvailability;
+  accessStatus: ProviderModelAccessStatus;
+  accessReason: ProviderModelAccessReason | null;
+  accessMessage: string | null;
+  lastCheckedAt: string | null;
   requiresApiKeyEnv: string | null;
   apiKeyConfigured: boolean;
   requirements: ProviderRequirement[];

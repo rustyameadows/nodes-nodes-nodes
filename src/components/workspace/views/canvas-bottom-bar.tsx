@@ -26,7 +26,7 @@ import type {
 } from "@/components/workspace/types";
 import type { CanvasBottomBarPopoverId } from "@/lib/canvas-primary-editor";
 import type { ModelParameterDefinition } from "@/lib/model-parameters";
-import { isRunnableOpenAiImageModel } from "@/lib/openai-image-settings";
+import { isRunnableImageModel } from "@/lib/provider-model-helpers";
 import type { TextTemplatePreview } from "@/lib/list-template";
 import styles from "./canvas-bottom-bar.module.css";
 
@@ -914,7 +914,7 @@ export function CanvasBottomBar({
                     <div className={styles.traySection}>
                       <span className={styles.traySectionLabel}>Execution</span>
                       <div className={styles.traySummary}>
-                        {isRunnableOpenAiImageModel(selectedModel?.providerId, selectedModel?.modelId)
+                        {isRunnableImageModel(selectedModel?.providerId, selectedModel?.modelId)
                           ? selectedNodeRunPreview.requestPayload.nodePayload.executionMode === "edit"
                             ? `Reference-image generation from ${selectedNodeRunPreview.requestPayload.nodePayload.inputImageAssetIds.length} image input${
                                 selectedNodeRunPreview.requestPayload.nodePayload.inputImageAssetIds.length === 1 ? "" : "s"

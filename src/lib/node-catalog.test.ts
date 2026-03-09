@@ -19,6 +19,11 @@ function createProviderModel(overrides: Partial<ProviderModel>): ProviderModel {
       video: false,
       runnable: true,
       availability: "ready",
+      billingAvailability: "free_and_paid",
+      accessStatus: "available",
+      accessReason: null,
+      accessMessage: null,
+      lastCheckedAt: null,
       requiresApiKeyEnv: "OPENAI_API_KEY",
       apiKeyConfigured: true,
       requirements: [],
@@ -49,6 +54,11 @@ const sampleProviders: ProviderModel[] = [
       video: false,
       runnable: true,
       availability: "ready",
+      billingAvailability: "free_and_paid",
+      accessStatus: "available",
+      accessReason: null,
+      accessMessage: null,
+      lastCheckedAt: null,
       requiresApiKeyEnv: "OPENAI_API_KEY",
       apiKeyConfigured: true,
       requirements: [],
@@ -72,6 +82,11 @@ const sampleProviders: ProviderModel[] = [
       video: false,
       runnable: false,
       availability: "ready",
+      billingAvailability: "free_and_paid",
+      accessStatus: "blocked",
+      accessReason: "missing_key",
+      accessMessage: "Save TOPAZ_API_KEY in Settings or set it in .env.local and restart the app.",
+      lastCheckedAt: null,
       requiresApiKeyEnv: "TOPAZ_API_KEY",
       apiKeyConfigured: false,
       requirements: [],
@@ -102,6 +117,100 @@ test("model catalog variants derive from provider catalog state", () => {
     ["model:openai:gpt-image-1.5", "model:openai:gpt-5-mini", "model:topaz:high_fidelity_v2"]
   );
   assert.equal(variants[2]?.status, "missing_key");
+});
+
+test("model catalog variants surface Gemini access states and paid-tier labels", () => {
+  const variants = getModelCatalogVariants([
+    createProviderModel({
+      providerId: "google-gemini",
+      modelId: "gemini-2.5-flash-image",
+      displayName: "Nano Banana",
+      capabilities: {
+        text: false,
+        image: true,
+        video: false,
+        runnable: false,
+        availability: "ready",
+        billingAvailability: "paid_only",
+        accessStatus: "blocked",
+        accessReason: "not_listed",
+        accessMessage: "Requires a paid Gemini API project.",
+        lastCheckedAt: "2026-03-09T00:00:00.000Z",
+        requiresApiKeyEnv: "GOOGLE_API_KEY",
+        apiKeyConfigured: true,
+        requirements: [],
+        promptMode: "required",
+        executionModes: ["generate", "edit"],
+        acceptedInputMimeTypes: [],
+        maxInputImages: 0,
+        parameters: [],
+        defaults: {},
+      },
+    }),
+    createProviderModel({
+      providerId: "google-gemini",
+      modelId: "gemini-2.5-flash",
+      displayName: "Gemini 2.5 Flash",
+      capabilities: {
+        text: true,
+        image: false,
+        video: false,
+        runnable: true,
+        availability: "ready",
+        billingAvailability: "free_and_paid",
+        accessStatus: "unknown",
+        accessReason: "probe_failed",
+        accessMessage: "Gemini model access could not be verified. Try refreshing access.",
+        lastCheckedAt: "2026-03-09T00:00:00.000Z",
+        requiresApiKeyEnv: "GOOGLE_API_KEY",
+        apiKeyConfigured: true,
+        requirements: [],
+        promptMode: "required",
+        executionModes: ["generate"],
+        acceptedInputMimeTypes: [],
+        maxInputImages: 0,
+        parameters: [],
+        defaults: {
+          textOutputTarget: "note",
+        },
+      },
+    }),
+    createProviderModel({
+      providerId: "google-gemini",
+      modelId: "gemini-3-flash-preview",
+      displayName: "Gemini 3 Flash",
+      capabilities: {
+        text: true,
+        image: false,
+        video: false,
+        runnable: true,
+        availability: "ready",
+        billingAvailability: "free_and_paid",
+        accessStatus: "limited",
+        accessReason: "rate_limited",
+        accessMessage: "This Gemini project is currently rate limited.",
+        lastCheckedAt: "2026-03-09T00:00:00.000Z",
+        requiresApiKeyEnv: "GOOGLE_API_KEY",
+        apiKeyConfigured: true,
+        requirements: [],
+        promptMode: "required",
+        executionModes: ["generate"],
+        acceptedInputMimeTypes: [],
+        maxInputImages: 0,
+        parameters: [],
+        defaults: {
+          textOutputTarget: "note",
+        },
+      },
+    }),
+  ]);
+
+  assert.equal(variants[0]?.availabilityLabel, "Requires paid tier");
+  assert.equal(variants[0]?.disabled, true);
+  assert.equal(variants[1]?.status, "unverified");
+  assert.equal(variants[1]?.disabled, false);
+  assert.equal(variants[2]?.status, "temporarily_limited");
+  assert.equal(variants[2]?.disabled, false);
 });
 
 test("insertable catalog entries respect canvas insertion context", () => {

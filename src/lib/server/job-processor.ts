@@ -4,17 +4,17 @@ import {
   createGeneratedTextNoteDescriptorsFromRawText,
   parseStructuredTextOutput,
 } from "@/lib/generated-text-output";
-import { buildOpenAiImageDebugRequest } from "@/lib/openai-image-settings";
-import { buildOpenAiTextDebugRequest, isRunnableOpenAiTextModel } from "@/lib/openai-text-settings";
 import { buildTopazGigapixelDebugRequest } from "@/lib/topaz-gigapixel-settings";
 import { getDb } from "@/lib/db/client";
 import { assets, jobAttempts, jobPreviewFrames, jobs } from "@/lib/db/schema";
 import { getProviderAdapter } from "@/lib/providers/registry";
 import { createImportedAsset } from "@/lib/services/assets";
 import { nowIso, newId } from "@/lib/services/common";
+import { updateProviderModelAccessState } from "@/lib/services/providers";
 import { readAssetContent, saveBufferAsPreview } from "@/lib/storage/local-storage";
 import { isStructuredTextOutputTarget, readOpenAiTextOutputTarget } from "@/lib/text-output-targets";
 import type { NodePayload, NormalizedPreviewFrame, ProviderId } from "@/lib/types";
+import { buildProviderDebugRequest, isRunnableTextModel } from "@/lib/provider-model-helpers";
 
 function asNodePayload(value: unknown): NodePayload {
   if (!value || typeof value !== "object") {
@@ -102,35 +102,20 @@ function buildProviderRequest(
   payload: NodePayload,
   inputAssets: Awaited<ReturnType<typeof loadInputAssets>>
 ) {
-  const providerRequestPreview =
-    providerId === "openai" && isRunnableOpenAiTextModel(providerId, modelId)
-      ? buildOpenAiTextDebugRequest({
-          modelId,
-          prompt: payload.prompt,
-          rawSettings: payload.settings,
-        })
-      : providerId === "openai"
-        ? buildOpenAiImageDebugRequest({
-            modelId,
-            prompt: payload.prompt,
-            executionMode: payload.executionMode,
-            rawSettings: payload.settings,
-            inputImageAssetIds: payload.inputImageAssetIds,
-          })
-        : providerId === "topaz"
-          ? buildTopazGigapixelDebugRequest({
-              modelId,
-              prompt: payload.prompt,
-              rawSettings: payload.settings,
-              inputImageAssetIds: payload.inputImageAssetIds,
-              inputAssets: inputAssets.map((asset) => ({
-                assetId: asset.assetId,
-                mimeType: asset.mimeType,
-                width: asset.width ?? null,
-                height: asset.height ?? null,
-              })),
-            })
-          : null;
+  const providerRequestPreview = buildProviderDebugRequest({
+    providerId,
+    modelId,
+    prompt: payload.prompt,
+    executionMode: payload.executionMode,
+    rawSettings: payload.settings,
+    inputImageAssetIds: payload.inputImageAssetIds,
+    inputAssets: inputAssets.map((asset) => ({
+      assetId: asset.assetId,
+      mimeType: asset.mimeType,
+      width: asset.width ?? null,
+      height: asset.height ?? null,
+    })),
+  });
 
   return {
     providerId,
@@ -359,8 +344,32 @@ export async function processJobById(jobId: string) {
       .run();
   } catch (error) {
     const { code, message, details } = toErrorMessage(error);
-    const shouldRetry = attemptNumber < existing.maxAttempts;
+    const retryable =
+      details && typeof details === "object" && "retryable" in details ? Boolean(details.retryable) : true;
+    const accessUpdate =
+      details && typeof details === "object" && "accessUpdate" in details && details.accessUpdate && typeof details.accessUpdate === "object"
+        ? (details.accessUpdate as {
+            accessStatus: "available" | "blocked" | "limited" | "unknown";
+            accessReason:
+              | "missing_key"
+              | "not_listed"
+              | "billing_required"
+              | "permission_denied"
+              | "quota_exhausted"
+              | "rate_limited"
+              | "temporary_unavailable"
+              | "invalid_input"
+              | "probe_failed"
+              | null;
+            accessMessage: string | null;
+          })
+        : null;
+    const shouldRetry = retryable && attemptNumber < existing.maxAttempts;
     const nextAvailableAt = new Date(Date.now() + Math.min(30_000, Math.pow(2, attemptNumber) * 1_000)).toISOString();
+
+    if (accessUpdate) {
+      await updateProviderModelAccessState(providerId, existing.modelId, accessUpdate);
+    }
 
     db.insert(jobAttempts)
       .values({

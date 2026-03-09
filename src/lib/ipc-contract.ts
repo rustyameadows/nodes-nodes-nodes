@@ -127,6 +127,7 @@ export type NodeInterface = {
   listProviderCredentials: () => Promise<ProviderCredentialStatus[]>;
   saveProviderCredential: (key: ProviderCredentialKey, value: string) => Promise<void>;
   clearProviderCredential: (key: ProviderCredentialKey) => Promise<void>;
+  refreshProviderAccess: (providerId?: ProviderId) => Promise<void>;
   setMenuContext: (context: MenuContext) => Promise<void>;
   subscribe: (event: AppEventName, listener: (payload: AppEventPayload) => void) => () => void;
   subscribeMenuCommand: (listener: (command: MenuCommand) => void) => () => void;

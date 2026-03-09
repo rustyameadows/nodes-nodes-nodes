@@ -25,6 +25,8 @@ function createNode(overrides: Partial<WorkflowNode> & Pick<WorkflowNode, "id" |
     upstreamAssetIds: overrides.upstreamAssetIds || [],
     x: overrides.x ?? 0,
     y: overrides.y ?? 0,
+    displayMode: overrides.displayMode || "preview",
+    size: overrides.size ?? null,
   };
 }
 
@@ -112,6 +114,7 @@ test("allows model/template connections into generated text notes only", () => {
       sourceJobId: "job-1",
       sourceModelNodeId: model.id,
       outputIndex: 0,
+      descriptorIndex: 0,
     }),
   });
   const generatedFromTemplate = createNode({
@@ -138,4 +141,23 @@ test("allows model/template connections into generated text notes only", () => {
   assert.equal(canConnectCanvasNodes(model, generatedFromModel), true);
   assert.equal(canConnectCanvasNodes(template, generatedFromTemplate), true);
   assert.equal(canConnectCanvasNodes(model, regularNote), false);
+});
+
+test("rejects image-input connections into Gemini text models", () => {
+  const asset = createNode({
+    id: "asset-1",
+    kind: "asset-source",
+    nodeType: "transform",
+    outputType: "image",
+  });
+  const textModel = createNode({
+    id: "gemini-text-model",
+    kind: "model",
+    providerId: "google-gemini",
+    modelId: "gemini-3-flash-preview",
+    nodeType: "text-gen",
+    outputType: "text",
+  });
+
+  assert.equal(canConnectCanvasNodes(asset, textModel), false);
 });

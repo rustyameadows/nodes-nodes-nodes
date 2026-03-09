@@ -1,5 +1,3 @@
-import { isRunnableOpenAiImageModel, resolveOpenAiImageSettings } from "@/lib/openai-image-settings";
-import { isRunnableOpenAiTextModel } from "@/lib/openai-text-settings";
 import { isRunnableTopazGigapixelModel, normalizeLegacyTopazModelId } from "@/lib/topaz-gigapixel-settings";
 import {
   getListNodeSettings,
@@ -11,6 +9,10 @@ import {
   normalizeWorkflowNodeSize,
 } from "@/lib/canvas-node-presentation";
 import type { AppEventName, MenuCommand, MenuContext } from "@/lib/ipc-contract";
+import {
+  isRunnableTextModel,
+  resolveImageModelSettings,
+} from "@/lib/provider-model-helpers";
 import type {
   AssetFilterState,
   CanvasDocument,
@@ -59,6 +61,10 @@ export async function clearProviderCredential(key: ProviderCredentialKey) {
   await window.nodeInterface.clearProviderCredential(key);
 }
 
+export async function refreshProviderAccess(providerId?: ProviderId) {
+  await window.nodeInterface.refreshProviderAccess(providerId);
+}
+
 export async function setDesktopMenuContext(context: MenuContext) {
   await window.nodeInterface.setMenuContext(context);
 }
@@ -98,14 +104,13 @@ export async function uploadProjectAsset(projectId: string, file: File) {
 export async function createJob(projectId: string, node: WorkflowNode) {
   const executionMode: OpenAIImageMode = isRunnableTopazGigapixelModel(node.providerId, node.modelId)
     ? "edit"
-    : isRunnableOpenAiTextModel(node.providerId, node.modelId)
+    : isRunnableTextModel(node.providerId, node.modelId)
       ? "generate"
     : node.upstreamAssetIds.length > 0
       ? "edit"
       : "generate";
-  const outputCount = isRunnableOpenAiImageModel(node.providerId, node.modelId)
-    ? resolveOpenAiImageSettings(node.settings, executionMode, node.modelId).outputCount
-    : 1;
+  const outputCount =
+    resolveImageModelSettings(node.providerId, node.modelId, node.settings, executionMode)?.outputCount || 1;
   return createJobFromRequest(projectId, {
     providerId: node.providerId,
     modelId: node.modelId,

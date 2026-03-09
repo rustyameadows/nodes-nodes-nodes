@@ -6,7 +6,7 @@ import { eq } from "drizzle-orm";
 
 let busy = false;
 
-function emit(event: "assets.changed" | "jobs.changed", projectId?: string) {
+function emit(event: "assets.changed" | "jobs.changed" | "providers.changed", projectId?: string) {
   process.send?.({
     type: "event",
     event,
@@ -34,6 +34,7 @@ async function tick() {
     await processJobById(claimed.id);
     emit("jobs.changed", job?.projectId);
     emit("assets.changed", job?.projectId);
+    emit("providers.changed");
   } catch (error) {
     console.error("Worker failed to process job", error);
   } finally {

@@ -1,6 +1,6 @@
 import type { WorkflowNode } from "@/components/workspace/types";
 import { getGeneratedModelTextNoteSettings, getGeneratedTextNoteSettings } from "@/lib/list-template";
-import { isRunnableOpenAiTextModel } from "@/lib/openai-text-settings";
+import { isRunnableTextModel } from "@/lib/provider-model-helpers";
 
 export function canConnectCanvasNodes(sourceNode: WorkflowNode | null | undefined, targetNode: WorkflowNode | null | undefined) {
   if (!sourceNode || !targetNode || sourceNode.id === targetNode.id) {
@@ -24,7 +24,7 @@ export function canConnectCanvasNodes(sourceNode: WorkflowNode | null | undefine
     return targetNode.kind === "model";
   }
 
-  if (targetNode.kind === "model" && isRunnableOpenAiTextModel(targetNode.providerId, targetNode.modelId)) {
+  if (targetNode.kind === "model" && isRunnableTextModel(targetNode.providerId, targetNode.modelId)) {
     return false;
   }
 
@@ -36,7 +36,7 @@ export function canConnectCanvasNodes(sourceNode: WorkflowNode | null | undefine
     return false;
   }
 
-  if (sourceNode.kind === "model" && isRunnableOpenAiTextModel(sourceNode.providerId, sourceNode.modelId)) {
+  if (sourceNode.kind === "model" && isRunnableTextModel(sourceNode.providerId, sourceNode.modelId)) {
     return false;
   }
 

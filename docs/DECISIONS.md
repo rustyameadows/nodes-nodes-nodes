@@ -99,3 +99,8 @@
 - Decision: centralize built-in node metadata in a canonical node registry that drives the Node Library, insert picker, native add menus, searchable model selection, and structured-output node summaries.
 - Rationale: the app needs one source of truth for what node types exist, how they should be presented to users, and how downstream systems should reason about them.
 - Consequence: UI/catalog/prompt metadata now flows from `src/lib/node-catalog.ts`, while actual node creation and mutation still stays in the existing canvas/workspace logic.
+
+## 2026-03-09 - Gemini Access Uses Discovery Plus Runtime Enforcement
+- Decision: expose Gemini model availability through a hybrid of static billing hints, authenticated Gemini model discovery, and runtime error classification instead of asking the user to pick a free vs paid tier.
+- Rationale: Google exposes `models.list()` for authenticated discovery, but the app still needs runtime truth for billing, permission, quota, and rate-limit failures that can change independently of the saved key field.
+- Consequence: App Settings and the model picker show honest per-model Gemini access states, unavailable models stay visible but disabled, and worker-side Gemini failures can update cached provider access state without rewriting the saved node graph.

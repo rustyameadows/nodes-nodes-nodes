@@ -353,5 +353,6 @@ export function buildOpenAiImageDebugRequest(input: {
       ...(input.executionMode === "edit" ? { inputAssetIds: input.inputImageAssetIds } : {}),
     },
     effectiveSettings: resolved.effectiveSettings,
+    validationError: null,
   };
 }

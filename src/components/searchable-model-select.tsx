@@ -16,8 +16,11 @@ function statusClassName(status: NodeCatalogVariant["status"]) {
   if (status === "ready") {
     return styles.statusReady;
   }
-  if (status === "missing_key") {
+  if (status === "missing_key" || status === "temporarily_limited") {
     return styles.statusMissing;
+  }
+  if (status === "unverified") {
+    return styles.statusWarn;
   }
   return styles.statusSoon;
 }
@@ -145,11 +148,18 @@ export function SearchableModelSelect({ value, options, disabled = false, onChan
                     <button
                       key={option.id}
                       type="button"
-                      className={`${styles.option} ${option.id === selectedVariant?.id ? styles.optionActive : ""}`}
+                      className={`${styles.option} ${option.id === selectedVariant?.id ? styles.optionActive : ""} ${
+                        option.disabled ? styles.optionDisabled : ""
+                      }`}
                       onPointerDown={(event) => {
                         event.stopPropagation();
                       }}
+                      disabled={option.disabled}
+                      title={option.disabledReason || undefined}
                       onClick={() => {
+                        if (option.disabled) {
+                          return;
+                        }
                         onChange(option);
                         setOpen(false);
                       }}

@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CanvasNodeContent, type ActiveCanvasNodeEditorState } from "@/components/canvas-node-content";
-import { InfiniteCanvas, type CanvasConnection } from "@/components/infinite-canvas";
-import type { CanvasPhantomPreview, CanvasRenderNode } from "@/components/canvas-node-types";
+import { InfiniteCanvas } from "@/components/infinite-canvas";
+import type { CanvasConnection, CanvasPhantomPreview, CanvasRenderNode } from "@/components/canvas-node-types";
 import type {
   CanvasDocument,
   ListNodeSettings,
@@ -20,22 +20,17 @@ import {
   getListNodeSettings,
 } from "@/lib/list-template";
 import { isModelParameterVisible } from "@/lib/model-parameters";
+import { getTextOutputTargetLabel, readTextOutputTarget } from "@/lib/text-output-targets";
 import {
-  buildOpenAiTextDebugRequest,
-  isRunnableOpenAiTextModel,
-  resolveOpenAiTextSettings,
-} from "@/lib/openai-text-settings";
-import { getOpenAiTextOutputTargetLabel, readOpenAiTextOutputTarget } from "@/lib/text-output-targets";
-import {
-  buildTopazGigapixelDebugRequest,
   isRunnableTopazGigapixelModel,
   resolveTopazGigapixelSettings,
 } from "@/lib/topaz-gigapixel-settings";
 import {
-  buildOpenAiImageDebugRequest,
-  isRunnableOpenAiImageModel,
-  resolveOpenAiImageSettings,
-} from "@/lib/openai-image-settings";
+  buildProviderDebugRequest,
+  isRunnableTextModel,
+  resolveImageModelSettings,
+  resolveProviderModelSettings,
+} from "@/lib/provider-model-helpers";
 import styles from "./node-playground-canvas.module.css";
 
 type Props = {
@@ -122,20 +117,7 @@ function resolveModelSettings(
     ...getModelDefaultSettings(model),
     ...settings,
   };
-
-  if (isRunnableOpenAiImageModel(model?.providerId, model?.modelId)) {
-    return resolveOpenAiImageSettings(mergedSettings, executionMode, model?.modelId).effectiveSettings;
-  }
-
-  if (isRunnableOpenAiTextModel(model?.providerId, model?.modelId)) {
-    return resolveOpenAiTextSettings(mergedSettings, model?.modelId).effectiveSettings;
-  }
-
-  if (isRunnableTopazGigapixelModel(model?.providerId, model?.modelId)) {
-    return resolveTopazGigapixelSettings(mergedSettings, model?.modelId).effectiveSettings;
-  }
-
-  return mergedSettings;
+  return resolveProviderModelSettings(model?.providerId, model?.modelId, mergedSettings, executionMode);
 }
 
 function outputSemanticType(node: WorkflowNode) {
@@ -186,14 +168,13 @@ function getRunPreview(node: WorkflowNode, model: ProviderModel | undefined) {
 
   const executionMode = isRunnableTopazGigapixelModel(model.providerId, model.modelId)
     ? "edit"
-    : isRunnableOpenAiTextModel(model.providerId, model.modelId)
+    : isRunnableTextModel(model.providerId, model.modelId)
       ? "generate"
       : node.upstreamNodeIds.length > 0
         ? "edit"
         : "generate";
-  const outputCount = isRunnableOpenAiImageModel(model.providerId, model.modelId)
-    ? resolveOpenAiImageSettings(node.settings, executionMode, model.modelId).outputCount
-    : 1;
+  const outputCount =
+    resolveImageModelSettings(model.providerId, model.modelId, node.settings, executionMode)?.outputCount || 1;
 
   const requestPayload = {
     providerId: model.providerId,
@@ -213,47 +194,58 @@ function getRunPreview(node: WorkflowNode, model: ProviderModel | undefined) {
     },
   };
 
-  if (isRunnableOpenAiImageModel(model.providerId, model.modelId)) {
-    const preview = buildOpenAiImageDebugRequest({
+  if (isRunnableTextModel(model.providerId, model.modelId)) {
+    const preview = buildProviderDebugRequest({
+      providerId: model.providerId,
       modelId: model.modelId,
       prompt: node.prompt,
       rawSettings: node.settings,
       executionMode,
+      inputImageAssetIds: [],
     });
+    const textOutputTarget = readTextOutputTarget((node.settings as Record<string, unknown>).textOutputTarget);
     return {
-      disabledReason: preview.validationError,
-      readyMessage: preview.validationError ? null : `Ready for image generation with ${outputCount} output${outputCount === 1 ? "" : "s"}.`,
-      endpoint: preview.endpoint,
+      disabledReason: preview?.validationError || null,
+      readyMessage:
+        preview?.validationError ||
+        `Ready for ${getTextOutputTargetLabel(textOutputTarget).toLowerCase()} output.`,
+      endpoint: preview?.endpoint || "ai.models.generateContent",
       requestPayload,
     };
   }
 
-  if (isRunnableOpenAiTextModel(model.providerId, model.modelId)) {
-    const preview = buildOpenAiTextDebugRequest({
+  if (resolveImageModelSettings(model.providerId, model.modelId, node.settings, executionMode)) {
+    const preview = buildProviderDebugRequest({
+      providerId: model.providerId,
       modelId: model.modelId,
       prompt: node.prompt,
       rawSettings: node.settings,
+      executionMode,
+      inputImageAssetIds: [],
     });
     return {
-      disabledReason: preview.validationError,
+      disabledReason: preview?.validationError || null,
       readyMessage:
-        preview.validationError ||
-        `Ready for ${getOpenAiTextOutputTargetLabel(readOpenAiTextOutputTarget((node.settings as Record<string, unknown>).textOutputTarget)).toLowerCase()} output.`,
-      endpoint: preview.endpoint,
+        preview?.validationError ? null : `Ready for image generation with ${outputCount} output${outputCount === 1 ? "" : "s"}.`,
+      endpoint: preview?.endpoint || "ai.models.generateContent",
       requestPayload,
     };
   }
 
   if (isRunnableTopazGigapixelModel(model.providerId, model.modelId)) {
-    const preview = buildTopazGigapixelDebugRequest({
+    const preview = buildProviderDebugRequest({
+      providerId: model.providerId,
       modelId: model.modelId,
       prompt: node.prompt,
       rawSettings: node.settings,
+      executionMode,
+      inputImageAssetIds: [],
+      inputAssets: [],
     });
     return {
-      disabledReason: preview.validationError,
-      readyMessage: preview.validationError ? null : "Ready for transform output.",
-      endpoint: preview.endpoint,
+      disabledReason: preview?.validationError || null,
+      readyMessage: preview?.validationError ? null : "Ready for transform output.",
+      endpoint: preview?.endpoint || "/enhance",
       requestPayload,
     };
   }
@@ -401,7 +393,7 @@ export function NodePlaygroundCanvas({
 
     updateNode(selectedNode.id, (node, allNodes) => {
       const nextOutputType = resolveOutputType(node.outputType, getModelSupportedOutputs(providerModel));
-      const nextUpstreamNodeIds = isRunnableOpenAiTextModel(providerModel.providerId, providerModel.modelId)
+      const nextUpstreamNodeIds = isRunnableTextModel(providerModel.providerId, providerModel.modelId)
         ? []
         : node.upstreamNodeIds;
       return {
@@ -411,7 +403,7 @@ export function NodePlaygroundCanvas({
         outputType: nextOutputType,
         nodeType: nodeTypeFromOutput(nextOutputType),
         upstreamNodeIds: nextUpstreamNodeIds,
-        upstreamAssetIds: isRunnableOpenAiTextModel(providerModel.providerId, providerModel.modelId)
+        upstreamAssetIds: isRunnableTextModel(providerModel.providerId, providerModel.modelId)
           ? []
           : buildAssetRefsFromNodes(nextUpstreamNodeIds, allNodes),
         settings: resolveModelSettings(providerModel, node.settings, "generate"),
@@ -752,7 +744,7 @@ export function NodePlaygroundCanvas({
     }
 
     if (selectedNode.outputType === "text") {
-      const target = readOpenAiTextOutputTarget((selectedNode.settings as Record<string, unknown>).textOutputTarget);
+      const target = readTextOutputTarget((selectedNode.settings as Record<string, unknown>).textOutputTarget);
       return {
         sourceNodeId: selectedNode.id,
         nodes: [

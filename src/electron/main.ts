@@ -18,6 +18,7 @@ import {
   clearProviderCredential,
   listProviderCredentials,
   listProviders,
+  refreshProviderAccess,
   saveProviderCredential,
   syncProviderModels,
 } from "@/lib/services/providers";
@@ -414,6 +415,10 @@ function registerIpc() {
       await clearProviderCredential(key);
       broadcastEvent({ event: "providers.changed" });
     },
+    refreshProviderAccess: async (providerId?: "openai" | "google-gemini" | "topaz") => {
+      await refreshProviderAccess(providerId);
+      broadcastEvent({ event: "providers.changed" });
+    },
     setMenuContext: async (context: MenuContext, webContentsId?: number) => {
       if (!webContentsId) {
         return;
@@ -443,7 +448,7 @@ configureStableUserDataPath();
 app.whenReady().then(async () => {
   ensureAppEnvironment();
   applyAppBranding();
-  await syncProviderModels();
+  await syncProviderModels({ refreshAccess: true });
   protocol.handle("app-asset", handleAssetProtocol);
   registerIpc();
   await startWorker();

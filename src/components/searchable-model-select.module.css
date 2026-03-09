@@ -108,6 +108,11 @@
   font: inherit;
 }
 
+.optionDisabled {
+  opacity: 0.62;
+  cursor: not-allowed;
+}
+
 .optionActive {
   border-color: rgba(255, 77, 196, 0.48);
   box-shadow: 0 0 0 1px rgba(255, 77, 196, 0.18);
@@ -134,6 +139,7 @@
 
 .statusReady,
 .statusMissing,
+.statusWarn,
 .statusSoon {
   font-size: 11px;
   font-weight: 700;
@@ -152,6 +158,11 @@
 .statusMissing {
   background: rgba(255, 170, 0, 0.16);
   color: #7a4e00;
+}
+
+.statusWarn {
+  background: rgba(72, 154, 255, 0.16);
+  color: #0a5397;
 }
 
 .statusSoon {

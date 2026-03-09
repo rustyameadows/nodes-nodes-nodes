@@ -55,6 +55,7 @@ Available methods:
 - `listJobs`, `createJob`, `getJobDebug`
 - `listProviders`
 - `listProviderCredentials`, `saveProviderCredential`, `clearProviderCredential`
+- `refreshProviderAccess`
 - `setMenuContext`
 - `subscribe(eventName, listener)`
 - `subscribeMenuCommand(listener)`
@@ -156,9 +157,11 @@ TanStack Query owns persisted app data in the renderer and is invalidated from t
 8. Worker records attempt metadata, marks terminal job state, and emits `jobs.changed` plus `assets.changed` when needed.
 
 ## Structured Text Output Flow
-- Runnable OpenAI text models expose `textOutputTarget` in model settings.
-- `note` uses the user-selected text output format (`text`, `json_object`, or `json_schema`) and hydrates one generated text note.
-- `list`, `template`, and `smart` override the OpenAI text format with app-owned strict JSON schema plus system instructions.
+- Runnable OpenAI and Gemini text models expose `textOutputTarget` in model settings.
+- `note` hydrates one generated text note.
+- `list`, `template`, and `smart` override provider-native output formatting with app-owned strict structured output plus system instructions.
+- OpenAI still supports its extra provider-specific controls (`verbosity`, `reasoningEffort`, optional note output formats).
+- Gemini deliberately exposes only the shared v1 controls: `textOutputTarget` and `maxOutputTokens`.
 - Worker-side parsing validates those structured responses into generated-node descriptors before they reach the renderer.
 - `CanvasView` inserts model-spawned notes, lists, and templates once from `job.generatedNodeDescriptors` instead of parsing raw provider text in the renderer.
 - Pending generated-output placeholders/previews may exist while a job is unresolved, but once the final child nodes are inserted the polling loop no longer mutates them.
@@ -179,7 +182,7 @@ TanStack Query owns persisted app data in the renderer and is invalidated from t
 ## Startup Sequence
 1. Electron main establishes the app-data root.
 2. SQLite opens and bootstraps the schema if needed.
-3. Provider-model metadata is synchronized into `provider_models`.
+3. Provider-model metadata is synchronized into `provider_models`, including Gemini access refresh.
 4. `app-asset://` is registered.
 5. IPC handlers are registered.
 6. Worker is spawned.
@@ -200,6 +203,11 @@ TOPAZ_API_KEY=...
 ```
 
 The renderer never receives raw credential values. It only receives provider readiness metadata and credential source/status.
+
+Gemini access detection is hybrid:
+- the static model catalog ships billing hints copied from Google pricing docs
+- the saved Google project key is probed with Gemini `models.list()`
+- runtime provider errors can still downgrade a model to blocked or limited after a failed job
 
 There is no runtime dependency on `DATABASE_URL`, Prisma, or Postgres.
 

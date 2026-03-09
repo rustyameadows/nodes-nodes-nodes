@@ -157,6 +157,13 @@ type JobPreviewFrame = {
 
 ### `provider_models`
 - renderer-facing provider/model capability metadata synced from the registry
+- `capabilities` now also stores provider-access state used directly by the model picker and App Settings:
+  - `billingAvailability`
+  - `accessStatus`
+  - `accessReason`
+  - `accessMessage`
+  - `lastCheckedAt`
+- for Gemini, those fields describe Google-project access for the saved `GOOGLE_API_KEY`, not a user-selected tier flag
 
 ## Removed Tables
 - `canvas_nodes`
@@ -187,7 +194,7 @@ Worker behavior:
 The renderer never sees absolute paths; those refs are resolved only in main/worker/storage code.
 
 ## Text Output Model
-- GPT text generations now serialize parsed generated-node descriptors in `job_attempts.provider_response`.
+- OpenAI and Gemini text generations now serialize parsed generated-node descriptors in `job_attempts.provider_response`.
 - Renderer-facing jobs expose:
   - `latestTextOutputs`
   - `generatedNodeDescriptors`
@@ -201,6 +208,12 @@ The renderer never sees absolute paths; those refs are resolved only in main/wor
 - Queue debug data stores both the returned text and the parsed structured-output metadata inline in `job_attempts.provider_response`.
 - Once a generated output is inserted onto the canvas, it becomes a normal user-owned node. Provenance remains for source/debug UI, but the polling loop no longer rewrites the node's content, layout, or connections.
 - `generatedOutputReceiptKeys` prevent already-inserted outputs from being re-created on reload and prevent deleted generated nodes from coming back automatically.
+
+## Provider Access Refresh
+- provider registry sync remains the source of truth for `provider_models`
+- startup sync now also refreshes provider access where supported
+- saving, clearing, or manually refreshing `GOOGLE_API_KEY` rewrites Gemini access metadata in place
+- worker-side Gemini failures may also update `provider_models.capabilities` so later picker/settings reads reflect the latest blocked or limited state
 
 ## Canvas Presentation Metadata
 - `WorkflowNode.displayMode`

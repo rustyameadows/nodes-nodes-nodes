@@ -8,16 +8,25 @@ import {
   createGeneratedTextNoteDescriptorsFromRawText,
   type GeneratedNodeDescriptor,
 } from "@/lib/generated-text-output";
-import { formatProviderRequirementMessage, getFirstUnconfiguredRequirement } from "@/lib/provider-readiness";
+import {
+  formatProviderAccessMessage,
+  formatProviderRequirementMessage,
+  getFirstUnconfiguredRequirement,
+  isProviderAccessBlocked,
+} from "@/lib/provider-readiness";
 import { getProviderModel } from "@/lib/providers/registry";
 import { syncProviderModels } from "@/lib/services/providers";
 import { nowIso, newId } from "@/lib/services/common";
-import { isRunnableOpenAiImageModel, resolveOpenAiImageSettings } from "@/lib/openai-image-settings";
-import { isRunnableOpenAiTextModel, resolveOpenAiTextSettings } from "@/lib/openai-text-settings";
 import { readOpenAiTextOutputTarget } from "@/lib/text-output-targets";
 import { isRunnableTopazGigapixelModel, resolveTopazGigapixelSettings } from "@/lib/topaz-gigapixel-settings";
 import type { OpenAIImageMode } from "@/lib/types";
 import type { CreateJobRequest } from "@/lib/ipc-contract";
+import {
+  isRunnableImageModel,
+  isRunnableTextModel,
+  resolveImageModelSettings,
+  resolveTextModelSettings,
+} from "@/lib/provider-model-helpers";
 
 function getLatestTextOutputs(providerResponse: Record<string, unknown> | null | undefined) {
   if (!providerResponse || typeof providerResponse !== "object") {
@@ -118,8 +127,12 @@ async function getSubmissionError(input: z.infer<typeof createJobSchema>) {
     return formatProviderRequirementMessage(missingRequirement) || `${model.displayName} is not runnable right now.`;
   }
 
+  if (isProviderAccessBlocked(model.capabilities)) {
+    return formatProviderAccessMessage(model.capabilities) || `${model.displayName} is not runnable right now.`;
+  }
+
   if (!model.capabilities.runnable) {
-    return `${model.displayName} is not runnable right now.`;
+    return formatProviderAccessMessage(model.capabilities) || `${model.displayName} is not runnable right now.`;
   }
 
   const executionMode = input.nodePayload.executionMode as OpenAIImageMode;
@@ -143,14 +156,14 @@ async function getSubmissionError(input: z.infer<typeof createJobSchema>) {
     return "Connect at least one supported image input before running.";
   }
 
-  if (isRunnableOpenAiImageModel(input.providerId, input.modelId)) {
-    const resolved = resolveOpenAiImageSettings(input.nodePayload.settings, executionMode, input.modelId);
-    if (resolved.outputCount !== input.nodePayload.outputCount) {
+  if (isRunnableImageModel(input.providerId, input.modelId)) {
+    const resolved = resolveImageModelSettings(input.providerId, input.modelId, input.nodePayload.settings, executionMode);
+    if (resolved && resolved.outputCount !== input.nodePayload.outputCount) {
       return "Output count is outside the supported range.";
     }
   }
 
-  if (isRunnableOpenAiTextModel(input.providerId, input.modelId)) {
+  if (isRunnableTextModel(input.providerId, input.modelId)) {
     if (input.nodePayload.executionMode !== "generate") {
       return `${model.displayName} only supports generate mode.`;
     }
@@ -163,8 +176,8 @@ async function getSubmissionError(input: z.infer<typeof createJobSchema>) {
       return `${model.displayName} produces exactly one text response per run.`;
     }
 
-    const resolved = resolveOpenAiTextSettings(input.nodePayload.settings, input.modelId);
-    if (resolved.validationError) {
+    const resolved = resolveTextModelSettings(input.providerId, input.modelId, input.nodePayload.settings);
+    if (resolved?.validationError) {
       return resolved.validationError;
     }
   }
@@ -244,7 +257,7 @@ export async function listJobs(projectId: string): Promise<Job[]> {
       const next = acc.get(asset.jobId) || [];
       next.push({
         id: asset.id,
-        type: asset.type,
+        type: asset.type as Job["assets"][number]["type"],
         mimeType: asset.mimeType,
         outputIndex: asset.outputIndex,
         createdAt: asset.createdAt,

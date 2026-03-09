@@ -274,6 +274,7 @@ export function buildTopazImageDebugRequest(options: {
     requestMode: profile.requestMode,
     request,
     effectiveSettings: resolvedSettings.effectiveSettings,
+    validationError: null,
   };
 }
 

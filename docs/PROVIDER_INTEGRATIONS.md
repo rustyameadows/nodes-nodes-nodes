@@ -13,11 +13,19 @@
 - `openai / gpt-5-mini`
 - `openai / gpt-5-nano`
   - runnable text-generation flows through the Responses API
+- `google-gemini / gemini-2.5-flash-image`
+- `google-gemini / gemini-3-pro-image-preview`
+- `google-gemini / gemini-3.1-flash-image-preview`
+  - runnable Gemini image generation and single-image edit/reference flows through `ai.models.generateContent`
+- `google-gemini / gemini-3.1-flash-lite-preview`
+- `google-gemini / gemini-3-flash-preview`
+- `google-gemini / gemini-2.5-pro`
+- `google-gemini / gemini-2.5-flash`
+- `google-gemini / gemini-2.5-flash-lite`
+  - runnable Gemini text-generation flows through `ai.models.generateContent`
 - `topaz / high_fidelity_v2`
 - `topaz / redefine`
   - runnable Topaz image transforms
-- `google-gemini / gemini-3.1-flash`
-  - visible as `Nano Banana 2`, not runnable in this pass
 
 ## Runtime Contract
 
@@ -42,6 +50,11 @@ Provider adapters return normalized outputs:
 `provider_models.capabilities` stores the renderer-facing metadata needed for honest UI gating:
 - `runnable`
 - `availability`
+- `billingAvailability`
+- `accessStatus`
+- `accessReason`
+- `accessMessage`
+- `lastCheckedAt`
 - `requirements`
 - `promptMode`
 - `requiresApiKeyEnv`
@@ -51,6 +64,22 @@ Provider adapters return normalized outputs:
 - `maxInputImages`
 - `parameters`
 - `defaults`
+
+Gemini uses a hybrid access model:
+- static billing hints are copied from the Google pricing page into `billingAvailability`
+- dynamic project access is refreshed from `models.list()` using the saved `GOOGLE_API_KEY`
+- runtime provider errors remain authoritative for billing, permission, quota, and rate-limit failures
+
+Gemini access refresh outcomes:
+- listed by Gemini -> `accessStatus=available`
+- missing key -> `accessStatus=blocked`, `accessReason=missing_key`
+- key configured but model not listed -> `accessStatus=blocked`, `accessReason=not_listed`
+- probe failed -> `accessStatus=unknown`, `accessReason=probe_failed`
+
+Runtime Gemini failures update cached access state:
+- billing required, permission denied, not listed, invalid input -> blocked and non-retryable
+- quota exhausted -> limited and non-retryable
+- rate limited, temporary unavailable -> limited and retryable
 
 ## Environment Keys
 The renderer never receives these values directly:
@@ -74,6 +103,7 @@ Renderer-facing credential APIs:
 - `listProviderCredentials()`
 - `saveProviderCredential(key, value)`
 - `clearProviderCredential(key)`
+- `refreshProviderAccess(providerId?)`
 
 Renderer credential state includes:
 - `configured`
@@ -88,7 +118,7 @@ The packaged app can be fully configured from Finder without editing repo env fi
 - partial previews are persisted as `job_preview_frames`
 - final outputs become `assets` rows plus local files
 
-## OpenAI GPT Text Jobs
+## OpenAI And Gemini Text Jobs
 - accept prompt text only
 - support four output targets:
   - `Text Note`
@@ -96,7 +126,9 @@ The packaged app can be fully configured from Finder without editing repo env fi
   - `Template`
   - `Smart Output`
 - `Text Note` remains the default and is fully backward compatible
-- `List`, `Template`, and `Smart Output` force app-owned strict JSON schema output through the Responses API
+- `List`, `Template`, and `Smart Output` force app-owned strict structured output:
+  - OpenAI uses Responses API text formats
+  - Gemini uses `responseMimeType=application/json` plus `responseJsonSchema`
 - structured parsing happens in the worker/job pipeline, never in the renderer
 - `List` and `Template` create one deterministic generated placeholder node while queued/running
 - `Smart Output` spawns one or more unconnected generated nodes only after parsed descriptors are available
@@ -104,6 +136,13 @@ The packaged app can be fully configured from Finder without editing repo env fi
 - parse failure still marks the job successful and falls back to one generated `text-note`
 - persist returned text plus parsed generated-node descriptors in `job_attempts.provider_response`
 - do not create asset rows or asset files
+
+## Gemini Image Jobs
+- support prompt-only `generate` and single-image `edit`
+- use `ai.models.generateContent` with image response modality
+- accept PNG, JPEG, and WebP inputs
+- produce one final output per run in v1
+- do not stream preview frames in this pass
 
 ## Topaz Jobs
 - run as single-image transforms

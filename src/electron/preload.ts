@@ -28,6 +28,7 @@ const nodeInterface: NodeInterface = {
   listProviderCredentials: () => invoke("listProviderCredentials"),
   saveProviderCredential: (key, value) => invoke("saveProviderCredential", key, value),
   clearProviderCredential: (key) => invoke("clearProviderCredential", key),
+  refreshProviderAccess: (providerId) => invoke("refreshProviderAccess", providerId),
   setMenuContext: (context) => invoke("setMenuContext", context),
   subscribe: (eventName: AppEventName, listener: (payload: AppEventPayload) => void) => {
     const handler = (_event: unknown, payload: AppEventPayload) => {

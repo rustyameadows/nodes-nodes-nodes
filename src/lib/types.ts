@@ -4,6 +4,18 @@ export type ProviderId = "openai" | "google-gemini" | "topaz";
 export type NodeKind = "text-gen" | "image-gen" | "video-gen" | "transform";
 export type OutputType = "text" | "image" | "video";
 export type ProviderModelAvailability = "ready" | "coming_soon";
+export type ProviderModelBillingAvailability = "free_and_paid" | "paid_only";
+export type ProviderModelAccessStatus = "available" | "blocked" | "limited" | "unknown";
+export type ProviderModelAccessReason =
+  | "missing_key"
+  | "not_listed"
+  | "billing_required"
+  | "permission_denied"
+  | "quota_exhausted"
+  | "rate_limited"
+  | "temporary_unavailable"
+  | "invalid_input"
+  | "probe_failed";
 export type ProviderExecutionMode = "generate" | "edit";
 export type OpenAIImageMode = ProviderExecutionMode;
 export type ProviderRequirementKind = "env" | "executable";
@@ -28,6 +40,11 @@ export type ProviderModelCapabilities = {
   video: boolean;
   runnable: boolean;
   availability: ProviderModelAvailability;
+  billingAvailability: ProviderModelBillingAvailability;
+  accessStatus: ProviderModelAccessStatus;
+  accessReason: ProviderModelAccessReason | null;
+  accessMessage: string | null;
+  lastCheckedAt: string | null;
   requiresApiKeyEnv: string | null;
   apiKeyConfigured: boolean;
   requirements: ProviderRequirement[];

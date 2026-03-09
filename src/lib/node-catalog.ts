@@ -14,7 +14,13 @@ export type NodeCatalogCategory = "Generation" | "Text" | "Data" | "Assets";
 export type NodeCatalogDisplayMode = "preview" | "compact" | "full" | "resized";
 export type SpawnableNodeCatalogKind = "text-note" | "list" | "text-template";
 
-export type NodeCatalogVariantStatus = "ready" | "missing_key" | "coming_soon";
+export type NodeCatalogVariantStatus =
+  | "ready"
+  | "missing_key"
+  | "unverified"
+  | "unavailable"
+  | "temporarily_limited"
+  | "coming_soon";
 
 export type NodeCatalogVariant = {
   id: string;
@@ -26,6 +32,8 @@ export type NodeCatalogVariant = {
   description: string;
   availabilityLabel: string;
   status: NodeCatalogVariantStatus;
+  disabled: boolean;
+  disabledReason: string | null;
   outputType: WorkflowNode["outputType"];
   defaultSettings: Record<string, unknown>;
 };
@@ -84,8 +92,20 @@ function getVariantStatus(model: ProviderModel): NodeCatalogVariantStatus {
     return "coming_soon";
   }
 
-  if (!model.capabilities.runnable) {
+  if (model.capabilities.accessReason === "missing_key") {
     return "missing_key";
+  }
+
+  if (model.capabilities.accessStatus === "unknown") {
+    return "unverified";
+  }
+
+  if (model.capabilities.accessStatus === "limited") {
+    return "temporarily_limited";
+  }
+
+  if (model.capabilities.accessStatus === "blocked" || !model.capabilities.runnable) {
+    return "unavailable";
   }
 
   return "ready";
@@ -99,7 +119,36 @@ function getVariantAvailabilityLabel(model: ProviderModel) {
   if (status === "missing_key") {
     return "Missing key";
   }
+  if (status === "unverified") {
+    return "Unverified";
+  }
+  if (status === "temporarily_limited") {
+    return "Temporarily limited";
+  }
+  if (status === "unavailable") {
+    if (
+      model.capabilities.billingAvailability === "paid_only" &&
+      (model.capabilities.accessReason === "not_listed" || model.capabilities.accessReason === "billing_required")
+    ) {
+      return "Requires paid tier";
+    }
+
+    return "Unavailable";
+  }
   return "Coming soon";
+}
+
+function getVariantDisabledReason(model: ProviderModel) {
+  const status = getVariantStatus(model);
+  if (status === "missing_key" || status === "coming_soon") {
+    return model.capabilities.accessMessage || null;
+  }
+
+  if (status === "unavailable") {
+    return model.capabilities.accessMessage || "This model is unavailable for the current provider configuration.";
+  }
+
+  return null;
 }
 
 function getModelOutputType(model: ProviderModel): WorkflowNode["outputType"] {
@@ -123,6 +172,11 @@ function createFallbackModel(): ProviderModel {
       video: false,
       runnable: false,
       availability: "ready",
+      billingAvailability: "free_and_paid",
+      accessStatus: "blocked",
+      accessReason: "missing_key",
+      accessMessage: "Save OPENAI_API_KEY in Settings or set it in .env.local and restart the app.",
+      lastCheckedAt: null,
       requiresApiKeyEnv: "OPENAI_API_KEY",
       apiKeyConfigured: false,
       requirements: [
@@ -164,6 +218,8 @@ function createModelCatalogVariant(model: ProviderModel): NodeCatalogVariant {
     description: model.modelId,
     availabilityLabel: getVariantAvailabilityLabel(model),
     status: getVariantStatus(model),
+    disabled: getVariantStatus(model) === "missing_key" || getVariantStatus(model) === "unavailable" || getVariantStatus(model) === "coming_soon",
+    disabledReason: getVariantDisabledReason(model),
     outputType: getModelOutputType(model),
     defaultSettings: { ...(model.capabilities.defaults || {}) },
   };

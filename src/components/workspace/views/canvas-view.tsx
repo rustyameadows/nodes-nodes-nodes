@@ -9,9 +9,11 @@ import {
 } from "react";
 import { useHotkey } from "@tanstack/react-hotkeys";
 import { useRouter } from "@/renderer/navigation";
-import { InfiniteCanvas, type CanvasConnection, type CanvasInsertRequest } from "@/components/infinite-canvas";
+import { InfiniteCanvas } from "@/components/infinite-canvas";
 import { CanvasNodeContent, type ActiveCanvasNodeEditorState } from "@/components/canvas-node-content";
 import type {
+  CanvasConnection,
+  CanvasInsertRequest,
   CanvasPhantomPreview,
   CanvasRenderNode,
   CanvasSelectionAction,
@@ -19,13 +21,10 @@ import type {
 import { WorkspaceShell } from "@/components/workspace/workspace-shell";
 import { isModelParameterVisible } from "@/lib/model-parameters";
 import {
-  buildOpenAiImageDebugRequest,
   getOpenAiImageDefaultSettings,
   getOpenAiImageParameterDefinitions,
-  isRunnableOpenAiImageModel,
   OPENAI_IMAGE_INPUT_MIME_TYPES,
   OPENAI_MAX_INPUT_IMAGES,
-  resolveOpenAiImageSettings,
 } from "@/lib/openai-image-settings";
 import {
   buildGeneratedNodePosition,
@@ -35,13 +34,12 @@ import {
   type GeneratedNodeKind,
 } from "@/lib/generated-text-output";
 import {
-  buildOpenAiTextDebugRequest,
-  isRunnableOpenAiTextModel,
-  resolveOpenAiTextSettings,
-} from "@/lib/openai-text-settings";
-import { formatProviderRequirementMessage, getFirstUnconfiguredRequirement } from "@/lib/provider-readiness";
+  formatProviderAccessMessage,
+  formatProviderRequirementMessage,
+  getFirstUnconfiguredRequirement,
+  isProviderAccessBlocked,
+} from "@/lib/provider-readiness";
 import {
-  buildTopazGigapixelDebugRequest,
   isRunnableTopazGigapixelModel,
   resolveTopazGigapixelSettings,
 } from "@/lib/topaz-gigapixel-settings";
@@ -84,6 +82,13 @@ import {
   isGeneratedTextNoteNode,
 } from "@/lib/list-template";
 import { getOpenAiTextOutputTargetLabel, readOpenAiTextOutputTarget } from "@/lib/text-output-targets";
+import {
+  buildProviderDebugRequest,
+  isRunnableTextModel,
+  resolveImageModelSettings,
+  resolveProviderModelSettings,
+  resolveTextModelSettings,
+} from "@/lib/provider-model-helpers";
 import { canConnectCanvasNodes } from "@/lib/canvas-connection-rules";
 import {
   getDefaultModelCatalogVariant,
@@ -201,20 +206,7 @@ function resolveModelSettings(
     ...getModelDefaultSettings(model),
     ...settings,
   };
-
-  if (isRunnableOpenAiImageModel(model?.providerId, model?.modelId)) {
-    return resolveOpenAiImageSettings(mergedSettings, executionMode, model?.modelId).effectiveSettings;
-  }
-
-  if (isRunnableOpenAiTextModel(model?.providerId, model?.modelId)) {
-    return resolveOpenAiTextSettings(mergedSettings, model?.modelId).effectiveSettings;
-  }
-
-  if (isRunnableTopazGigapixelModel(model?.providerId, model?.modelId)) {
-    return resolveTopazGigapixelSettings(mergedSettings, model?.modelId).effectiveSettings;
-  }
-
-  return mergedSettings;
+  return resolveProviderModelSettings(model?.providerId, model?.modelId, mergedSettings, executionMode);
 }
 
 function getModelSupportedOutputs(model: ProviderModel | undefined): WorkflowNode["outputType"][] {
@@ -298,6 +290,11 @@ function fallbackProviderModel(providers: ProviderModel[]): ProviderModel {
       video: false,
       runnable: false,
       availability: "ready" as const,
+      billingAvailability: "free_and_paid" as const,
+      accessStatus: "blocked" as const,
+      accessReason: "missing_key" as const,
+      accessMessage: "Save OPENAI_API_KEY in Settings or set it in .env.local and restart the app.",
+      lastCheckedAt: null,
       requiresApiKeyEnv: "OPENAI_API_KEY",
       apiKeyConfigured: false,
       requirements: [
@@ -1053,7 +1050,7 @@ export function CanvasView({ projectId }: Props) {
 
   const getExecutionModeForModel = useCallback(
     (model: ProviderModel | undefined, upstreamNodeIds: string[]) => {
-      if (isRunnableOpenAiTextModel(model?.providerId, model?.modelId)) {
+      if (isRunnableTextModel(model?.providerId, model?.modelId)) {
         return "generate" as const;
       }
 
@@ -1416,17 +1413,17 @@ export function CanvasView({ projectId }: Props) {
       const model = providers.find(
         (providerModel) => providerModel.providerId === node.providerId && providerModel.modelId === node.modelId
       );
-      const isOpenAiTextModel = isRunnableOpenAiTextModel(model?.providerId, model?.modelId);
+      const isTextModel = isRunnableTextModel(model?.providerId, model?.modelId);
       const promptSourceNode = node.promptSourceNodeId ? nodesById[node.promptSourceNodeId] || null : null;
       const prompt = node.promptSourceNodeId ? (promptSourceNode?.prompt || "") : node.prompt;
       const maxInputImages = model?.capabilities.maxInputImages || 0;
       const acceptedMimeTypes = new Set(model?.capabilities.acceptedInputMimeTypes || []);
-      const connectedImageRefs = (isOpenAiTextModel ? [] : node.upstreamNodeIds)
+      const connectedImageRefs = (isTextModel ? [] : node.upstreamNodeIds)
         .map((nodeId) => nodesById[nodeId] || null)
         .map((inputNode) => (inputNode ? resolveNodeImageAsset(inputNode) : null))
         .filter((assetRef): assetRef is NonNullable<ReturnType<typeof resolveNodeImageAsset>> => Boolean(assetRef));
 
-      const inputImageAssetIds = isOpenAiTextModel
+      const inputImageAssetIds = isTextModel
         ? []
         : connectedImageRefs
             .filter((assetRef) => {
@@ -1440,12 +1437,11 @@ export function CanvasView({ projectId }: Props) {
             .slice(0, maxInputImages || undefined);
       const executionMode = getExecutionModeForModel(model, node.upstreamNodeIds);
       const effectiveSettings = resolveModelSettings(model, node.settings, executionMode);
-      const resolvedTextSettings = isOpenAiTextModel
-        ? resolveOpenAiTextSettings(effectiveSettings, model?.modelId)
+      const resolvedTextSettings = isTextModel
+        ? resolveTextModelSettings(model?.providerId, model?.modelId, effectiveSettings)
         : null;
-      const outputCount = isRunnableOpenAiImageModel(model?.providerId, model?.modelId)
-        ? resolveOpenAiImageSettings(effectiveSettings, executionMode, model?.modelId).outputCount
-        : 1;
+      const outputCount =
+        resolveImageModelSettings(model?.providerId, model?.modelId, effectiveSettings, executionMode)?.outputCount || 1;
 
       const requestPayload = {
         providerId: node.providerId,
@@ -1475,6 +1471,8 @@ export function CanvasView({ projectId }: Props) {
         disabledReason =
           formatProviderRequirementMessage(getFirstUnconfiguredRequirement(model.capabilities)) ||
           `${model.displayName} is not runnable right now.`;
+      } else if (isProviderAccessBlocked(model.capabilities)) {
+        disabledReason = formatProviderAccessMessage(model.capabilities) || `${model.displayName} is not runnable right now.`;
       } else if (!model.capabilities.executionModes.includes(executionMode)) {
         disabledReason = `${model.displayName} does not support ${executionMode} mode.`;
       } else if (
@@ -1489,7 +1487,7 @@ export function CanvasView({ projectId }: Props) {
         (Boolean(node.promptSourceNodeId) || Boolean(requestPayload.nodePayload.prompt))
       ) {
         disabledReason = `${model.displayName} does not support prompt input.`;
-      } else if (isOpenAiTextModel && (node.upstreamNodeIds.length > 0 || node.upstreamAssetIds.length > 0)) {
+      } else if (isTextModel && (node.upstreamNodeIds.length > 0 || node.upstreamAssetIds.length > 0)) {
         disabledReason = `${model.displayName} only accepts prompt text, not connected asset inputs.`;
       } else if (resolvedTextSettings?.validationError) {
         disabledReason = resolvedTextSettings.validationError;
@@ -1509,7 +1507,7 @@ export function CanvasView({ projectId }: Props) {
             model.capabilities.promptMode === "optional" && requestPayload.nodePayload.prompt
               ? `Ready to run ${model.displayName} at ${resolvedTopazSettings.scale}x on 1 image with prompt guidance.`
               : `Ready to run ${model.displayName} at ${resolvedTopazSettings.scale}x on 1 image.`;
-        } else if (isOpenAiTextModel) {
+        } else if (isTextModel) {
           const textOutputTarget = readOpenAiTextOutputTarget(effectiveSettings.textOutputTarget);
           readyMessage =
             textOutputTarget === "smart"
@@ -1525,32 +1523,24 @@ export function CanvasView({ projectId }: Props) {
         }
       }
 
-      const debugRequest = isOpenAiTextModel
-        ? buildOpenAiTextDebugRequest({
-            modelId: node.modelId,
-            prompt: requestPayload.nodePayload.prompt,
-            rawSettings: requestPayload.nodePayload.settings,
-          })
-        : isRunnableOpenAiImageModel(node.providerId, node.modelId)
-        ? buildOpenAiImageDebugRequest({
-            modelId: node.modelId,
-            prompt: requestPayload.nodePayload.prompt,
-            executionMode,
-            rawSettings: requestPayload.nodePayload.settings,
-            inputImageAssetIds,
-          })
-        : isRunnableTopazGigapixelModel(node.providerId, node.modelId)
-          ? buildTopazGigapixelDebugRequest({
-              modelId: node.modelId,
-              prompt: requestPayload.nodePayload.prompt,
-              rawSettings: requestPayload.nodePayload.settings,
-              inputImageAssetIds,
-              inputAssets: connectedImageRefs.map((assetRef) => ({
-                assetId: assetRef.assetId,
-                mimeType: assetRef.mimeType,
-              })),
-            })
-          : null;
+      const debugRequest = buildProviderDebugRequest({
+        providerId: node.providerId,
+        modelId: node.modelId,
+        prompt: requestPayload.nodePayload.prompt,
+        executionMode,
+        rawSettings: requestPayload.nodePayload.settings,
+        inputImageAssetIds,
+        inputAssets: connectedImageRefs
+          .filter(
+            (assetRef): assetRef is typeof assetRef & { mimeType: string } => typeof assetRef.mimeType === "string"
+          )
+          .map((assetRef) => ({
+            assetId: assetRef.assetId,
+            mimeType: assetRef.mimeType,
+            width: null,
+            height: null,
+          })),
+      });
 
       return {
         requestPayload,
@@ -1558,11 +1548,11 @@ export function CanvasView({ projectId }: Props) {
         readyMessage,
         endpoint:
           debugRequest?.endpoint ||
-          (isOpenAiTextModel
-            ? "client.responses.create"
+          (isTextModel
+            ? "ai.models.generateContent"
             : executionMode === "generate"
-              ? "client.images.generate"
-              : "client.images.edit"),
+              ? "ai.models.generateContent"
+              : "ai.models.generateContent"),
         debugRequest,
       };
     },
@@ -2702,7 +2692,7 @@ export function CanvasView({ projectId }: Props) {
       );
       const supportedOutputs = getModelSupportedOutputs(model);
       const outputType = resolveOutputType(selectedNode.outputType, supportedOutputs);
-      const nextUpstreamNodeIds = isRunnableOpenAiTextModel(model?.providerId, model?.modelId)
+      const nextUpstreamNodeIds = isRunnableTextModel(model?.providerId, model?.modelId)
         ? []
         : selectedNode.upstreamNodeIds;
       const nextExecutionMode = getExecutionModeForModel(model, nextUpstreamNodeIds);
@@ -2715,7 +2705,7 @@ export function CanvasView({ projectId }: Props) {
           outputType,
           nodeType: nodeTypeFromOutput(outputType),
           upstreamNodeIds: nextUpstreamNodeIds,
-          upstreamAssetIds: isRunnableOpenAiTextModel(model?.providerId, model?.modelId)
+          upstreamAssetIds: isRunnableTextModel(model?.providerId, model?.modelId)
             ? []
             : buildAssetRefsFromNodes(nextUpstreamNodeIds, canvasDoc.workflow.nodes),
           settings: resolveModelSettings(model, selectedNode.settings, nextExecutionMode),
@@ -2815,7 +2805,7 @@ export function CanvasView({ projectId }: Props) {
               return node;
             }
 
-            if (isRunnableOpenAiTextModel(node.providerId, node.modelId)) {
+            if (isRunnableTextModel(node.providerId, node.modelId)) {
               return node;
             }
 
@@ -2899,7 +2889,7 @@ export function CanvasView({ projectId }: Props) {
             return node;
           }
 
-          if (isRunnableOpenAiTextModel(node.providerId, node.modelId)) {
+          if (isRunnableTextModel(node.providerId, node.modelId)) {
             return node;
           }
 
@@ -2983,7 +2973,7 @@ export function CanvasView({ projectId }: Props) {
             return node;
           }
 
-          if (isRunnableOpenAiTextModel(node.providerId, node.modelId)) {
+          if (isRunnableTextModel(node.providerId, node.modelId)) {
             return node;
           }
 
@@ -4302,11 +4292,11 @@ export function CanvasView({ projectId }: Props) {
 
   const insertMenuTargetNode =
     insertMenu?.mode === "model-input" && insertMenu.connectToNodeId ? nodesById[insertMenu.connectToNodeId] || null : null;
-  const insertMenuTargetIsOpenAiTextModel =
+  const insertMenuTargetIsTextModel =
     insertMenuTargetNode?.kind === "model" &&
-    isRunnableOpenAiTextModel(insertMenuTargetNode.providerId, insertMenuTargetNode.modelId);
+    isRunnableTextModel(insertMenuTargetNode.providerId, insertMenuTargetNode.modelId);
   const insertMenuAllowsAssetInputs = insertMenu
-    ? insertMenu.mode === "canvas" || (insertMenu.mode === "model-input" && !insertMenuTargetIsOpenAiTextModel)
+    ? insertMenu.mode === "canvas" || (insertMenu.mode === "model-input" && !insertMenuTargetIsTextModel)
     : false;
   const insertMenuEntries = useMemo(
     () =>

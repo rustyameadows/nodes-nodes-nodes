@@ -6,6 +6,21 @@ import {
   resolveProviderCredentialValue,
 } from "@/lib/runtime/provider-credentials";
 import {
+  GEMINI_IMAGE_INPUT_MIME_TYPES,
+  GEMINI_MAX_INPUT_IMAGES,
+  getGeminiImageDefaultSettings,
+  getGeminiImageParameterDefinitions,
+  isRunnableGeminiImageModel,
+  resolveGeminiImageSettings,
+} from "@/lib/gemini-image-settings";
+import {
+  buildGeminiTextRequestConfig,
+  getGeminiTextDefaultSettings,
+  getGeminiTextParameterDefinitions,
+  isRunnableGeminiTextModel,
+  resolveGeminiTextSettings,
+} from "@/lib/gemini-text-settings";
+import {
   OPENAI_IMAGE_INPUT_MIME_TYPES,
   OPENAI_MAX_INPUT_IMAGES,
   getOpenAiImageDefaultSettings,
@@ -21,6 +36,7 @@ import {
   isRunnableOpenAiTextModel,
   resolveOpenAiTextSettings,
 } from "@/lib/openai-text-settings";
+import type { ProviderTextOutputTarget } from "@/lib/text-output-targets";
 import {
   getTopazExecutionModes,
   getTopazGigapixelDefaultSettings,
@@ -30,6 +46,13 @@ import {
   TOPAZ_GIGAPIXEL_INPUT_MIME_TYPES,
   TOPAZ_GIGAPIXEL_MAX_INPUT_IMAGES,
 } from "@/lib/topaz-gigapixel-settings";
+import {
+  buildGoogleGeminiContents,
+  classifyGoogleGeminiError,
+  extractGoogleGeminiImageParts,
+  extractGoogleGeminiText,
+  getGoogleGeminiClient,
+} from "@/lib/server/google-gemini";
 import { executeTopazImageApi } from "@/lib/server/topaz-image-api";
 import type {
   OpenAIImageMode,
@@ -43,7 +66,17 @@ import type {
   ProviderModelDescriptor,
 } from "@/lib/types";
 
-type ProviderErrorCode = "CONFIG_ERROR" | "COMING_SOON" | "INVALID_INPUT" | "PROVIDER_ERROR";
+type ProviderErrorCode =
+  | "CONFIG_ERROR"
+  | "COMING_SOON"
+  | "INVALID_INPUT"
+  | "PROVIDER_ERROR"
+  | "BILLING_REQUIRED"
+  | "PERMISSION_DENIED"
+  | "NOT_LISTED"
+  | "QUOTA_EXHAUSTED"
+  | "RATE_LIMITED"
+  | "TEMPORARY_UNAVAILABLE";
 
 function createProviderError(
   code: ProviderErrorCode,
@@ -73,6 +106,11 @@ function buildCapabilities({
   video,
   runnable,
   availability,
+  billingAvailability = "free_and_paid",
+  accessStatus = "available",
+  accessReason = null,
+  accessMessage = null,
+  lastCheckedAt = null,
   requiresApiKeyEnv = null,
   requirements = [],
   promptMode = "optional",
@@ -87,6 +125,11 @@ function buildCapabilities({
   video: boolean;
   runnable: boolean;
   availability: ProviderModelCapabilities["availability"];
+  billingAvailability?: ProviderModelCapabilities["billingAvailability"];
+  accessStatus?: ProviderModelCapabilities["accessStatus"];
+  accessReason?: ProviderModelCapabilities["accessReason"];
+  accessMessage?: ProviderModelCapabilities["accessMessage"];
+  lastCheckedAt?: ProviderModelCapabilities["lastCheckedAt"];
   requiresApiKeyEnv?: string | null;
   requirements?: ProviderModelCapabilities["requirements"];
   promptMode?: ProviderModelCapabilities["promptMode"];
@@ -110,6 +153,11 @@ function buildCapabilities({
     video,
     runnable,
     availability,
+    billingAvailability,
+    accessStatus,
+    accessReason,
+    accessMessage,
+    lastCheckedAt,
     requiresApiKeyEnv: firstEnvRequirement?.key || requiresApiKeyEnv,
     apiKeyConfigured: firstEnvRequirement ? Boolean(firstEnvRequirement.configured) : true,
     requirements: mergedRequirements,
@@ -155,6 +203,52 @@ function createOpenAiTextCapabilities(modelId: string) {
     maxInputImages: 0,
     parameters: getOpenAiTextParameterDefinitions(modelId),
     defaults: getOpenAiTextDefaultSettings(modelId),
+  });
+}
+
+function createGeminiImageCapabilities(
+  billingAvailability: ProviderModelCapabilities["billingAvailability"]
+) {
+  return buildCapabilities({
+    text: false,
+    image: true,
+    video: false,
+    runnable: true,
+    availability: "ready",
+    billingAvailability,
+    accessStatus: "unknown",
+    accessReason: "probe_failed",
+    accessMessage: "Gemini model access has not been verified yet.",
+    requiresApiKeyEnv: "GOOGLE_API_KEY",
+    requirements: [buildEnvRequirement("GOOGLE_API_KEY", "Google Gemini API key")],
+    promptMode: "required",
+    executionModes: ["generate", "edit"],
+    acceptedInputMimeTypes: GEMINI_IMAGE_INPUT_MIME_TYPES,
+    maxInputImages: GEMINI_MAX_INPUT_IMAGES,
+    parameters: getGeminiImageParameterDefinitions(),
+    defaults: getGeminiImageDefaultSettings(),
+  });
+}
+
+function createGeminiTextCapabilities(
+  billingAvailability: ProviderModelCapabilities["billingAvailability"]
+) {
+  return buildCapabilities({
+    text: true,
+    image: false,
+    video: false,
+    runnable: true,
+    availability: "ready",
+    billingAvailability,
+    accessStatus: "unknown",
+    accessReason: "probe_failed",
+    accessMessage: "Gemini model access has not been verified yet.",
+    requiresApiKeyEnv: "GOOGLE_API_KEY",
+    requirements: [buildEnvRequirement("GOOGLE_API_KEY", "Google Gemini API key")],
+    promptMode: "required",
+    executionModes: ["generate"],
+    parameters: getGeminiTextParameterDefinitions(),
+    defaults: getGeminiTextDefaultSettings(),
   });
 }
 
@@ -207,7 +301,13 @@ async function resolveProviderModelCredentials(model: ProviderModelDescriptor): 
       requirements,
       requiresApiKeyEnv: firstEnvRequirement?.key || model.capabilities.requiresApiKeyEnv,
       apiKeyConfigured: firstEnvRequirement ? Boolean(firstEnvRequirement.configured) : model.capabilities.apiKeyConfigured,
-      runnable: model.capabilities.runnable && !hasMissingRequirement,
+      accessStatus: hasMissingRequirement ? "blocked" : model.capabilities.accessStatus,
+      accessReason: hasMissingRequirement ? "missing_key" : model.capabilities.accessReason,
+      accessMessage: hasMissingRequirement
+        ? `Save ${firstEnvRequirement?.key || model.capabilities.requiresApiKeyEnv} in Settings or set it in .env.local and restart the app.`
+        : model.capabilities.accessMessage,
+      lastCheckedAt: hasMissingRequirement ? null : model.capabilities.lastCheckedAt,
+      runnable: model.capabilities.runnable && !hasMissingRequirement && model.capabilities.accessStatus !== "blocked",
     },
   };
 }
@@ -241,16 +341,14 @@ function buildProviderCatalog(): Record<ProviderId, ProviderModelDescriptor[]> {
     parameters: [],
   });
 
-  const comingSoonMixedCapabilities = buildCapabilities({
-    text: true,
-    image: true,
-    video: true,
-    runnable: false,
-    availability: "coming_soon",
-    promptMode: "optional",
-    executionModes: [],
-    parameters: [],
-  });
+  const nanoBananaCapabilities = createGeminiImageCapabilities("paid_only");
+  const nanoBananaProCapabilities = createGeminiImageCapabilities("paid_only");
+  const nanoBanana2Capabilities = createGeminiImageCapabilities("paid_only");
+  const gemini31FlashLiteCapabilities = createGeminiTextCapabilities("free_and_paid");
+  const gemini3FlashCapabilities = createGeminiTextCapabilities("free_and_paid");
+  const gemini25ProCapabilities = createGeminiTextCapabilities("free_and_paid");
+  const gemini25FlashCapabilities = createGeminiTextCapabilities("free_and_paid");
+  const gemini25FlashLiteCapabilities = createGeminiTextCapabilities("free_and_paid");
 
   return {
     openai: [
@@ -307,10 +405,59 @@ function buildProviderCatalog(): Record<ProviderId, ProviderModelDescriptor[]> {
     "google-gemini": [
       {
         providerId: "google-gemini",
-        modelId: "gemini-3.1-flash",
+        modelId: "gemini-2.5-flash-image",
+        displayName: "Nano Banana",
+        capabilities: nanoBananaCapabilities,
+        defaultSettings: { ...nanoBananaCapabilities.defaults },
+      },
+      {
+        providerId: "google-gemini",
+        modelId: "gemini-3-pro-image-preview",
+        displayName: "Nano Banana Pro",
+        capabilities: nanoBananaProCapabilities,
+        defaultSettings: { ...nanoBananaProCapabilities.defaults },
+      },
+      {
+        providerId: "google-gemini",
+        modelId: "gemini-3.1-flash-image-preview",
         displayName: "Nano Banana 2",
-        capabilities: comingSoonMixedCapabilities,
-        defaultSettings: {},
+        capabilities: nanoBanana2Capabilities,
+        defaultSettings: { ...nanoBanana2Capabilities.defaults },
+      },
+      {
+        providerId: "google-gemini",
+        modelId: "gemini-3.1-flash-lite-preview",
+        displayName: "Gemini 3.1 Flash-Lite",
+        capabilities: gemini31FlashLiteCapabilities,
+        defaultSettings: { ...gemini31FlashLiteCapabilities.defaults },
+      },
+      {
+        providerId: "google-gemini",
+        modelId: "gemini-3-flash-preview",
+        displayName: "Gemini 3 Flash",
+        capabilities: gemini3FlashCapabilities,
+        defaultSettings: { ...gemini3FlashCapabilities.defaults },
+      },
+      {
+        providerId: "google-gemini",
+        modelId: "gemini-2.5-pro",
+        displayName: "Gemini 2.5 Pro",
+        capabilities: gemini25ProCapabilities,
+        defaultSettings: { ...gemini25ProCapabilities.defaults },
+      },
+      {
+        providerId: "google-gemini",
+        modelId: "gemini-2.5-flash",
+        displayName: "Gemini 2.5 Flash",
+        capabilities: gemini25FlashCapabilities,
+        defaultSettings: { ...gemini25FlashCapabilities.defaults },
+      },
+      {
+        providerId: "google-gemini",
+        modelId: "gemini-2.5-flash-lite",
+        displayName: "Gemini 2.5 Flash-Lite",
+        capabilities: gemini25FlashLiteCapabilities,
+        defaultSettings: { ...gemini25FlashLiteCapabilities.defaults },
       },
     ],
     topaz: [
@@ -454,20 +601,23 @@ function buildPreviewFrame(
 
 function buildTextOutput(
   input: ProviderJobInput,
-  resolvedSettings: ReturnType<typeof resolveOpenAiTextSettings>,
-  response: {
-    id: string;
-    status?: string | null;
+  options: {
+    textOutputTarget: ProviderTextOutputTarget;
+    maxOutputTokens: number | null;
+    outputFormat?: string | null;
+    responseId?: string | null;
+    responseStatus?: string | null;
     usage?: unknown;
-    output_text: string;
-  }
+    metadata?: Record<string, unknown>;
+  },
+  content: string
 ): NormalizedOutput {
   const mimeType =
-    resolvedSettings.textOutputTarget === "note" && resolvedSettings.outputFormat === "text"
+    options.textOutputTarget === "note" && (!options.outputFormat || options.outputFormat === "text")
       ? "text/plain"
       : "application/json";
   const extension =
-    resolvedSettings.textOutputTarget === "note" && resolvedSettings.outputFormat === "text" ? "txt" : "json";
+    options.textOutputTarget === "note" && (!options.outputFormat || options.outputFormat === "text") ? "txt" : "json";
 
   return {
     type: "text",
@@ -478,16 +628,37 @@ function buildTextOutput(
       providerId: input.providerId,
       modelId: input.modelId,
       outputIndex: 0,
-      responseId: response.id,
-      responseStatus: response.status,
-      textOutputTarget: resolvedSettings.textOutputTarget,
-      outputFormat: resolvedSettings.outputFormat,
-      verbosity: resolvedSettings.verbosity,
-      reasoningEffort: resolvedSettings.reasoningEffort,
-      maxOutputTokens: resolvedSettings.maxOutputTokens,
-      usage: response.usage || null,
+      responseId: options.responseId || null,
+      responseStatus: options.responseStatus || null,
+      textOutputTarget: options.textOutputTarget,
+      outputFormat: options.outputFormat || "text",
+      maxOutputTokens: options.maxOutputTokens,
+      usage: options.usage || null,
+      ...(options.metadata || {}),
     },
-    content: response.output_text,
+    content,
+  };
+}
+
+function buildGeminiImageOutput(
+  input: ProviderJobInput,
+  executionMode: OpenAIImageMode,
+  mimeType: string,
+  b64Data: string
+): NormalizedOutput {
+  return {
+    type: "image",
+    mimeType,
+    extension: extensionForMimeType(mimeType),
+    encoding: "binary",
+    metadata: {
+      providerId: input.providerId,
+      modelId: input.modelId,
+      outputIndex: 0,
+      executionMode,
+      inputAssetIds: input.inputAssets.map((asset) => asset.assetId),
+    },
+    content: Buffer.from(b64Data, "base64"),
   };
 }
 
@@ -670,7 +841,7 @@ async function submitOpenAiText(input: ProviderJobInput): Promise<NormalizedOutp
     reasoning: {
       effort: resolvedSettings.reasoningEffort,
     },
-    text: requestConfig.text,
+    text: requestConfig.text as never,
     ...(requestConfig.instructions ? { instructions: requestConfig.instructions } : {}),
     ...(resolvedSettings.maxOutputTokens !== null ? { max_output_tokens: resolvedSettings.maxOutputTokens } : {}),
   });
@@ -679,7 +850,170 @@ async function submitOpenAiText(input: ProviderJobInput): Promise<NormalizedOutp
     throw createProviderError("PROVIDER_ERROR", "OpenAI returned no text output.");
   }
 
-  return [buildTextOutput(input, resolvedSettings, response)];
+  return [
+    buildTextOutput(
+      input,
+      {
+        textOutputTarget: resolvedSettings.textOutputTarget,
+        outputFormat: resolvedSettings.outputFormat,
+        maxOutputTokens: resolvedSettings.maxOutputTokens,
+        responseId: response.id,
+        responseStatus: response.status,
+        usage: response.usage,
+        metadata: {
+          verbosity: resolvedSettings.verbosity,
+          reasoningEffort: resolvedSettings.reasoningEffort,
+        },
+      },
+      response.output_text
+    ),
+  ];
+}
+
+async function submitGeminiText(input: ProviderJobInput): Promise<NormalizedOutput[]> {
+  const model = await getResolvedProviderModelDescriptor(input.providerId, input.modelId);
+  if (!model) {
+    throw createProviderError("INVALID_INPUT", `Unknown provider model: ${input.providerId}/${input.modelId}`);
+  }
+
+  if (model.capabilities.availability !== "ready") {
+    throw createProviderError("COMING_SOON", `${model.displayName} is not runnable yet.`);
+  }
+
+  if (!model.capabilities.runnable) {
+    throw createProviderError("CONFIG_ERROR", model.capabilities.accessMessage || `${model.displayName} is not runnable right now.`);
+  }
+
+  const prompt = input.payload.prompt.trim();
+  if (!prompt) {
+    throw createProviderError("INVALID_INPUT", "Connect a prompt note or enter a prompt before running.");
+  }
+
+  if (input.inputAssets.length > 0 || input.payload.inputImageAssetIds.length > 0) {
+    throw createProviderError("INVALID_INPUT", "Disconnect image inputs before running Gemini text generation.");
+  }
+
+  const resolvedSettings = resolveGeminiTextSettings(input.payload.settings);
+  if (resolvedSettings.validationError) {
+    throw createProviderError("INVALID_INPUT", resolvedSettings.validationError);
+  }
+
+  try {
+    const ai = await getGoogleGeminiClient();
+    const requestConfig = buildGeminiTextRequestConfig(resolvedSettings);
+    const response = await ai.models.generateContent({
+      model: input.modelId,
+      contents: prompt,
+      config: {
+        ...requestConfig,
+        ...(resolvedSettings.maxOutputTokens !== null ? { maxOutputTokens: resolvedSettings.maxOutputTokens } : {}),
+      },
+    });
+    const text = extractGoogleGeminiText(response);
+
+    if (!text) {
+      throw createProviderError("PROVIDER_ERROR", "Gemini returned no text output.");
+    }
+
+    return [
+      buildTextOutput(
+        input,
+        {
+          textOutputTarget: resolvedSettings.textOutputTarget,
+          outputFormat: resolvedSettings.textOutputTarget === "note" ? "text" : "json_schema",
+          maxOutputTokens: resolvedSettings.maxOutputTokens,
+          metadata: {
+            providerResponseModality: resolvedSettings.textOutputTarget === "note" ? "TEXT" : "JSON",
+          },
+        },
+        text
+      ),
+    ];
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error) {
+      throw error;
+    }
+
+    const classified = classifyGoogleGeminiError(error);
+    throw createProviderError(classified.code, classified.message, {
+      ...classified.details,
+      retryable: classified.retryable,
+      accessUpdate: classified.accessUpdate,
+    });
+  }
+}
+
+async function submitGeminiImage(input: ProviderJobInput): Promise<NormalizedOutput[]> {
+  const model = await getResolvedProviderModelDescriptor(input.providerId, input.modelId);
+  if (!model) {
+    throw createProviderError("INVALID_INPUT", `Unknown provider model: ${input.providerId}/${input.modelId}`);
+  }
+
+  if (model.capabilities.availability !== "ready") {
+    throw createProviderError("COMING_SOON", `${model.displayName} is not runnable yet.`);
+  }
+
+  if (!model.capabilities.runnable) {
+    throw createProviderError("CONFIG_ERROR", model.capabilities.accessMessage || `${model.displayName} is not runnable right now.`);
+  }
+
+  const prompt = input.payload.prompt.trim();
+  if (!prompt) {
+    throw createProviderError("INVALID_INPUT", "Connect a prompt note or enter a prompt before running.");
+  }
+
+  const executionMode = readExecutionMode(input.payload.executionMode);
+  const acceptedMimeTypes = new Set(model.capabilities.acceptedInputMimeTypes);
+  const inputAssets = input.inputAssets
+    .filter((asset) => asset.type === "image" && acceptedMimeTypes.has(asset.mimeType))
+    .slice(0, model.capabilities.maxInputImages);
+
+  if (executionMode === "generate" && inputAssets.length > 0) {
+    throw createProviderError(
+      "INVALID_INPUT",
+      "Disconnect image inputs or switch the node to Edit mode before running."
+    );
+  }
+
+  if (executionMode === "edit" && inputAssets.length === 0) {
+    throw createProviderError(
+      "INVALID_INPUT",
+      "Connect at least one PNG, JPEG, or WebP image input before running."
+    );
+  }
+
+  resolveGeminiImageSettings(input.payload.settings);
+
+  try {
+    const ai = await getGoogleGeminiClient();
+    const response = await ai.models.generateContent({
+      model: input.modelId,
+      contents: buildGoogleGeminiContents(prompt, inputAssets),
+      config: {
+        responseModalities: ["IMAGE"],
+      },
+    });
+    const imageParts = extractGoogleGeminiImageParts(response);
+
+    if (imageParts.length === 0) {
+      throw createProviderError("PROVIDER_ERROR", "Gemini returned no image bytes.");
+    }
+
+    return imageParts.slice(0, 1).map((imagePart) =>
+      buildGeminiImageOutput(input, executionMode, imagePart.mimeType, imagePart.data)
+    );
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error) {
+      throw error;
+    }
+
+    const classified = classifyGoogleGeminiError(error);
+    throw createProviderError(classified.code, classified.message, {
+      ...classified.details,
+      retryable: classified.retryable,
+      accessUpdate: classified.accessUpdate,
+    });
+  }
 }
 
 async function submitTopazGigapixel(input: ProviderJobInput): Promise<NormalizedOutput[]> {
@@ -767,6 +1101,20 @@ async function submitOpenAiJob(input: ProviderJobInput): Promise<NormalizedOutpu
   throw createProviderError("COMING_SOON", `${label} is coming soon.`);
 }
 
+async function submitGeminiJob(input: ProviderJobInput): Promise<NormalizedOutput[]> {
+  if (isRunnableGeminiImageModel(input.providerId, input.modelId)) {
+    return submitGeminiImage(input);
+  }
+
+  if (isRunnableGeminiTextModel(input.providerId, input.modelId)) {
+    return submitGeminiText(input);
+  }
+
+  const model = getProviderModelDescriptor(input.providerId, input.modelId);
+  const label = model?.displayName || `${input.providerId}/${input.modelId}`;
+  throw createProviderError("COMING_SOON", `${label} is coming soon.`);
+}
+
 const adapters: Record<ProviderId, ProviderAdapter> = {
   openai: {
     providerId: "openai",
@@ -778,7 +1126,16 @@ const adapters: Record<ProviderId, ProviderAdapter> = {
     getModels: () => buildProviderCatalog().openai,
     submitJob: submitOpenAiJob,
   },
-  "google-gemini": buildComingSoonAdapter("google-gemini"),
+  "google-gemini": {
+    providerId: "google-gemini",
+    getCapabilities: () => ({
+      supportsCancel: false,
+      supportsStreaming: false,
+      nodeKinds: ["image-gen", "text-gen"],
+    }),
+    getModels: () => buildProviderCatalog()["google-gemini"],
+    submitJob: submitGeminiJob,
+  },
   topaz: {
     providerId: "topaz",
     getCapabilities: () => ({

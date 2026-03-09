@@ -56,6 +56,15 @@
 - the same provider/model catalog also powers the shared searchable model picker used in:
   - full model nodes
   - node-library model detail/playground
+- provider-model variants stay visible even when blocked for the current credentials or provider project
+- variant statuses render as:
+  - `Ready`
+  - `Missing key`
+  - `Unverified`
+  - `Requires paid tier` / `Unavailable`
+  - `Temporarily limited`
+  - `Coming soon`
+- blocked variants are disabled in the picker, but existing nodes that already reference those models stay on the canvas and surface the blocked reason at run time
 - node presentation states:
   - `preview` is the default persisted state
   - `compact` is a persisted pill/tiny-node state
@@ -113,8 +122,9 @@
 ## Queue Feedback
 - running jobs show queue state in the queue view and on generated output nodes
 - OpenAI image jobs can show persisted preview frames before final completion
+- Gemini image jobs do not stream preview frames in v1
 - successful image jobs spawn final output nodes once from the completed job output
-- successful GPT text jobs hydrate generated nodes by output target:
+- successful OpenAI and Gemini text jobs hydrate generated nodes by output target:
   - `Text Note` -> generated text note
   - `List` -> generated list node
   - `Template` -> generated template node
@@ -142,6 +152,7 @@ Controls:
 - app startup lands on the app home view instead of auto-resuming directly into a project route
 - app home is reachable from the in-canvas `Menu` pill, app settings, and the native macOS `Project` menu
 - Node Library is reachable from app home, the in-canvas `Menu` pill, and the native macOS app/project menus
+- App Settings shows per-provider readiness; the Gemini row includes per-project access summary plus a manual `Refresh Access` action
 - browser uploads are replaced by native file dialogs
 - asset and preview rendering uses `app-asset://` URLs
 - renderer never sees raw local file paths
