@@ -1,5 +1,9 @@
 # Nodes Nodes Nodes
 
+<p align="center">
+  <img src="./docs/readme-hero.png" alt="Nodes Nodes Nodes canvas workspace on a pink background" width="1200" />
+</p>
+
 Local-first desktop app for node-based media workflows.
 
 `Nodes Nodes Nodes` is an Electron app for building generation and post-processing workflows on an infinite canvas, running jobs through multiple providers, and reviewing outputs in a fast local asset viewer.
