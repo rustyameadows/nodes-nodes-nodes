@@ -6,85 +6,65 @@ import {
   normalizeTextNoteSettings,
   getTextTemplateNodeSettings,
 } from "@/lib/list-template";
+import {
+  normalizeWorkflowNodeDisplayMode,
+  normalizeWorkflowNodeSize,
+} from "@/lib/canvas-node-presentation";
+import type { AppEventName, MenuCommand, MenuContext } from "@/lib/ipc-contract";
 import type {
-  Asset,
   AssetFilterState,
   CanvasDocument,
   Job,
-  JobDebugResponse,
   OpenAIImageMode,
-  Project,
-  ProviderModel,
+  ProviderCredentialKey,
+  ProviderCredentialStatus,
   ProviderId,
   RunnableWorkflowNodeType,
   WorkflowNode,
 } from "@/components/workspace/types";
 
-async function readJson<T>(res: Response): Promise<T> {
-  if (!res.ok) {
-    const payload = await res.json().catch(() => ({}));
-    const message = typeof payload?.error === "string" ? payload.error : "Request failed";
-    throw new Error(message);
-  }
-
-  return (await res.json()) as T;
-}
-
 export async function getProjects() {
-  const res = await fetch("/api/projects", { cache: "no-store" });
-  const data = await readJson<{ projects: Project[] }>(res);
-  return data.projects || [];
+  return window.nodeInterface.listProjects();
 }
 
 export async function createProject(name: string) {
-  const res = await fetch("/api/projects", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name }),
-  });
-
-  const data = await readJson<{ project: Project }>(res);
-  return data.project;
+  return window.nodeInterface.createProject(name);
 }
 
 export async function openProject(projectId: string) {
-  const res = await fetch(`/api/projects/${projectId}/open`, { method: "POST" });
-  await readJson<{ ok: boolean }>(res);
+  await window.nodeInterface.openProject(projectId);
 }
 
 export async function updateProject(projectId: string, payload: { name?: string; status?: "active" | "archived" }) {
-  const res = await fetch(`/api/projects/${projectId}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-
-  const data = await readJson<{ project: Project }>(res);
-  return data.project;
+  return window.nodeInterface.updateProject(projectId, payload);
 }
 
 export async function removeProject(projectId: string) {
-  const res = await fetch(`/api/projects/${projectId}`, { method: "DELETE" });
-  await readJson<{ ok: boolean }>(res);
+  await window.nodeInterface.deleteProject(projectId);
 }
 
 export async function getProviders() {
-  const res = await fetch("/api/providers", { cache: "no-store" });
-  const data = await readJson<{ providers: ProviderModel[] }>(res);
-  return data.providers || [];
+  return window.nodeInterface.listProviders();
+}
+
+export async function getProviderCredentials(): Promise<ProviderCredentialStatus[]> {
+  return window.nodeInterface.listProviderCredentials();
+}
+
+export async function saveProviderCredential(key: ProviderCredentialKey, value: string) {
+  await window.nodeInterface.saveProviderCredential(key, value);
+}
+
+export async function clearProviderCredential(key: ProviderCredentialKey) {
+  await window.nodeInterface.clearProviderCredential(key);
+}
+
+export async function setDesktopMenuContext(context: MenuContext) {
+  await window.nodeInterface.setMenuContext(context);
 }
 
 export async function getCanvasWorkspace(projectId: string) {
-  const res = await fetch(`/api/projects/${projectId}/canvas`, { cache: "no-store" });
-  return readJson<{
-    canvas: {
-      canvasDocument: Record<string, unknown> | null;
-    } | null;
-    workspace: {
-      assetViewerLayout?: "grid" | "compare_2" | "compare_4";
-      filterState?: Record<string, unknown> | null;
-    } | null;
-  }>(res);
+  return window.nodeInterface.getWorkspaceSnapshot(projectId);
 }
 
 export async function putCanvasWorkspace(
@@ -95,40 +75,24 @@ export async function putCanvasWorkspace(
     filterState?: Record<string, unknown>;
   }
 ) {
-  const res = await fetch(`/api/projects/${projectId}/canvas`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-
-  await readJson<{ canvas: unknown }>(res);
+  await window.nodeInterface.saveWorkspaceSnapshot(projectId, payload);
 }
 
 export async function getJobs(projectId: string) {
-  const res = await fetch(`/api/projects/${projectId}/jobs`, { cache: "no-store" });
-  const data = await readJson<{ jobs: Job[] }>(res);
-  return data.jobs || [];
+  return window.nodeInterface.listJobs(projectId);
 }
 
 export async function getJobDebug(projectId: string, jobId: string) {
-  const res = await fetch(`/api/projects/${projectId}/jobs/${jobId}/debug`, {
-    cache: "no-store",
-  });
-
-  return readJson<JobDebugResponse>(res);
+  return window.nodeInterface.getJobDebug(projectId, jobId);
 }
 
 export async function uploadProjectAsset(projectId: string, file: File) {
-  const formData = new FormData();
-  formData.set("file", file);
-
-  const res = await fetch(`/api/projects/${projectId}/uploads`, {
-    method: "POST",
-    body: formData,
-  });
-
-  const data = await readJson<{ asset: Asset }>(res);
-  return data.asset;
+  const imported = await importProjectAssets(projectId, [file]);
+  const asset = imported[0];
+  if (!asset) {
+    throw new Error("No asset was imported.");
+  }
+  return asset;
 }
 
 export async function createJob(projectId: string, node: WorkflowNode) {
@@ -181,14 +145,7 @@ export async function createJobFromRequest(
     };
   }
 ) {
-  const res = await fetch(`/api/projects/${projectId}/jobs`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(requestPayload),
-  });
-
-  const data = await readJson<{ job: Job }>(res);
-  return data.job;
+  return window.nodeInterface.createJob(projectId, requestPayload);
 }
 
 export async function getAssets(
@@ -199,23 +156,7 @@ export async function getAssets(
     query?: string;
   }
 ) {
-  const query = new URLSearchParams({
-    type: filters.type,
-    ratingAtLeast: String(filters.ratingAtLeast),
-    flaggedOnly: String(filters.flaggedOnly),
-    tag: filters.tag,
-    providerId: filters.providerId,
-    sort: filters.sort,
-    origin: options?.origin || "all",
-    q: options?.query || "",
-  });
-
-  const res = await fetch(`/api/projects/${projectId}/assets?${query.toString()}`, {
-    cache: "no-store",
-  });
-
-  const data = await readJson<{ assets: Asset[] }>(res);
-  return data.assets || [];
+  return window.nodeInterface.listAssets(projectId, filters, options);
 }
 
 export async function getAssetPointers(
@@ -243,19 +184,43 @@ export async function getAssetPointers(
 }
 
 export async function getAsset(assetId: string) {
-  const res = await fetch(`/api/assets/${assetId}`, { cache: "no-store" });
-  const data = await readJson<{ asset: Asset }>(res);
-  return data.asset;
+  return window.nodeInterface.getAsset(assetId);
 }
 
 export async function updateAsset(assetId: string, payload: { rating?: number | null; flagged?: boolean; tags?: string[] }) {
-  const res = await fetch(`/api/assets/${assetId}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
+  await window.nodeInterface.updateAsset(assetId, payload);
+}
 
-  await readJson<{ asset: Asset }>(res);
+export async function importProjectAssets(projectId: string, files?: File[]) {
+  if (!files || files.length === 0) {
+    return window.nodeInterface.importAssets(projectId);
+  }
+
+  const items = await Promise.all(
+    files.map(async (file) => ({
+      name: file.name,
+      mimeType: file.type || "application/octet-stream",
+      content: await file.arrayBuffer(),
+    }))
+  );
+
+  return window.nodeInterface.importAssets(projectId, items);
+}
+
+export function getAssetFileUrl(assetId: string) {
+  return `app-asset://asset/${assetId}`;
+}
+
+export function getPreviewFrameFileUrl(previewFrameId: string, createdAt: string) {
+  return `app-asset://preview/${previewFrameId}?ts=${encodeURIComponent(createdAt)}`;
+}
+
+export function subscribeToAppEvent(eventName: AppEventName, listener: (payload: { event: AppEventName; projectId?: string }) => void) {
+  return window.nodeInterface.subscribe(eventName, listener);
+}
+
+export function subscribeToMenuCommand(listener: (command: MenuCommand) => void) {
+  return window.nodeInterface.subscribeMenuCommand(listener);
 }
 
 export function summarizeQueue(jobs: Job[]) {
@@ -370,5 +335,7 @@ export function normalizeNode(raw: Record<string, unknown>, index: number): Work
     settings: normalizedSettings,
     x: typeof raw.x === "number" ? raw.x : 120 + (index % 4) * 260,
     y: typeof raw.y === "number" ? raw.y : 120 + Math.floor(index / 4) * 160,
+    displayMode: normalizeWorkflowNodeDisplayMode(raw.displayMode),
+    size: normalizeWorkflowNodeSize(raw.size),
   };
 }

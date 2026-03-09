@@ -1,10 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useRouter } from "@/renderer/navigation";
 import { WorkspaceShell } from "@/components/workspace/workspace-shell";
-import { getAsset, openProject } from "@/components/workspace/client-api";
+import { getAsset, getAssetFileUrl, openProject } from "@/components/workspace/client-api";
 import type { Asset } from "@/components/workspace/types";
+import { queryKeys } from "@/renderer/query";
 import styles from "./asset-detail-view.module.css";
 
 type Props = {
@@ -27,31 +29,20 @@ function getFilename(storageRef: string) {
 
 export function AssetDetailView({ projectId, assetId }: Props) {
   const router = useRouter();
-  const [asset, setAsset] = useState<Asset | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const refreshAsset = useCallback(async () => {
-    try {
-      const nextAsset = await getAsset(assetId);
-      setAsset(nextAsset);
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load asset.");
-    }
-  }, [assetId]);
+  const {
+    data: asset,
+    isLoading,
+    error,
+  } = useQuery<Asset>({
+    queryKey: queryKeys.asset(assetId),
+    queryFn: () => getAsset(assetId),
+  });
 
   useEffect(() => {
-    setLoading(true);
+    openProject(projectId).catch(console.error);
+  }, [projectId]);
 
-    Promise.all([refreshAsset(), openProject(projectId)])
-      .catch((err) => {
-        setError(err instanceof Error ? err.message : "Failed to initialize viewer.");
-      })
-      .finally(() => {
-        setLoading(false);
-      });
-  }, [projectId, refreshAsset]);
+  const errorMessage = error instanceof Error ? error.message : null;
 
   return (
     <WorkspaceShell projectId={projectId} view="assets">
@@ -77,10 +68,10 @@ export function AssetDetailView({ projectId, assetId }: Props) {
 
           <div className={styles.body}>
             <section className={styles.mediaPane}>
-              {loading ? (
+              {isLoading ? (
                 <div className={styles.centerState}>Loading asset...</div>
-              ) : error ? (
-                <div className={styles.centerState}>{error}</div>
+              ) : errorMessage ? (
+                <div className={styles.centerState}>{errorMessage}</div>
               ) : asset ? (
                 <AssetMedia asset={asset} />
               ) : (
@@ -166,17 +157,17 @@ export function AssetDetailView({ projectId, assetId }: Props) {
 
 function AssetMedia({ asset }: { asset: Asset }) {
   if (asset.type === "image") {
-    return <img className={styles.image} src={`/api/assets/${asset.id}/file`} alt={`Asset ${asset.id}`} />;
+    return <img className={styles.image} src={getAssetFileUrl(asset.id)} alt={`Asset ${asset.id}`} />;
   }
 
   if (asset.type === "text") {
-    return <iframe className={styles.textFrame} src={`/api/assets/${asset.id}/file`} title={`Asset ${asset.id}`} />;
+    return <iframe className={styles.textFrame} src={getAssetFileUrl(asset.id)} title={`Asset ${asset.id}`} />;
   }
 
   return (
     <div className={styles.videoPlaceholder}>
       <p>Video asset preview is not yet implemented.</p>
-      <a href={`/api/assets/${asset.id}/file`} target="_blank" rel="noreferrer">
+      <a href={getAssetFileUrl(asset.id)} target="_blank" rel="noreferrer">
         Open file metadata
       </a>
     </div>

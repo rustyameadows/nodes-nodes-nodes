@@ -1,10 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useSearchParams } from "@/renderer/navigation";
 import { WorkspaceShell } from "@/components/workspace/workspace-shell";
 import { getJobDebug, getJobs, openProject } from "@/components/workspace/client-api";
 import type { Job, JobAttemptDebug, JobDebugResponse } from "@/components/workspace/types";
+import { queryKeys } from "@/renderer/query";
 import styles from "./queue-view.module.css";
 
 type Props = {
@@ -49,34 +51,31 @@ function attemptLabel(attempt: JobAttemptDebug) {
 
 export function QueueView({ projectId }: Props) {
   const searchParams = useSearchParams();
-  const [jobs, setJobs] = useState<Job[]>([]);
   const [stateFilter, setStateFilter] = useState<StateFilter>("all");
-  const [loading, setLoading] = useState(true);
   const [inspectJobId, setInspectJobId] = useState<string | null>(null);
-  const [inspectLoading, setInspectLoading] = useState(false);
-  const [inspectError, setInspectError] = useState<string | null>(null);
-  const [jobDebug, setJobDebug] = useState<JobDebugResponse | null>(null);
+  const { data: jobs = [], isLoading } = useQuery<Job[]>({
+    queryKey: queryKeys.jobs(projectId),
+    queryFn: () => getJobs(projectId),
+    refetchInterval: (query) => {
+      const currentJobs = (query.state.data as Job[] | undefined) || [];
+      const hasActiveJobs = currentJobs.some((job) => job.state === "queued" || job.state === "running");
+      return hasActiveJobs ? 900 : 2_500;
+    },
+  });
+  const {
+    data: jobDebug,
+    isLoading: inspectLoading,
+    error: inspectQueryError,
+  } = useQuery<JobDebugResponse>({
+    queryKey: inspectJobId ? queryKeys.jobDebug(projectId, inspectJobId) : ["job-debug", projectId, "idle"],
+    queryFn: () => getJobDebug(projectId, inspectJobId!),
+    enabled: Boolean(inspectJobId),
+  });
+  const inspectError = inspectQueryError instanceof Error ? inspectQueryError.message : null;
 
-  const refreshJobs = useCallback(async () => {
-    const nextJobs = await getJobs(projectId);
-    setJobs(nextJobs);
+  useEffect(() => {
+    openProject(projectId).catch(console.error);
   }, [projectId]);
-
-  useEffect(() => {
-    setLoading(true);
-
-    Promise.all([refreshJobs(), openProject(projectId)])
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }, [projectId, refreshJobs]);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      refreshJobs().catch(console.error);
-    }, 2500);
-
-    return () => clearInterval(interval);
-  }, [refreshJobs]);
 
   useEffect(() => {
     const inspectFromQuery = searchParams.get("inspectJobId");
@@ -84,28 +83,6 @@ export function QueueView({ projectId }: Props) {
       setInspectJobId(inspectFromQuery);
     }
   }, [searchParams]);
-
-  useEffect(() => {
-    if (!inspectJobId) {
-      setJobDebug(null);
-      setInspectError(null);
-      return;
-    }
-
-    setInspectLoading(true);
-    getJobDebug(projectId, inspectJobId)
-      .then((response) => {
-        setJobDebug(response);
-        setInspectError(null);
-      })
-      .catch((error) => {
-        setJobDebug(null);
-        setInspectError(error instanceof Error ? error.message : "Failed to inspect job.");
-      })
-      .finally(() => {
-        setInspectLoading(false);
-      });
-  }, [inspectJobId, projectId]);
 
   const visibleJobs = useMemo(() => {
     if (stateFilter === "all") {
@@ -133,7 +110,7 @@ export function QueueView({ projectId }: Props) {
             </select>
           </header>
 
-          {loading ? (
+          {isLoading ? (
             <div className={styles.loading}>Loading queue...</div>
           ) : (
             <div className={styles.content}>

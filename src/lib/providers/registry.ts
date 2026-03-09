@@ -1,5 +1,10 @@
 import OpenAI, { toFile } from "openai";
 import { getFirstUnconfiguredRequirement } from "@/lib/provider-readiness";
+import type { ProviderCredentialKey } from "@/components/workspace/types";
+import {
+  resolveProviderCredential,
+  resolveProviderCredentialValue,
+} from "@/lib/runtime/provider-credentials";
 import {
   OPENAI_IMAGE_INPUT_MIME_TYPES,
   OPENAI_MAX_INPUT_IMAGES,
@@ -10,6 +15,7 @@ import {
   resolveOpenAiImageSettings,
 } from "@/lib/openai-image-settings";
 import {
+  buildOpenAiTextRequestConfig,
   getOpenAiTextDefaultSettings,
   getOpenAiTextParameterDefinitions,
   isRunnableOpenAiTextModel,
@@ -24,7 +30,7 @@ import {
   TOPAZ_GIGAPIXEL_INPUT_MIME_TYPES,
   TOPAZ_GIGAPIXEL_MAX_INPUT_IMAGES,
 } from "@/lib/topaz-gigapixel-settings";
-import { executeTopazImageApi, getTopazApiRequirement } from "@/lib/server/topaz-image-api";
+import { executeTopazImageApi } from "@/lib/server/topaz-image-api";
 import type {
   OpenAIImageMode,
   ImageOutputFormat,
@@ -52,15 +58,11 @@ function createProviderError(
   return error;
 }
 
-function apiKeyConfigured(envVar: string) {
-  return Boolean(process.env[envVar]?.trim());
-}
-
-function buildEnvRequirement(envVar: string, label: string) {
+function buildEnvRequirement(envVar: ProviderCredentialKey, label: string, configured = false) {
   return {
     kind: "env" as const,
     key: envVar,
-    configured: apiKeyConfigured(envVar),
+    configured,
     label,
   };
 }
@@ -95,8 +97,9 @@ function buildCapabilities({
   defaults?: ProviderModelCapabilities["defaults"];
 }): ProviderModelCapabilities {
   const envRequirement =
-    requiresApiKeyEnv && !requirements.some((requirement) => requirement.kind === "env" && requirement.key === requiresApiKeyEnv)
-      ? [buildEnvRequirement(requiresApiKeyEnv, requiresApiKeyEnv)]
+    requiresApiKeyEnv &&
+    !requirements.some((requirement) => requirement.kind === "env" && requirement.key === requiresApiKeyEnv)
+      ? [buildEnvRequirement(requiresApiKeyEnv as ProviderCredentialKey, requiresApiKeyEnv)]
       : [];
   const mergedRequirements = [...requirements, ...envRequirement];
   const firstEnvRequirement = mergedRequirements.find((requirement) => requirement.kind === "env") || null;
@@ -124,7 +127,7 @@ function createOpenAiImageCapabilities(modelId: string) {
     text: false,
     image: true,
     video: false,
-    runnable: apiKeyConfigured("OPENAI_API_KEY"),
+    runnable: true,
     availability: "ready",
     requiresApiKeyEnv: "OPENAI_API_KEY",
     requirements: [buildEnvRequirement("OPENAI_API_KEY", "OpenAI API key")],
@@ -142,7 +145,7 @@ function createOpenAiTextCapabilities(modelId: string) {
     text: true,
     image: false,
     video: false,
-    runnable: apiKeyConfigured("OPENAI_API_KEY"),
+    runnable: true,
     availability: "ready",
     requiresApiKeyEnv: "OPENAI_API_KEY",
     requirements: [buildEnvRequirement("OPENAI_API_KEY", "OpenAI API key")],
@@ -156,20 +159,18 @@ function createOpenAiTextCapabilities(modelId: string) {
 }
 
 function createTopazGigapixelCapabilities(modelId: string) {
-  const requirement = getTopazApiRequirement();
-
   return buildCapabilities({
     text: false,
     image: true,
     video: false,
-    runnable: requirement.configured,
+    runnable: true,
     availability: "ready",
     requirements: [
       {
-        kind: requirement.kind,
-        key: requirement.key,
-        configured: requirement.configured,
-        label: requirement.label,
+        kind: "env",
+        key: "TOPAZ_API_KEY",
+        configured: false,
+        label: "Topaz API key",
       },
     ],
     promptMode: getTopazPromptMode(modelId),
@@ -179,6 +180,36 @@ function createTopazGigapixelCapabilities(modelId: string) {
     parameters: getTopazGigapixelParameterDefinitions(modelId),
     defaults: getTopazGigapixelDefaultSettings(modelId),
   });
+}
+
+async function resolveProviderModelCredentials(model: ProviderModelDescriptor): Promise<ProviderModelDescriptor> {
+  const requirements = await Promise.all(
+    model.capabilities.requirements.map(async (requirement) => {
+      if (requirement.kind !== "env") {
+        return requirement;
+      }
+
+      const resolved = await resolveProviderCredential(requirement.key as ProviderCredentialKey);
+      return {
+        ...requirement,
+        configured: resolved.configured,
+      };
+    })
+  );
+
+  const firstEnvRequirement = requirements.find((requirement) => requirement.kind === "env") || null;
+  const hasMissingRequirement = requirements.some((requirement) => requirement.configured === false);
+
+  return {
+    ...model,
+    capabilities: {
+      ...model.capabilities,
+      requirements,
+      requiresApiKeyEnv: firstEnvRequirement?.key || model.capabilities.requiresApiKeyEnv,
+      apiKeyConfigured: firstEnvRequirement ? Boolean(firstEnvRequirement.configured) : model.capabilities.apiKeyConfigured,
+      runnable: model.capabilities.runnable && !hasMissingRequirement,
+    },
+  };
 }
 
 function buildProviderCatalog(): Record<ProviderId, ProviderModelDescriptor[]> {
@@ -301,12 +332,12 @@ function buildProviderCatalog(): Record<ProviderId, ProviderModelDescriptor[]> {
   };
 }
 
-function getOpenAIClient() {
-  const apiKey = process.env.OPENAI_API_KEY?.trim();
+async function getOpenAIClient() {
+  const apiKey = await resolveProviderCredentialValue("OPENAI_API_KEY");
   if (!apiKey) {
     throw createProviderError(
       "CONFIG_ERROR",
-      "OpenAI is not configured. Set OPENAI_API_KEY in .env.local and restart npm run dev."
+      "OpenAI is not configured. Save OPENAI_API_KEY in Settings or set it in .env.local and restart the app."
     );
   }
 
@@ -318,6 +349,15 @@ function getProviderModelDescriptor(providerId: ProviderId, modelId: string): Pr
     providerId === "topaz" ? normalizeLegacyTopazModelId(modelId) || "high_fidelity_v2" : modelId;
   const providerModels = buildProviderCatalog()[providerId] || [];
   return providerModels.find((model) => model.modelId === normalizedModelId) || null;
+}
+
+async function getResolvedProviderModelDescriptor(providerId: ProviderId, modelId: string) {
+  const model = getProviderModelDescriptor(providerId, modelId);
+  if (!model) {
+    return null;
+  }
+
+  return resolveProviderModelCredentials(model);
 }
 
 function outputFormatToMimeType(outputFormat: ImageOutputFormat) {
@@ -422,8 +462,12 @@ function buildTextOutput(
     output_text: string;
   }
 ): NormalizedOutput {
-  const mimeType = resolvedSettings.outputFormat === "text" ? "text/plain" : "application/json";
-  const extension = resolvedSettings.outputFormat === "text" ? "txt" : "json";
+  const mimeType =
+    resolvedSettings.textOutputTarget === "note" && resolvedSettings.outputFormat === "text"
+      ? "text/plain"
+      : "application/json";
+  const extension =
+    resolvedSettings.textOutputTarget === "note" && resolvedSettings.outputFormat === "text" ? "txt" : "json";
 
   return {
     type: "text",
@@ -436,6 +480,7 @@ function buildTextOutput(
       outputIndex: 0,
       responseId: response.id,
       responseStatus: response.status,
+      textOutputTarget: resolvedSettings.textOutputTarget,
       outputFormat: resolvedSettings.outputFormat,
       verbosity: resolvedSettings.verbosity,
       reasoningEffort: resolvedSettings.reasoningEffort,
@@ -447,7 +492,7 @@ function buildTextOutput(
 }
 
 async function submitOpenAiImage(input: ProviderJobInput): Promise<NormalizedOutput[]> {
-  const model = getProviderModelDescriptor(input.providerId, input.modelId);
+  const model = await getResolvedProviderModelDescriptor(input.providerId, input.modelId);
   if (!model) {
     throw createProviderError("INVALID_INPUT", `Unknown provider model: ${input.providerId}/${input.modelId}`);
   }
@@ -459,7 +504,7 @@ async function submitOpenAiImage(input: ProviderJobInput): Promise<NormalizedOut
   if (!model.capabilities.runnable) {
     throw createProviderError(
       "CONFIG_ERROR",
-      "OpenAI is not configured. Set OPENAI_API_KEY in .env.local and restart npm run dev."
+      "OpenAI is not configured. Save OPENAI_API_KEY in Settings or set it in .env.local and restart the app."
     );
   }
 
@@ -500,7 +545,7 @@ async function submitOpenAiImage(input: ProviderJobInput): Promise<NormalizedOut
     outputCompression,
   } = resolvedSettings;
 
-  const client = getOpenAIClient();
+  const client = await getOpenAIClient();
   const mimeType = outputFormatToMimeType(outputFormat);
   const extension = outputFormat === "jpeg" ? "jpg" : outputFormat;
   const outputs: NormalizedOutput[] = [];
@@ -587,7 +632,7 @@ async function submitOpenAiImage(input: ProviderJobInput): Promise<NormalizedOut
 }
 
 async function submitOpenAiText(input: ProviderJobInput): Promise<NormalizedOutput[]> {
-  const model = getProviderModelDescriptor(input.providerId, input.modelId);
+  const model = await getResolvedProviderModelDescriptor(input.providerId, input.modelId);
   if (!model) {
     throw createProviderError("INVALID_INPUT", `Unknown provider model: ${input.providerId}/${input.modelId}`);
   }
@@ -599,7 +644,7 @@ async function submitOpenAiText(input: ProviderJobInput): Promise<NormalizedOutp
   if (!model.capabilities.runnable) {
     throw createProviderError(
       "CONFIG_ERROR",
-      "OpenAI is not configured. Set OPENAI_API_KEY in .env.local and restart npm run dev."
+      "OpenAI is not configured. Save OPENAI_API_KEY in Settings or set it in .env.local and restart the app."
     );
   }
 
@@ -617,27 +662,16 @@ async function submitOpenAiText(input: ProviderJobInput): Promise<NormalizedOutp
     throw createProviderError("INVALID_INPUT", resolvedSettings.validationError);
   }
 
-  const client = getOpenAIClient();
+  const requestConfig = buildOpenAiTextRequestConfig(resolvedSettings);
+  const client = await getOpenAIClient();
   const response = await client.responses.create({
     model: input.modelId,
     input: prompt,
     reasoning: {
       effort: resolvedSettings.reasoningEffort,
     },
-    text: {
-      verbosity: resolvedSettings.verbosity,
-      format:
-        resolvedSettings.outputFormat === "text"
-          ? { type: "text" }
-          : resolvedSettings.outputFormat === "json_object"
-            ? { type: "json_object" }
-            : {
-                type: "json_schema",
-                name: resolvedSettings.jsonSchemaName || "response_output",
-                schema: resolvedSettings.parsedJsonSchema || {},
-                strict: true,
-              },
-    },
+    text: requestConfig.text,
+    ...(requestConfig.instructions ? { instructions: requestConfig.instructions } : {}),
     ...(resolvedSettings.maxOutputTokens !== null ? { max_output_tokens: resolvedSettings.maxOutputTokens } : {}),
   });
 
@@ -649,7 +683,7 @@ async function submitOpenAiText(input: ProviderJobInput): Promise<NormalizedOutp
 }
 
 async function submitTopazGigapixel(input: ProviderJobInput): Promise<NormalizedOutput[]> {
-  const model = getProviderModelDescriptor(input.providerId, input.modelId);
+  const model = await getResolvedProviderModelDescriptor(input.providerId, input.modelId);
   if (!model) {
     throw createProviderError("INVALID_INPUT", `Unknown provider model: ${input.providerId}/${input.modelId}`);
   }
@@ -662,7 +696,7 @@ async function submitTopazGigapixel(input: ProviderJobInput): Promise<Normalized
   if (missingRequirement) {
     throw createProviderError(
       "CONFIG_ERROR",
-      `Topaz is not configured. Set ${missingRequirement.key} in .env.local and restart npm run dev.`
+      `Topaz is not configured. Save ${missingRequirement.key} in Settings or set it in .env.local and restart the app.`
     );
   }
 
@@ -761,11 +795,12 @@ export function getProviderAdapter(providerId: ProviderId): ProviderAdapter {
   return adapters[providerId];
 }
 
-export function getProviderModel(providerId: ProviderId, modelId: string): ProviderModelDescriptor | null {
-  return getProviderModelDescriptor(providerId, modelId);
+export async function getProviderModel(providerId: ProviderId, modelId: string): Promise<ProviderModelDescriptor | null> {
+  return getResolvedProviderModelDescriptor(providerId, modelId);
 }
 
-export function getAllProviderModels(): ProviderModelDescriptor[] {
+export async function getAllProviderModels(): Promise<ProviderModelDescriptor[]> {
   const catalog = buildProviderCatalog();
-  return [...catalog.openai, ...catalog["google-gemini"], ...catalog.topaz];
+  const models = [...catalog.openai, ...catalog["google-gemini"], ...catalog.topaz];
+  return Promise.all(models.map((model) => resolveProviderModelCredentials(model)));
 }

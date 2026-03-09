@@ -9,6 +9,7 @@
 - Project lifecycle and workspace behavior: [docs/PROJECTS_AND_WORKSPACE.md](docs/PROJECTS_AND_WORKSPACE.md)
 - Delivery plan: [docs/ROADMAP.md](docs/ROADMAP.md)
 - Architecture decisions log: [docs/DECISIONS.md](docs/DECISIONS.md)
+- Testing protocol: [docs/TESTING_PROTOCOL.md](docs/TESTING_PROTOCOL.md)
 - Deferred multitenancy design: [docs/FUTURE_MULTITENANCY.md](docs/FUTURE_MULTITENANCY.md)
 
 ## Mission

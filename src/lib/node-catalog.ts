@@ -1,0 +1,675 @@
+import { createDefaultListNodeSettings, createTextNoteSettings, createTextTemplateNodeSettings } from "@/lib/list-template";
+import type { ProviderId, ProviderModel, WorkflowNode } from "@/components/workspace/types";
+
+export type NodeCatalogEntryId =
+  | "model"
+  | "text-note"
+  | "list"
+  | "text-template"
+  | "asset-uploaded"
+  | "asset-generated";
+
+export type NodeCatalogInsertContext = "canvas" | "model-input" | "template-input";
+export type NodeCatalogCategory = "Generation" | "Text" | "Data" | "Assets";
+export type NodeCatalogDisplayMode = "preview" | "compact" | "full" | "resized";
+export type SpawnableNodeCatalogKind = "text-note" | "list" | "text-template";
+
+export type NodeCatalogVariantStatus = "ready" | "missing_key" | "coming_soon";
+
+export type NodeCatalogVariant = {
+  id: string;
+  entryId: "model";
+  providerId: ProviderId;
+  modelId: string;
+  label: string;
+  providerLabel: string;
+  description: string;
+  availabilityLabel: string;
+  status: NodeCatalogVariantStatus;
+  outputType: WorkflowNode["outputType"];
+  defaultSettings: Record<string, unknown>;
+};
+
+export type NodeCatalogPromptHarnessSummary = {
+  kind: SpawnableNodeCatalogKind;
+  label: string;
+  promptSummary: string;
+  payloadSummary: string;
+};
+
+export type NodePlaygroundFixture = {
+  focusNodeId: string;
+  nodes: WorkflowNode[];
+  viewport?: {
+    x: number;
+    y: number;
+    zoom: number;
+  };
+};
+
+export type NodeCatalogEntry = {
+  id: NodeCatalogEntryId;
+  label: string;
+  shortDescription: string;
+  category: NodeCatalogCategory;
+  inputSummary: string;
+  outputSummary: string;
+  insertableOnCanvas: boolean;
+  insertContexts: NodeCatalogInsertContext[];
+  hasVariants: boolean;
+  supportedDisplayModes: NodeCatalogDisplayMode[];
+  detailCopy: string;
+  settingsSummary: string[];
+  variantHint?: string;
+  promptHarnessSummary?: NodeCatalogPromptHarnessSummary;
+  buildPlaygroundFixture: (providerModels: ProviderModel[]) => NodePlaygroundFixture;
+};
+
+type CatalogBaseDefinition = Omit<NodeCatalogEntry, "variantHint" | "buildPlaygroundFixture"> & {
+  buildFixture: (providerModels: ProviderModel[]) => NodePlaygroundFixture;
+};
+
+const providerLabels: Record<ProviderId, string> = {
+  openai: "OpenAI",
+  "google-gemini": "Google Gemini",
+  topaz: "Topaz",
+};
+
+function getProviderLabel(providerId: ProviderId) {
+  return providerLabels[providerId] || providerId;
+}
+
+function getVariantStatus(model: ProviderModel): NodeCatalogVariantStatus {
+  if (model.capabilities.availability === "coming_soon") {
+    return "coming_soon";
+  }
+
+  if (!model.capabilities.runnable) {
+    return "missing_key";
+  }
+
+  return "ready";
+}
+
+function getVariantAvailabilityLabel(model: ProviderModel) {
+  const status = getVariantStatus(model);
+  if (status === "ready") {
+    return "Ready";
+  }
+  if (status === "missing_key") {
+    return "Missing key";
+  }
+  return "Coming soon";
+}
+
+function getModelOutputType(model: ProviderModel): WorkflowNode["outputType"] {
+  if (model.capabilities.text) {
+    return "text";
+  }
+  if (model.capabilities.video) {
+    return "video";
+  }
+  return "image";
+}
+
+function createFallbackModel(): ProviderModel {
+  return {
+    providerId: "openai",
+    modelId: "gpt-image-1.5",
+    displayName: "GPT Image 1.5",
+    capabilities: {
+      text: false,
+      image: true,
+      video: false,
+      runnable: false,
+      availability: "ready",
+      requiresApiKeyEnv: "OPENAI_API_KEY",
+      apiKeyConfigured: false,
+      requirements: [
+        {
+          kind: "env",
+          key: "OPENAI_API_KEY",
+          configured: false,
+          label: "OpenAI API key",
+        },
+      ],
+      promptMode: "required",
+      executionModes: ["generate", "edit"],
+      acceptedInputMimeTypes: [],
+      maxInputImages: 0,
+      parameters: [],
+      defaults: {},
+    },
+  };
+}
+
+export function getDefaultModelCatalogVariant(providerModels: ProviderModel[]): NodeCatalogVariant {
+  const variants = getModelCatalogVariants(providerModels);
+  return (
+    variants.find((variant) => variant.providerId === "openai" && variant.modelId === "gpt-image-1.5") ||
+    variants.find((variant) => variant.status === "ready") ||
+    variants[0] ||
+    createModelCatalogVariant(createFallbackModel())
+  );
+}
+
+function createModelCatalogVariant(model: ProviderModel): NodeCatalogVariant {
+  return {
+    id: `model:${model.providerId}:${model.modelId}`,
+    entryId: "model",
+    providerId: model.providerId,
+    modelId: model.modelId,
+    label: model.displayName,
+    providerLabel: getProviderLabel(model.providerId),
+    description: model.modelId,
+    availabilityLabel: getVariantAvailabilityLabel(model),
+    status: getVariantStatus(model),
+    outputType: getModelOutputType(model),
+    defaultSettings: { ...(model.capabilities.defaults || {}) },
+  };
+}
+
+export function getModelCatalogVariants(providerModels: ProviderModel[]) {
+  return providerModels.map((model) => createModelCatalogVariant(model));
+}
+
+export function getModelCatalogVariantById(providerModels: ProviderModel[], variantId: string) {
+  return getModelCatalogVariants(providerModels).find((variant) => variant.id === variantId) || null;
+}
+
+export function groupModelCatalogVariants(providerModels: ProviderModel[]) {
+  return getModelCatalogVariants(providerModels).reduce<Record<ProviderId, NodeCatalogVariant[]>>((acc, variant) => {
+    acc[variant.providerId] = acc[variant.providerId] || [];
+    acc[variant.providerId].push(variant);
+    return acc;
+  }, {} as Record<ProviderId, NodeCatalogVariant[]>);
+}
+
+export function formatModelVariantLabel(variant: NodeCatalogVariant) {
+  return `${variant.providerLabel} · ${variant.label}`;
+}
+
+function createBaseModelNode(
+  providerModels: ProviderModel[],
+  overrides?: Partial<WorkflowNode>
+): WorkflowNode {
+  const variant = getDefaultModelCatalogVariant(providerModels);
+  return {
+    id: overrides?.id || "library-model",
+    label: overrides?.label || "Image Generator",
+    providerId: overrides?.providerId || variant.providerId,
+    modelId: overrides?.modelId || variant.modelId,
+    kind: "model",
+    nodeType: overrides?.nodeType || (variant.outputType === "text" ? "text-gen" : variant.outputType === "video" ? "video-gen" : "image-gen"),
+    outputType: overrides?.outputType || variant.outputType,
+    prompt: overrides?.prompt || "",
+    settings: { ...variant.defaultSettings, ...(overrides?.settings || {}) },
+    sourceAssetId: null,
+    sourceAssetMimeType: null,
+    sourceJobId: null,
+    sourceOutputIndex: null,
+    processingState: null,
+    promptSourceNodeId: overrides?.promptSourceNodeId || null,
+    upstreamNodeIds: overrides?.upstreamNodeIds || [],
+    upstreamAssetIds: overrides?.upstreamAssetIds || [],
+    x: overrides?.x ?? 520,
+    y: overrides?.y ?? 200,
+    displayMode: overrides?.displayMode || "preview",
+    size: overrides?.size || null,
+  };
+}
+
+function createBaseTextNoteNode(overrides?: Partial<WorkflowNode>): WorkflowNode {
+  return {
+    id: overrides?.id || "library-note",
+    label: overrides?.label || "Prompt Note",
+    providerId: overrides?.providerId || "openai",
+    modelId: overrides?.modelId || "gpt-image-1.5",
+    kind: "text-note",
+    nodeType: "text-note",
+    outputType: "text",
+    prompt: overrides?.prompt || "",
+    settings: overrides?.settings || createTextNoteSettings(),
+    sourceAssetId: null,
+    sourceAssetMimeType: null,
+    sourceJobId: null,
+    sourceOutputIndex: null,
+    processingState: null,
+    promptSourceNodeId: null,
+    upstreamNodeIds: [],
+    upstreamAssetIds: [],
+    x: overrides?.x ?? 180,
+    y: overrides?.y ?? 220,
+    displayMode: overrides?.displayMode || "preview",
+    size: overrides?.size || null,
+  };
+}
+
+function createBaseListNode(overrides?: Partial<WorkflowNode>): WorkflowNode {
+  return {
+    id: overrides?.id || "library-list",
+    label: overrides?.label || "Sample List",
+    providerId: overrides?.providerId || "openai",
+    modelId: overrides?.modelId || "gpt-image-1.5",
+    kind: "list",
+    nodeType: "list",
+    outputType: "text",
+    prompt: overrides?.prompt || "",
+    settings: overrides?.settings || createDefaultListNodeSettings(),
+    sourceAssetId: null,
+    sourceAssetMimeType: null,
+    sourceJobId: null,
+    sourceOutputIndex: null,
+    processingState: null,
+    promptSourceNodeId: null,
+    upstreamNodeIds: [],
+    upstreamAssetIds: [],
+    x: overrides?.x ?? 180,
+    y: overrides?.y ?? 180,
+    displayMode: overrides?.displayMode || "preview",
+    size: overrides?.size || null,
+  };
+}
+
+function createBaseTemplateNode(overrides?: Partial<WorkflowNode>): WorkflowNode {
+  return {
+    id: overrides?.id || "library-template",
+    label: overrides?.label || "Prompt Template",
+    providerId: overrides?.providerId || "openai",
+    modelId: overrides?.modelId || "gpt-image-1.5",
+    kind: "text-template",
+    nodeType: "text-template",
+    outputType: "text",
+    prompt: overrides?.prompt || "",
+    settings: overrides?.settings || createTextTemplateNodeSettings(),
+    sourceAssetId: null,
+    sourceAssetMimeType: null,
+    sourceJobId: null,
+    sourceOutputIndex: null,
+    processingState: null,
+    promptSourceNodeId: null,
+    upstreamNodeIds: overrides?.upstreamNodeIds || [],
+    upstreamAssetIds: overrides?.upstreamAssetIds || [],
+    x: overrides?.x ?? 540,
+    y: overrides?.y ?? 180,
+    displayMode: overrides?.displayMode || "preview",
+    size: overrides?.size || null,
+  };
+}
+
+function createBaseAssetNode(overrides?: Partial<WorkflowNode>): WorkflowNode {
+  return {
+    id: overrides?.id || "library-asset",
+    label: overrides?.label || "Reference Asset",
+    providerId: overrides?.providerId || "openai",
+    modelId: overrides?.modelId || "gpt-image-1.5",
+    kind: "asset-source",
+    nodeType: "image-gen",
+    outputType: overrides?.outputType || "image",
+    prompt: "",
+    settings: overrides?.settings || { source: "upload" },
+    sourceAssetId: overrides?.sourceAssetId || "library-asset-ref",
+    sourceAssetMimeType: overrides?.sourceAssetMimeType || "image/png",
+    sourceJobId: overrides?.sourceJobId || null,
+    sourceOutputIndex: overrides?.sourceOutputIndex ?? null,
+    processingState: overrides?.processingState || null,
+    promptSourceNodeId: null,
+    upstreamNodeIds: [],
+    upstreamAssetIds: [],
+    x: overrides?.x ?? 280,
+    y: overrides?.y ?? 180,
+    displayMode: overrides?.displayMode || "preview",
+    size: overrides?.size || null,
+  };
+}
+
+const baseDefinitions: CatalogBaseDefinition[] = [
+  {
+    id: "model",
+    label: "Model Node",
+    shortDescription: "Runs a provider model and spawns text, image, or video outputs.",
+    category: "Generation",
+    inputSummary: "Prompt note, asset inputs, list/template outputs downstream.",
+    outputSummary: "Generated assets or structured text children.",
+    insertableOnCanvas: true,
+    insertContexts: ["canvas"],
+    hasVariants: true,
+    supportedDisplayModes: ["preview", "compact", "full"],
+    detailCopy:
+      "Model nodes are the execution engines in the graph. They can take prompt notes or assets as inputs, expose provider-specific settings, and spawn generated child nodes on run.",
+    settingsSummary: ["Provider + model", "Prompt text", "Provider parameters", "Output target"],
+    buildFixture(providerModels) {
+      const promptNode = createBaseTextNoteNode({
+        id: "library-model-note",
+        label: "Prompt Note",
+        prompt: "Illustrate a cheerful river otter in a clean editorial style.",
+        x: 140,
+        y: 220,
+      });
+      const modelNode = createBaseModelNode(providerModels, {
+        id: "library-model-primary",
+        label: "Image Generator",
+        promptSourceNodeId: promptNode.id,
+        x: 500,
+        y: 200,
+      });
+
+      return {
+        focusNodeId: modelNode.id,
+        nodes: [promptNode, modelNode],
+        viewport: { x: -40, y: 24, zoom: 0.9 },
+      };
+    },
+  },
+  {
+    id: "text-note",
+    label: "Text Note",
+    shortDescription: "Stores freeform text, prompt fragments, or annotations directly on canvas.",
+    category: "Text",
+    inputSummary: "Manual text or generated text.",
+    outputSummary: "Text prompt source for models and templates.",
+    insertableOnCanvas: true,
+    insertContexts: ["canvas", "model-input"],
+    hasVariants: false,
+    supportedDisplayModes: ["preview", "compact", "full", "resized"],
+    detailCopy:
+      "Text notes are lightweight writing surfaces. Use them for prompt fragments, briefs, and any freeform copy that should feed other nodes without forcing structure.",
+    settingsSummary: ["Label", "Body copy", "Preview / compact / resized display"],
+    promptHarnessSummary: {
+      kind: "text-note",
+      label: "Text note",
+      promptSummary: "Use for plain written content, explanations, ideas, captions, or standalone text.",
+      payloadSummary: "text-note nodes use the text field.",
+    },
+    buildFixture() {
+      const noteNode = createBaseTextNoteNode({
+        id: "library-text-note-primary",
+        label: "Idea Note",
+        prompt:
+          "Cute northern UK animals with soft, minimal shapes and simple white-background compositions.",
+        x: 240,
+        y: 200,
+        displayMode: "preview",
+      });
+
+      return {
+        focusNodeId: noteNode.id,
+        nodes: [noteNode],
+        viewport: { x: 110, y: 44, zoom: 1.05 },
+      };
+    },
+  },
+  {
+    id: "list",
+    label: "List / Sheet",
+    shortDescription: "Structured rows and columns for repeated prompts, records, or datasets.",
+    category: "Data",
+    inputSummary: "Manual rows or model-generated structured data.",
+    outputSummary: "Reusable records for templates and prompt generation.",
+    insertableOnCanvas: true,
+    insertContexts: ["canvas", "template-input"],
+    hasVariants: false,
+    supportedDisplayModes: ["preview", "compact", "full", "resized"],
+    detailCopy:
+      "List nodes are inline sheets. They hold column-based structured data that can be edited directly, previewed on canvas, and piped into template generation.",
+    settingsSummary: ["Columns", "Rows", "Editable full sheet", "Resizable workspace"],
+    promptHarnessSummary: {
+      kind: "list",
+      label: "List",
+      promptSummary: "Use for structured repeated data, rows, tabular information, records, or datasets.",
+      payloadSummary: "list nodes use columns and rows.",
+    },
+    buildFixture() {
+      const listNode = createBaseListNode({
+        id: "library-list-primary",
+        label: "Cute Northern UK Animals",
+        settings: {
+          source: "list",
+          columns: [
+            { id: "list-col-name", label: "Common name" },
+            { id: "list-col-habitat", label: "Where in northern UK" },
+            { id: "list-col-traits", label: "Cute traits" },
+          ],
+          rows: [
+            {
+              id: "list-row-1",
+              values: {
+                "list-col-name": "Red Fox",
+                "list-col-habitat": "Woodlands, moor edges",
+                "list-col-traits": "Bushy tail, bright face",
+              },
+            },
+            {
+              id: "list-row-2",
+              values: {
+                "list-col-name": "European Hedgehog",
+                "list-col-habitat": "Gardens, hedgerows",
+                "list-col-traits": "Round snout, tiny paws",
+              },
+            },
+            {
+              id: "list-row-3",
+              values: {
+                "list-col-name": "Otter",
+                "list-col-habitat": "Rivers and estuaries",
+                "list-col-traits": "Whiskers, curious pose",
+              },
+            },
+          ],
+        },
+        x: 180,
+        y: 120,
+        size: { width: 760, height: 460 },
+        displayMode: "resized",
+      });
+
+      return {
+        focusNodeId: listNode.id,
+        nodes: [listNode],
+        viewport: { x: -10, y: 20, zoom: 0.78 },
+      };
+    },
+  },
+  {
+    id: "text-template",
+    label: "Template Node",
+    shortDescription: "Reusable prompt or writing pattern with live list-aware merge preview.",
+    category: "Text",
+    inputSummary: "Template text plus an optional connected list.",
+    outputSummary: "Merged text rows or downstream prompt batches.",
+    insertableOnCanvas: true,
+    insertContexts: ["canvas"],
+    hasVariants: false,
+    supportedDisplayModes: ["preview", "compact", "full", "resized"],
+    detailCopy:
+      "Template nodes pair freeform writing with structured list inputs. They detect variables, validate compatibility, and show merged previews directly inside the node.",
+    settingsSummary: ["Template text", "Variable shelf", "Compatibility checks", "Inline merge preview"],
+    promptHarnessSummary: {
+      kind: "text-template",
+      label: "Text template",
+      promptSummary: "Use for reusable prompt or writing patterns with fill-in placeholders.",
+      payloadSummary: "text-template nodes use templateText with [[variable]] placeholders.",
+    },
+    buildFixture() {
+      const listNode = createBaseListNode({
+        id: "library-template-list",
+        label: "Animal Data",
+        settings: {
+          source: "list",
+          columns: [
+            { id: "template-col-animal", label: "Animal" },
+            { id: "template-col-pose", label: "Pose" },
+            { id: "template-col-traits", label: "Cute traits" },
+          ],
+          rows: [
+            {
+              id: "template-row-1",
+              values: {
+                "template-col-animal": "Otter",
+                "template-col-pose": "curled beside a river rock",
+                "template-col-traits": "whiskers and bright paws",
+              },
+            },
+            {
+              id: "template-row-2",
+              values: {
+                "template-col-animal": "Puffin",
+                "template-col-pose": "standing forward",
+                "template-col-traits": "wide bill and orange feet",
+              },
+            },
+          ],
+        },
+        x: 120,
+        y: 180,
+      });
+      const templateNode = createBaseTemplateNode({
+        id: "library-template-primary",
+        label: "Illustration Prompt",
+        prompt:
+          "Illustrate a simple, cute [[Animal]] in a natural pose: [[Pose]]. Highlight [[Cute traits]].",
+        upstreamNodeIds: [listNode.id],
+        upstreamAssetIds: [`node:${listNode.id}`],
+        x: 500,
+        y: 160,
+        size: { width: 640, height: 420 },
+        displayMode: "resized",
+      });
+
+      return {
+        focusNodeId: templateNode.id,
+        nodes: [listNode, templateNode],
+        viewport: { x: -24, y: 20, zoom: 0.8 },
+      };
+    },
+  },
+  {
+    id: "asset-uploaded",
+    label: "Uploaded Asset",
+    shortDescription: "Pointer node for files imported into the local project asset store.",
+    category: "Assets",
+    inputSummary: "Imported local file.",
+    outputSummary: "Image, video, or text asset reference.",
+    insertableOnCanvas: true,
+    insertContexts: ["canvas", "model-input"],
+    hasVariants: false,
+    supportedDisplayModes: ["preview", "compact", "full", "resized"],
+    detailCopy:
+      "Uploaded asset nodes point to files already in the project asset store. They act as reusable references for edits, transforms, and comparison flows.",
+    settingsSummary: ["Asset preview", "Open in viewer", "Download", "Resizable image framing"],
+    buildFixture() {
+      const assetNode = createBaseAssetNode({
+        id: "library-uploaded-asset",
+        label: "Uploaded Asset",
+        settings: { source: "upload" },
+        x: 260,
+        y: 180,
+      });
+
+      return {
+        focusNodeId: assetNode.id,
+        nodes: [assetNode],
+        viewport: { x: 56, y: 42, zoom: 1.02 },
+      };
+    },
+  },
+  {
+    id: "asset-generated",
+    label: "Generated Asset",
+    shortDescription: "Pointer node to a model-produced output with preserved source lineage.",
+    category: "Assets",
+    inputSummary: "Completed model job output.",
+    outputSummary: "Generated asset reference with source-call lineage.",
+    insertableOnCanvas: true,
+    insertContexts: ["canvas", "model-input"],
+    hasVariants: false,
+    supportedDisplayModes: ["preview", "compact", "full", "resized"],
+    detailCopy:
+      "Generated asset nodes are one-time spawned children from model runs. They keep source-call metadata for inspection, but behave like normal user-owned nodes after creation.",
+    settingsSummary: ["Preview frame", "Source lineage", "Open in viewer", "Resizable image framing"],
+    buildFixture(providerModels) {
+      const modelNode = createBaseModelNode(providerModels, {
+        id: "library-generated-model",
+        label: "Image Generator",
+        x: 120,
+        y: 200,
+      });
+      const assetNode = createBaseAssetNode({
+        id: "library-generated-asset",
+        label: "Generated Output",
+        settings: {
+          source: "generated-preview",
+          sourceModelNodeId: modelNode.id,
+          sourceJobId: "library-job-1",
+          outputIndex: 0,
+          descriptorIndex: 0,
+        },
+        sourceJobId: "library-job-1",
+        sourceOutputIndex: 0,
+        x: 520,
+        y: 180,
+      });
+
+      return {
+        focusNodeId: assetNode.id,
+        nodes: [modelNode, assetNode],
+        viewport: { x: 8, y: 30, zoom: 0.9 },
+      };
+    },
+  },
+];
+
+export function getSpawnableNodeCatalogSummaries(): NodeCatalogPromptHarnessSummary[] {
+  return baseDefinitions
+    .map((definition) => definition.promptHarnessSummary || null)
+    .filter((summary): summary is NodeCatalogPromptHarnessSummary => Boolean(summary));
+}
+
+export function getNodeCatalogEntries(providerModels: ProviderModel[]) {
+  const modelVariants = getModelCatalogVariants(providerModels);
+  const providerCount = new Set(modelVariants.map((variant) => variant.providerId)).size;
+  const modelVariantHint =
+    modelVariants.length > 0
+      ? `${providerCount} provider${providerCount === 1 ? "" : "s"} · ${modelVariants.length} model${modelVariants.length === 1 ? "" : "s"}`
+      : "Provider-backed variants";
+
+  return baseDefinitions.map((definition) => ({
+    ...definition,
+    variantHint: definition.id === "model" ? modelVariantHint : undefined,
+    buildPlaygroundFixture: definition.buildFixture,
+  }));
+}
+
+export function getNodeCatalogEntry(entryId: string, providerModels: ProviderModel[]) {
+  return getNodeCatalogEntries(providerModels).find((entry) => entry.id === entryId) || null;
+}
+
+export function getInsertableNodeCatalogEntries(
+  context: NodeCatalogInsertContext,
+  providerModels: ProviderModel[]
+) {
+  return getNodeCatalogEntries(providerModels).filter(
+    (entry) => entry.insertableOnCanvas && entry.insertContexts.includes(context)
+  );
+}
+
+export function buildNodeCatalogMachineSummary() {
+  return getSpawnableNodeCatalogSummaries()
+    .map((summary) => `${summary.kind}: ${summary.promptSummary} ${summary.payloadSummary}`)
+    .join(" ");
+}
+
+const nodeCatalog = {
+  buildNodeCatalogMachineSummary,
+  formatModelVariantLabel,
+  getDefaultModelCatalogVariant,
+  getInsertableNodeCatalogEntries,
+  getModelCatalogVariantById,
+  getModelCatalogVariants,
+  getNodeCatalogEntries,
+  getNodeCatalogEntry,
+  getSpawnableNodeCatalogSummaries,
+  groupModelCatalogVariants,
+};
+
+export default nodeCatalog;

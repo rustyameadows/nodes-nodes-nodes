@@ -1,0 +1,44 @@
+{
+  "appId": "com.rustymeadows.nodesnodenodes",
+  "productName": "Nodes Nodes Nodes",
+  "directories": {
+    "output": "release",
+    "buildResources": "build-resources"
+  },
+  "files": [
+    "dist/**/*",
+    "package.json"
+  ],
+  "extraMetadata": {
+    "main": "dist/electron/main.cjs"
+  },
+  "asar": true,
+  "asarUnpack": [
+    "node_modules/better-sqlite3/**/*",
+    "node_modules/keytar/**/*"
+  ],
+  "npmRebuild": false,
+  "mac": {
+    "icon": "build-resources/icon.icns",
+    "category": "public.app-category.graphics-design",
+    "darkModeSupport": true,
+    "hardenedRuntime": false,
+    "gatekeeperAssess": false,
+    "identity": null,
+    "artifactName": "${productName}-${version}-${arch}-mac.${ext}",
+    "target": [
+      {
+        "target": "dir",
+        "arch": [
+          "arm64"
+        ]
+      },
+      {
+        "target": "zip",
+        "arch": [
+          "arm64"
+        ]
+      }
+    ]
+  }
+}

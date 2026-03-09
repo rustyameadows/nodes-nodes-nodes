@@ -1,11 +1,19 @@
-import { Prisma } from "@prisma/client";
+import { and, eq, inArray } from "drizzle-orm";
 import { getImageDimensions } from "@/lib/image-dimensions";
+import {
+  createGeneratedTextNoteDescriptorsFromRawText,
+  parseStructuredTextOutput,
+} from "@/lib/generated-text-output";
 import { buildOpenAiImageDebugRequest } from "@/lib/openai-image-settings";
 import { buildOpenAiTextDebugRequest, isRunnableOpenAiTextModel } from "@/lib/openai-text-settings";
 import { buildTopazGigapixelDebugRequest } from "@/lib/topaz-gigapixel-settings";
-import { prisma } from "@/lib/prisma";
+import { getDb } from "@/lib/db/client";
+import { assets, jobAttempts, jobPreviewFrames, jobs } from "@/lib/db/schema";
 import { getProviderAdapter } from "@/lib/providers/registry";
-import { readAssetContent, saveBufferAsAsset } from "@/lib/storage/local-storage";
+import { createImportedAsset } from "@/lib/services/assets";
+import { nowIso, newId } from "@/lib/services/common";
+import { readAssetContent, saveBufferAsPreview } from "@/lib/storage/local-storage";
+import { isStructuredTextOutputTarget, readOpenAiTextOutputTarget } from "@/lib/text-output-targets";
 import type { NodePayload, NormalizedPreviewFrame, ProviderId } from "@/lib/types";
 
 function asNodePayload(value: unknown): NodePayload {
@@ -24,15 +32,9 @@ function asNodePayload(value: unknown): NodePayload {
     outputCount:
       typeof raw.outputCount === "number" && Number.isInteger(raw.outputCount) ? Math.max(1, raw.outputCount) : 1,
     promptSourceNodeId: raw.promptSourceNodeId ? String(raw.promptSourceNodeId) : null,
-    upstreamNodeIds: Array.isArray(raw.upstreamNodeIds)
-      ? raw.upstreamNodeIds.map((id) => String(id))
-      : [],
-    upstreamAssetIds: Array.isArray(raw.upstreamAssetIds)
-      ? raw.upstreamAssetIds.map((id) => String(id))
-      : [],
-    inputImageAssetIds: Array.isArray(raw.inputImageAssetIds)
-      ? raw.inputImageAssetIds.map((id) => String(id))
-      : [],
+    upstreamNodeIds: Array.isArray(raw.upstreamNodeIds) ? raw.upstreamNodeIds.map((id) => String(id)) : [],
+    upstreamAssetIds: Array.isArray(raw.upstreamAssetIds) ? raw.upstreamAssetIds.map((id) => String(id)) : [],
+    inputImageAssetIds: Array.isArray(raw.inputImageAssetIds) ? raw.inputImageAssetIds.map((id) => String(id)) : [],
   };
 }
 
@@ -59,17 +61,14 @@ async function loadInputAssets(projectId: string, inputImageAssetIds: string[]) 
     return [];
   }
 
+  const db = getDb();
   const uniqueAssetIds = [...new Set(inputImageAssetIds)];
-  const assets = await prisma.asset.findMany({
-    where: {
-      projectId,
-      id: {
-        in: uniqueAssetIds,
-      },
-    },
-  });
-
-  const assetMap = new Map(assets.map((asset) => [asset.id, asset]));
+  const assetRows = db
+    .select()
+    .from(assets)
+    .where(and(eq(assets.projectId, projectId), inArray(assets.id, uniqueAssetIds)))
+    .all();
+  const assetMap = new Map(assetRows.map((asset) => [asset.id, asset]));
   const orderedAssets = uniqueAssetIds
     .map((assetId) => assetMap.get(assetId))
     .filter((asset): asset is NonNullable<typeof asset> => Boolean(asset));
@@ -111,27 +110,27 @@ function buildProviderRequest(
           rawSettings: payload.settings,
         })
       : providerId === "openai"
-      ? buildOpenAiImageDebugRequest({
-          modelId,
-          prompt: payload.prompt,
-          executionMode: payload.executionMode,
-          rawSettings: payload.settings,
-          inputImageAssetIds: payload.inputImageAssetIds,
-        })
-      : providerId === "topaz"
-        ? buildTopazGigapixelDebugRequest({
+        ? buildOpenAiImageDebugRequest({
             modelId,
             prompt: payload.prompt,
+            executionMode: payload.executionMode,
             rawSettings: payload.settings,
             inputImageAssetIds: payload.inputImageAssetIds,
-            inputAssets: inputAssets.map((asset) => ({
-              assetId: asset.assetId,
-              mimeType: asset.mimeType,
-              width: asset.width ?? null,
-              height: asset.height ?? null,
-            })),
           })
-      : null;
+        : providerId === "topaz"
+          ? buildTopazGigapixelDebugRequest({
+              modelId,
+              prompt: payload.prompt,
+              rawSettings: payload.settings,
+              inputImageAssetIds: payload.inputImageAssetIds,
+              inputAssets: inputAssets.map((asset) => ({
+                assetId: asset.assetId,
+                mimeType: asset.mimeType,
+                width: asset.width ?? null,
+                height: asset.height ?? null,
+              })),
+            })
+          : null;
 
   return {
     providerId,
@@ -148,28 +147,38 @@ function buildProviderRequest(
       height: asset.height ?? null,
       durationMs: asset.durationMs ?? null,
     })),
-  } as Prisma.InputJsonValue;
+  };
 }
 
 function extensionForPreviewMimeType(mimeType: string) {
-  if (mimeType === "image/jpeg") {
-    return "jpg";
-  }
-  if (mimeType === "image/webp") {
-    return "webp";
-  }
+  if (mimeType === "image/jpeg") return "jpg";
+  if (mimeType === "image/webp") return "webp";
   return "png";
 }
 
+function getTextOutputs(outputs: Awaited<ReturnType<ReturnType<typeof getProviderAdapter>["submitJob"]>>) {
+  return outputs
+    .map((output, index) => ({ output, index }))
+    .filter(({ output }) => output.type === "text" && typeof output.content === "string")
+    .map(({ output, index }) => ({
+      content: output.content as string,
+      outputIndex: typeof output.metadata.outputIndex === "number" ? Number(output.metadata.outputIndex) : index,
+      metadata: output.metadata,
+    }));
+}
+
 async function persistPreviewFrame(projectId: string, jobId: string, previewFrame: NormalizedPreviewFrame) {
-  const stored = await saveBufferAsAsset(
-    projectId,
+  const db = getDb();
+  const stored = await saveBufferAsPreview(
+    jobId,
     previewFrame.extension || extensionForPreviewMimeType(previewFrame.mimeType),
     previewFrame.content
   );
+  const id = newId();
 
-  return prisma.jobPreviewFrame.create({
-    data: {
+  db.insert(jobPreviewFrames)
+    .values({
+      id,
       jobId,
       outputIndex: previewFrame.outputIndex,
       previewIndex: previewFrame.previewIndex,
@@ -177,13 +186,17 @@ async function persistPreviewFrame(projectId: string, jobId: string, previewFram
       mimeType: previewFrame.mimeType,
       width: typeof previewFrame.metadata.width === "number" ? previewFrame.metadata.width : null,
       height: typeof previewFrame.metadata.height === "number" ? previewFrame.metadata.height : null,
-    },
-  });
+      createdAt: nowIso(),
+    })
+    .run();
+
+  return db.select().from(jobPreviewFrames).where(eq(jobPreviewFrames.id, id)).get()!;
 }
 
 export async function processJobById(jobId: string) {
-  const existing = await prisma.job.findUnique({ where: { id: jobId } });
-  if (!existing || existing.state !== "queued") {
+  const db = getDb();
+  const existing = db.select().from(jobs).where(eq(jobs.id, jobId)).get();
+  if (!existing || (existing.state !== "queued" && existing.state !== "running")) {
     return;
   }
 
@@ -191,19 +204,18 @@ export async function processJobById(jobId: string) {
   const payload = asNodePayload(existing.nodeRunPayload);
   const providerId = existing.providerId as ProviderId;
 
-  await prisma.job.update({
-    where: { id: jobId },
-    data: {
+  db.update(jobs)
+    .set({
       state: "running",
-      startedAt: new Date(),
+      startedAt: existing.startedAt || nowIso(),
       attempts: attemptNumber,
       errorCode: null,
       errorMessage: null,
-    },
-  });
-  await prisma.jobPreviewFrame.deleteMany({
-    where: { jobId },
-  });
+      updatedAt: nowIso(),
+    })
+    .where(eq(jobs.id, jobId))
+    .run();
+  db.delete(jobPreviewFrames).where(eq(jobPreviewFrames.jobId, jobId)).run();
 
   const start = Date.now();
   let inputAssets: Awaited<ReturnType<typeof loadInputAssets>> = [];
@@ -212,7 +224,7 @@ export async function processJobById(jobId: string) {
     outputIndex: number;
     previewIndex: number;
     mimeType: string;
-    createdAt: Date;
+    createdAt: string;
   }> = [];
 
   try {
@@ -250,9 +262,34 @@ export async function processJobById(jobId: string) {
                 : null,
           }
         : null;
+    const textOutputs = getTextOutputs(outputs);
+    const textOutputTarget = readOpenAiTextOutputTarget(payload.settings.textOutputTarget);
+    const generatedNodeDescriptorResult =
+      textOutputs.length === 0
+        ? null
+        : isStructuredTextOutputTarget(textOutputTarget)
+          ? parseStructuredTextOutput({
+              textOutputTarget,
+              content: textOutputs[0]!.content,
+              sourceJobId: jobId,
+              sourceModelNodeId: payload.nodeId,
+              outputIndex: textOutputs[0]!.outputIndex,
+            })
+          : {
+              generatedNodeDescriptors: createGeneratedTextNoteDescriptorsFromRawText({
+                outputs: textOutputs.map((output) => ({
+                  content: output.content,
+                  outputIndex: output.outputIndex,
+                })),
+                sourceJobId: jobId,
+                sourceModelNodeId: payload.nodeId,
+              }),
+              warning: null,
+            };
 
-    await prisma.jobAttempt.create({
-      data: {
+    db.insert(jobAttempts)
+      .values({
+        id: newId(),
         jobId,
         attemptNumber,
         providerRequest: buildProviderRequest(providerId, existing.modelId, payload, inputAssets),
@@ -274,17 +311,21 @@ export async function processJobById(jobId: string) {
             mimeType: previewFrame.mimeType,
             createdAt: previewFrame.createdAt,
           })),
-          ...(topazApiMetadata
+          ...(generatedNodeDescriptorResult
             ? {
-                topazApi: topazApiMetadata,
+                textOutputTarget,
+                generatedNodeDescriptors: generatedNodeDescriptorResult.generatedNodeDescriptors,
+                generatedNodeDescriptorWarning: generatedNodeDescriptorResult.warning,
               }
             : {}),
-        } as Prisma.InputJsonValue,
+          ...(topazApiMetadata ? { topazApi: topazApiMetadata } : {}),
+        },
         durationMs: Date.now() - start,
-      },
-    });
+        createdAt: nowIso(),
+      })
+      .run();
 
-    for (const output of outputs) {
+    for (const [index, output] of outputs.entries()) {
       if (output.type === "text") {
         continue;
       }
@@ -292,57 +333,44 @@ export async function processJobById(jobId: string) {
       const outputBuffer = Buffer.isBuffer(output.content)
         ? output.content
         : Buffer.from(output.content, output.encoding === "binary" ? undefined : output.encoding);
-      const inferredDimensions =
-        output.type === "image" ? getImageDimensions(outputBuffer, output.mimeType) : null;
-      const stored = await saveBufferAsAsset(existing.projectId, output.extension, outputBuffer);
-      const width =
-        typeof output.metadata.width === "number" ? output.metadata.width : inferredDimensions?.width ?? null;
-      const height =
-        typeof output.metadata.height === "number" ? output.metadata.height : inferredDimensions?.height ?? null;
-      const durationMs = typeof output.metadata.durationMs === "number" ? output.metadata.durationMs : null;
-
-      const asset = await prisma.asset.create({
-        data: {
-          projectId: existing.projectId,
-          jobId,
-          type: output.type,
-          storageRef: stored.storageRef,
+      const outputIndex = typeof output.metadata.outputIndex === "number" ? output.metadata.outputIndex : index;
+      await createImportedAsset(
+        existing.projectId,
+        {
+          name: `${jobId}-${outputIndex}.${output.extension}`,
           mimeType: output.mimeType,
-          width,
-          height,
-          durationMs,
-          checksum: stored.checksum,
-          outputIndex: typeof output.metadata.outputIndex === "number" ? output.metadata.outputIndex : null,
+          buffer: outputBuffer,
         },
-      });
-
-      await prisma.assetFeedback.create({
-        data: {
-          assetId: asset.id,
-          rating: null,
-          flagged: false,
-        },
-      });
+        jobId,
+        outputIndex
+      );
     }
 
-    await prisma.job.update({
-      where: { id: jobId },
-      data: {
+    db.update(jobs)
+      .set({
         state: "succeeded",
-        finishedAt: new Date(),
-      },
-    });
+        finishedAt: nowIso(),
+        claimedAt: null,
+        claimToken: null,
+        lastHeartbeatAt: null,
+        updatedAt: nowIso(),
+      })
+      .where(eq(jobs.id, jobId))
+      .run();
   } catch (error) {
     const { code, message, details } = toErrorMessage(error);
+    const shouldRetry = attemptNumber < existing.maxAttempts;
+    const nextAvailableAt = new Date(Date.now() + Math.min(30_000, Math.pow(2, attemptNumber) * 1_000)).toISOString();
 
-    await prisma.jobAttempt.create({
-      data: {
+    db.insert(jobAttempts)
+      .values({
+        id: newId(),
         jobId,
         attemptNumber,
         providerRequest: buildProviderRequest(providerId, existing.modelId, payload, inputAssets),
         providerResponse:
           persistedPreviewFrames.length > 0
-            ? ({
+            ? {
                 previewFrameCount: persistedPreviewFrames.length,
                 previewFrames: persistedPreviewFrames.map((previewFrame) => ({
                   id: previewFrame.id,
@@ -351,29 +379,31 @@ export async function processJobById(jobId: string) {
                   mimeType: previewFrame.mimeType,
                   createdAt: previewFrame.createdAt,
                 })),
-                ...(details
-                  ? {
-                      errorDetails: details,
-                    }
-                  : {}),
-              } as Prisma.InputJsonValue)
+                ...(details ? { errorDetails: details } : {}),
+              }
             : details
-              ? ({ errorDetails: details } as Prisma.InputJsonValue)
-              : undefined,
+              ? { errorDetails: details }
+              : null,
         errorCode: code,
         errorMessage: message,
         durationMs: Date.now() - start,
-      },
-    });
+        createdAt: nowIso(),
+      })
+      .run();
 
-    await prisma.job.update({
-      where: { id: jobId },
-      data: {
-        state: "failed",
+    db.update(jobs)
+      .set({
+        state: shouldRetry ? "queued" : "failed",
         errorCode: code,
         errorMessage: message,
-        finishedAt: new Date(),
-      },
-    });
+        finishedAt: shouldRetry ? null : nowIso(),
+        availableAt: shouldRetry ? nextAvailableAt : nowIso(),
+        claimedAt: null,
+        claimToken: null,
+        lastHeartbeatAt: null,
+        updatedAt: nowIso(),
+      })
+      .where(eq(jobs.id, jobId))
+      .run();
   }
 }

@@ -1,8 +1,7 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import crypto from "node:crypto";
-
-const assetRoot = process.env.ASSET_STORAGE_ROOT || path.join(process.cwd(), ".local-assets");
+import { getAssetsRoot, getJobPreviewRoot, getProjectAssetsRoot, getPreviewsRoot } from "@/lib/runtime/app-paths";
 
 export type StoredAsset = {
   storageRef: string;
@@ -10,33 +9,29 @@ export type StoredAsset = {
   checksum: string;
 };
 
-async function ensureRoot() {
-  await mkdir(assetRoot, { recursive: true });
-}
-
 function sanitizeExtension(extension: string) {
   const cleaned = extension.replace(/^\.+/, "").toLowerCase();
   return cleaned || "bin";
 }
 
-async function saveBuffer(projectId: string, extension: string, buffer: Buffer): Promise<StoredAsset> {
-  await ensureRoot();
-
-  const bucketDir = path.join(assetRoot, projectId);
-  await mkdir(bucketDir, { recursive: true });
-
+async function saveBufferToRoot(rootDir: string, storagePrefix: string, extension: string, buffer: Buffer): Promise<StoredAsset> {
+  await mkdir(rootDir, { recursive: true });
   const safeExtension = sanitizeExtension(extension);
   const hash = crypto.createHash("sha1").update(buffer).digest("hex").slice(0, 16);
   const fileName = `${Date.now()}-${hash}.${safeExtension}`;
-  const absolutePath = path.join(bucketDir, fileName);
+  const absolutePath = path.join(rootDir, fileName);
 
   await writeFile(absolutePath, buffer);
 
   return {
-    storageRef: path.join(projectId, fileName),
+    storageRef: path.join(storagePrefix, fileName),
     absolutePath,
     checksum: hash,
   };
+}
+
+async function saveBuffer(projectId: string, extension: string, buffer: Buffer): Promise<StoredAsset> {
+  return saveBufferToRoot(getProjectAssetsRoot(projectId), projectId, extension, buffer);
 }
 
 export async function saveContentAsAsset(
@@ -57,8 +52,15 @@ export async function saveBufferAsAsset(
   return saveBuffer(projectId, extension, content);
 }
 
+export async function saveBufferAsPreview(jobId: string, extension: string, content: Buffer): Promise<StoredAsset> {
+  return saveBufferToRoot(getJobPreviewRoot(jobId), path.join("previews", jobId), extension, content);
+}
+
 export function getAssetAbsolutePath(storageRef: string): string {
-  return path.join(assetRoot, storageRef);
+  if (storageRef.startsWith(`previews${path.sep}`) || storageRef.startsWith("previews/")) {
+    return path.join(getPreviewsRoot(), storageRef.replace(/^previews[\\/]/, ""));
+  }
+  return path.join(getAssetsRoot(), storageRef);
 }
 
 export async function readAssetContent(storageRef: string): Promise<Buffer> {
@@ -66,6 +68,13 @@ export async function readAssetContent(storageRef: string): Promise<Buffer> {
 }
 
 export async function overwriteAssetContent(storageRef: string, content: Buffer) {
-  await ensureRoot();
   await writeFile(getAssetAbsolutePath(storageRef), content);
+}
+
+export async function removeProjectStorage(projectId: string) {
+  await rm(getProjectAssetsRoot(projectId), { recursive: true, force: true });
+}
+
+export async function removeJobPreviewStorage(jobId: string) {
+  await rm(path.join(getPreviewsRoot(), jobId), { recursive: true, force: true });
 }

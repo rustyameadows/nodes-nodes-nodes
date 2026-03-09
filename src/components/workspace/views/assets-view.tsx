@@ -1,9 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
+import { useRouter, useSearchParams } from "@/renderer/navigation";
 import { WorkspaceShell } from "@/components/workspace/workspace-shell";
 import {
+  getAssetFileUrl,
   getAssets,
   getCanvasWorkspace,
   mergeFilters,
@@ -19,6 +21,7 @@ import {
   type AssetFilterState,
   type CanvasDocument,
 } from "@/components/workspace/types";
+import { queryKeys } from "@/renderer/query";
 import styles from "./assets-view.module.css";
 
 type Props = {
@@ -61,15 +64,15 @@ function normalizeCanvasDocument(raw: Record<string, unknown> | null | undefined
 export function AssetsView({ projectId }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [assets, setAssets] = useState<Asset[]>([]);
   const [layoutMode, setLayoutMode] = useState<"grid" | "compare_2" | "compare_4">("grid");
   const [filters, setFilters] = useState<AssetFilterState>(defaultFilterState);
   const [selectedAssetIds, setSelectedAssetIds] = useState<string[]>([]);
   const [canvasDocument, setCanvasDocument] = useState<CanvasDocument>(defaultCanvasDocument);
-  const [isLoading, setIsLoading] = useState(true);
+  const [workspaceReady, setWorkspaceReady] = useState(false);
 
   const filtersRef = useRef<AssetFilterState>(defaultFilterState);
   const appliedQueryKeyRef = useRef<string>("");
+  const hydratedProjectRef = useRef<string | null>(null);
   const queryLayoutMode = useMemo(() => asLayoutMode(searchParams.get("layout")), [searchParams]);
   const queryAssetIds = useMemo(() => {
     const raw = searchParams.get("assetIds");
@@ -82,6 +85,16 @@ export function AssetsView({ projectId }: Props) {
       .filter(Boolean)
       .slice(0, 4);
   }, [searchParams]);
+  const workspaceQuery = useQuery({
+    queryKey: queryKeys.workspace(projectId),
+    queryFn: () => getCanvasWorkspace(projectId),
+  });
+  const assetsQuery = useQuery<Asset[]>({
+    queryKey: queryKeys.assets(projectId, filters),
+    queryFn: () => getAssets(projectId, filters),
+    enabled: workspaceReady,
+  });
+  const assets = assetsQuery.data || [];
 
   const activeAssets = useMemo(() => {
     const byId = new Map(assets.map((asset) => [asset.id, asset]));
@@ -104,12 +117,6 @@ export function AssetsView({ projectId }: Props) {
   const compareMissingCount = Math.max(0, compareRequiredCount - compareAssets.length);
   const compareOverflowCount = Math.max(0, compareCandidateAssets.length - compareRequiredCount);
 
-  const refreshAssets = useCallback(async (nextFilters: AssetFilterState) => {
-    const nextAssets = await getAssets(projectId, nextFilters);
-    setAssets(nextAssets);
-    return nextAssets;
-  }, [projectId]);
-
   const persistWorkspace = useCallback(
     async (nextLayout = layoutMode, nextFilters = filtersRef.current) => {
       await putCanvasWorkspace(projectId, {
@@ -122,35 +129,34 @@ export function AssetsView({ projectId }: Props) {
   );
 
   useEffect(() => {
-    setIsLoading(true);
+    hydratedProjectRef.current = null;
+    appliedQueryKeyRef.current = "";
+    setWorkspaceReady(false);
+    setSelectedAssetIds([]);
+    setLayoutMode("grid");
+    setFilters(defaultFilterState);
+    filtersRef.current = defaultFilterState;
+    setCanvasDocument(defaultCanvasDocument);
+    openProject(projectId).catch(console.error);
+  }, [projectId]);
 
-    getCanvasWorkspace(projectId)
-      .then(async (data) => {
-        setCanvasDocument(normalizeCanvasDocument((data.canvas?.canvasDocument || null) as Record<string, unknown> | null));
+  useEffect(() => {
+    if (!workspaceQuery.data || hydratedProjectRef.current === projectId) {
+      return;
+    }
 
-        const nextLayout = data.workspace?.assetViewerLayout || "grid";
-        const nextFilters = mergeFilters(data.workspace?.filterState || null, defaultFilterState);
-        filtersRef.current = nextFilters;
+    setCanvasDocument(
+      normalizeCanvasDocument((workspaceQuery.data.canvas?.canvasDocument || null) as Record<string, unknown> | null)
+    );
 
-        const initialLayout = queryLayoutMode || nextLayout;
-        setLayoutMode(initialLayout);
-        setFilters(nextFilters);
-
-        const [loadedAssets] = await Promise.all([refreshAssets(nextFilters), openProject(projectId)]);
-        if (queryAssetIds.length > 0) {
-          const validIds = queryAssetIds.filter((assetId) =>
-            loadedAssets.some((asset) => asset.id === assetId)
-          );
-          setSelectedAssetIds(validIds.slice(0, 4));
-        }
-      })
-      .catch((error) => {
-        console.error(error);
-      })
-      .finally(() => {
-        setIsLoading(false);
-      });
-  }, [projectId, queryAssetIds, queryLayoutMode, refreshAssets]);
+    const nextLayout = workspaceQuery.data.workspace?.assetViewerLayout || "grid";
+    const nextFilters = mergeFilters(workspaceQuery.data.workspace?.filterState || null, defaultFilterState);
+    filtersRef.current = nextFilters;
+    hydratedProjectRef.current = projectId;
+    setLayoutMode(queryLayoutMode || nextLayout);
+    setFilters(nextFilters);
+    setWorkspaceReady(true);
+  }, [projectId, queryLayoutMode, workspaceQuery.data]);
 
   useEffect(() => {
     if (queryLayoutMode) {
@@ -177,10 +183,9 @@ export function AssetsView({ projectId }: Props) {
       filtersRef.current = next;
       setFilters(next);
 
-      refreshAssets(next).catch(console.error);
       persistWorkspace(layoutMode, next).catch(console.error);
     },
-    [layoutMode, persistWorkspace, refreshAssets]
+    [layoutMode, persistWorkspace]
   );
 
   const changeLayoutMode = useCallback(
@@ -280,7 +285,7 @@ export function AssetsView({ projectId }: Props) {
             </div>
           </header>
 
-          {isLoading ? (
+          {workspaceQuery.isLoading || (workspaceReady && assetsQuery.isLoading) ? (
             <div className={styles.loading}>Loading assets...</div>
           ) : layoutMode === "grid" ? (
             <div className={styles.assetGrid}>
@@ -326,7 +331,7 @@ export function AssetsView({ projectId }: Props) {
                           onClick={(event) => {
                             event.stopPropagation();
                             updateAsset(asset.id, { rating: score })
-                              .then(() => refreshAssets(filtersRef.current))
+                              .then(() => assetsQuery.refetch())
                               .catch(console.error);
                           }}
                         >
@@ -338,7 +343,7 @@ export function AssetsView({ projectId }: Props) {
                         onClick={(event) => {
                           event.stopPropagation();
                           updateAsset(asset.id, { flagged: !asset.flagged })
-                            .then(() => refreshAssets(filtersRef.current))
+                            .then(() => assetsQuery.refetch())
                             .catch(console.error);
                         }}
                       >
@@ -350,7 +355,7 @@ export function AssetsView({ projectId }: Props) {
                       asset={asset}
                       onSave={(tags) => {
                         updateAsset(asset.id, { tags })
-                          .then(() => refreshAssets(filtersRef.current))
+                          .then(() => assetsQuery.refetch())
                           .catch(console.error);
                       }}
                     />
@@ -429,7 +434,7 @@ function AssetPreview({ asset, compact = false, analysis = false }: AssetPreview
     const image = (
       <img
         className={className}
-        src={`/api/assets/${asset.id}/file`}
+        src={getAssetFileUrl(asset.id)}
         alt={`Generated asset ${asset.id}`}
       />
     );
@@ -441,7 +446,7 @@ function AssetPreview({ asset, compact = false, analysis = false }: AssetPreview
     const frame = (
       <iframe
         className={frameClassName}
-        src={`/api/assets/${asset.id}/file`}
+        src={getAssetFileUrl(asset.id)}
         title={`Asset ${asset.id}`}
       />
     );
@@ -456,7 +461,7 @@ function AssetPreview({ asset, compact = false, analysis = false }: AssetPreview
       }
     >
       <p>Video Output (stub)</p>
-      <a href={`/api/assets/${asset.id}/file`} target="_blank" rel="noreferrer">
+      <a href={getAssetFileUrl(asset.id)} target="_blank" rel="noreferrer">
         Open metadata
       </a>
     </div>

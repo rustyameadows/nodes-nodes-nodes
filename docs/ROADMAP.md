@@ -1,74 +1,48 @@
 # Roadmap
 
 ## Milestone 0: Documentation Baseline (Completed)
-- Deliverables:
-  - `AGENTS.md`
-  - Full docs set in `docs/`
-  - Initial decision log
-- Exit criteria:
-  - Architecture and scope are implementation-ready.
-  - No unresolved contradictions across docs.
+- product, architecture, data model, provider, workspace, UX, and decision docs established
 
-## Milestone 1: Local App Foundation (Completed)
-- Deliverables:
-  - Next.js + TypeScript app scaffold.
-  - Local Postgres + Prisma setup.
-  - `pg-boss` worker scaffold.
-  - Local filesystem storage adapter scaffold.
-- Exit criteria:
-  - App boots locally with DB connectivity.
-  - Worker can receive and complete a mock job.
+## Milestone 1: Local App Foundation (Completed, Superseded)
+- initial Next.js + Postgres + Prisma scaffold
 
 ## Milestone 2: Project and Workspace Core (Completed)
-- Deliverables:
-  - Project CRUD (create/rename/archive/unarchive/delete).
-  - Sidebar switching and one-open-project behavior.
-  - Workspace restore on startup.
-- Exit criteria:
-  - Multiple projects can be managed and switched reliably.
-  - Project isolation validated for canvas/jobs/assets.
+- project lifecycle
+- one-open-project behavior
+- workspace restore
 
 ## Milestone 3: Canvas and Execution Pipeline (Completed)
-- Deliverables:
-  - Custom infinite canvas engine (pan/zoom/drag/drop).
-  - Node persistence per project.
-  - Job lifecycle wiring (`queued` -> `running` -> terminal states).
-- Exit criteria:
-  - User can construct and run simple node flows.
-  - Job state updates appear in UI.
+- custom infinite canvas
+- node persistence
+- provider job lifecycle
 
-## Milestone 4: Provider Integrations (Concrete) (Completed with Stub Execution)
-- Deliverables:
-  - OpenAI adapter.
-  - Gemini 3.1 Flash adapter with UI display name `Nano Banana 2`.
-  - Topaz adapter.
-  - Model registry and capability mapping.
-- Exit criteria:
-  - Same node contract works across all three providers.
-  - Normalized outputs stored as assets.
+## Milestone 4: Provider Integrations (Completed)
+- OpenAI image
+- OpenAI GPT text
+- Topaz image transforms
+- provider/model registry
 
-## Milestone 5: Asset Viewer Differentiator (Completed)
-- Deliverables:
-  - Grid mode with density controls.
-  - 2-up and 4-up comparison modes.
-  - Rating, flagging, tagging, filtering, and sorting.
-- Exit criteria:
-  - Curation workflow is fast and deterministic.
-  - Compare mode and filter state persist per project.
+## Milestone 5: Asset Review Surface (Completed)
+- grid
+- 2-up and 4-up compare
+- rating, flagging, tags, filtering
 
-## Milestone 6: Hardening and Packaging
-- Deliverables:
-  - Improved error handling and recovery.
-  - Test coverage for project lifecycle, queue behavior, and provider parity.
-  - Local dev onboarding docs and scripts.
-- Exit criteria:
-  - Clean local install and reliable end-to-end demo flow.
+## Milestone 6: Desktop Migration (Completed)
+- Electron main/preload/worker split
+- Vite renderer
+- TanStack Router and Query foundation
+- SQLite + Drizzle persistence
+- SQLite-backed durable queue
+- native file import and `app-asset://` delivery
 
-## Milestone 7: Multitenancy Expansion (Deferred)
-- Deliverables:
-  - User accounts.
-  - Org/project sharing model.
-  - Migration from single-user local ownership.
-- Exit criteria:
-  - Existing local projects migrate safely.
-  - Permission model verified against collaboration scenarios.
+## Milestone 7: Mac Packaging and Credentials (Completed)
+- unsigned Apple Silicon `.app` and `.zip` packaging via `electron-builder`
+- packaged-app icon and branding metadata
+- macOS Keychain-backed provider credentials with env fallback
+- packaged-app verification commands and lifecycle documentation
+
+## Next
+- broader automated test coverage for desktop flows
+- queue cancellation / richer controls
+- additional node types and execution surfaces
+- signed / distributable mac release artifacts

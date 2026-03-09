@@ -1,13 +1,14 @@
-# Data Model (V1)
+# Data Model (SQLite V1)
 
 ## Principles
-- Single local user in v1, but project isolation is strict.
-- One canvas per project.
-- Metadata in Postgres, binaries on filesystem.
-- Provider/model IDs are stable and separate from UI labels.
-- Current runtime keeps GPT text outputs note-native, so the asset system remains visual-only in practice.
+- One local user.
+- Multiple isolated projects.
+- Exactly one canvas per project in v1.
+- SQLite stores metadata; filesystem stores asset and preview binaries.
+- Provider/model IDs stay stable and separate from display names.
+- Canvas nodes and edges live inside one JSON canvas document, not relational node/edge tables.
 
-## Core Entity Types
+## Core Types
 
 ```ts
 type ProjectStatus = "active" | "archived";
@@ -18,48 +19,44 @@ type Project = {
   id: string;
   name: string;
   status: ProjectStatus;
-  createdAt: Date;
-  updatedAt: Date;
-  lastOpenedAt: Date | null;
+  createdAt: string;
+  updatedAt: string;
+  lastOpenedAt: string | null;
 };
 
 type ProjectWorkspaceState = {
   projectId: string;
   isOpen: boolean;
-  viewportState: Record<string, unknown>;
-  selectionState: Record<string, unknown>;
-  assetViewerLayout: "grid" | "compare-2" | "compare-4";
-  filterState: Record<string, unknown>;
-  updatedAt: Date;
+  viewportState: Record<string, unknown> | null;
+  selectionState: Record<string, unknown> | null;
+  assetViewerLayout: "grid" | "compare_2" | "compare_4";
+  filterState: Record<string, unknown> | null;
+  updatedAt: string;
 };
 
 type Canvas = {
   projectId: string;
-  canvasDocument: Record<string, unknown>;
+  canvasDocument: Record<string, unknown> | null;
   version: number;
-  updatedAt: Date;
+  updatedAt: string;
+};
+
+type WorkflowNodeDisplayMode = "preview" | "compact" | "resized";
+
+type WorkflowNodeSize = {
+  width: number;
+  height: number;
 };
 
 type WorkflowNode = {
   id: string;
-  kind: "model" | "asset-source" | "text-note" | "list" | "text-template";
+  kind: string;
   label: string;
-  providerId: string;
-  modelId: string;
-  nodeType: "text-gen" | "image-gen" | "video-gen" | "transform" | "text-note" | "list" | "text-template";
-  outputType: AssetType;
-  prompt: string; // model prompt or text-note body
-  settings: Record<string, unknown>;
-  sourceAssetId: string | null;
-  sourceAssetMimeType: string | null;
-  sourceJobId: string | null;
-  sourceOutputIndex: number | null;
-  processingState: "queued" | "running" | "failed" | null;
-  promptSourceNodeId: string | null; // model nodes only in v1
-  upstreamNodeIds: string[];
-  upstreamAssetIds: string[];
   x: number;
   y: number;
+  displayMode: WorkflowNodeDisplayMode;
+  size: WorkflowNodeSize | null;
+  // ...existing provider, prompt, source, and connection fields
 };
 
 type Job = {
@@ -73,8 +70,15 @@ type Job = {
   maxAttempts: number;
   errorCode: string | null;
   errorMessage: string | null;
-  createdAt: Date;
-  updatedAt: Date;
+  queuedAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  availableAt: string;
+  claimedAt: string | null;
+  claimToken: string | null;
+  lastHeartbeatAt: string | null;
+  createdAt: string;
+  updatedAt: string;
 };
 
 type Asset = {
@@ -88,10 +92,9 @@ type Asset = {
   width: number | null;
   height: number | null;
   durationMs: number | null;
-  rating: number | null; // 1..5
-  flagged: boolean;
-  createdAt: Date;
-  updatedAt: Date;
+  checksum: string | null;
+  createdAt: string;
+  updatedAt: string;
 };
 
 type JobPreviewFrame = {
@@ -103,201 +106,114 @@ type JobPreviewFrame = {
   mimeType: string;
   width: number | null;
   height: number | null;
-  createdAt: Date;
+  createdAt: string;
 };
 ```
 
-### Canvas JSON Node Settings
-
-```ts
-type ListNodeSettings = {
-  source: "list";
-  columns: Array<{ id: string; label: string }>;
-  rows: Array<{ id: string; values: Record<string, string> }>;
-};
-
-type TextTemplateNodeSettings = {
-  source: "text-template";
-};
-
-type GeneratedTextNoteSettings = {
-  source: "template-output";
-  sourceTemplateNodeId: string;
-  sourceListNodeId: string;
-  batchId: string;
-  rowId: string;
-  rowIndex: number; // original source-row index
-};
-
-type GeneratedModelTextNoteSettings = {
-  source: "generated-model-text";
-  sourceJobId: string;
-  sourceModelNodeId: string;
-  outputIndex: number;
-};
-```
-
-### Note-Native Text Outputs
-- Template-generated row notes and queue-backed GPT text outputs both live inside canvas JSON as `text-note` nodes.
-- GPT model-generated notes persist provenance in `GeneratedModelTextNoteSettings`.
-- These note outputs do not create `assets` rows or filesystem storage entries in v1.
-- `job_attempts.provider_response` stores GPT text content inline, and the jobs API exposes that back to the client as `latestTextOutputs` for note hydration.
-
-## Table Sketch
+## SQLite Tables
 
 ### `projects`
-- `id` uuid pk
-- `name` text not null
-- `status` text check in (`active`, `archived`)
-- `created_at` timestamptz not null default now()
-- `updated_at` timestamptz not null default now()
-- `last_opened_at` timestamptz null
+- top-level project record
+- one row per project
 
 ### `project_workspace_states`
-- `project_id` uuid pk references `projects(id)` on delete cascade
-- `is_open` boolean not null default false
-- `viewport_state` jsonb not null default '{}'
-- `selection_state` jsonb not null default '{}'
-- `asset_viewer_layout` text not null default 'grid'
-- `filter_state` jsonb not null default '{}'
-- `updated_at` timestamptz not null default now()
+- one row per project
+- stores open-state plus asset-viewer layout/filter state
 
 ### `canvases`
-- `project_id` uuid pk references `projects(id)` on delete cascade
-- `canvas_document` jsonb not null default '{}'
-- `version` integer not null default 1
-- `updated_at` timestamptz not null default now()
-
-### `canvas_nodes`
-- `id` uuid pk
-- `project_id` uuid not null references `projects(id)` on delete cascade
-- `node_id` text not null
-- `provider_id` text not null
-- `model_id` text not null
-- `node_type` text not null
-- `settings` jsonb not null default '{}'
-- `position` jsonb not null
-- `created_at` timestamptz not null default now()
-- `updated_at` timestamptz not null default now()
-- unique (`project_id`, `node_id`)
-
-### `canvas_edges`
-- `id` uuid pk
-- `project_id` uuid not null references `projects(id)` on delete cascade
-- `edge_id` text not null
-- `source_node_id` text not null
-- `target_node_id` text not null
-- `source_port` text not null
-- `target_port` text not null
-- `created_at` timestamptz not null default now()
-- unique (`project_id`, `edge_id`)
+- one row per project
+- stores the full canvas JSON document plus a version counter
+- the canvas JSON now persists node-local presentation metadata:
+  - `displayMode`
+  - `size`
+- the canvas JSON also persists `generatedOutputReceiptKeys`, which record completed generated job outputs that have already been materialized onto the canvas
+- transient full-mode state and phantom previews remain renderer-only and are not stored in SQLite
 
 ### `jobs`
-- `id` uuid pk
-- `project_id` uuid not null references `projects(id)` on delete cascade
-- `state` text not null
-- `provider_id` text not null
-- `model_id` text not null
-- `node_run_payload` jsonb not null
-- `attempts` integer not null default 0
-- `max_attempts` integer not null default 3
-- `error_code` text null
-- `error_message` text null
-- `queued_at` timestamptz not null default now()
-- `started_at` timestamptz null
-- `finished_at` timestamptz null
-- `created_at` timestamptz not null default now()
-- `updated_at` timestamptz not null default now()
+- one row per submitted provider run
+- also acts as the durable queue source of truth
 
 ### `job_attempts`
-- `id` uuid pk
-- `job_id` uuid not null references `jobs(id)` on delete cascade
-- `attempt_number` integer not null
-- `provider_request` jsonb not null
-- `provider_response` jsonb null
-- `error_code` text null
-- `error_message` text null
-- `duration_ms` integer null
-- `created_at` timestamptz not null default now()
-- unique (`job_id`, `attempt_number`)
+- one row per execution attempt
+- stores provider request/response payloads, timing, and failure details
 
 ### `assets`
-- `id` uuid pk
-- `project_id` uuid not null references `projects(id)` on delete cascade
-- `job_id` uuid null references `jobs(id)` on delete set null
-- `type` text not null
-- `storage_ref` text not null
-- `mime_type` text not null
-- `output_index` integer null
-- `width` integer null
-- `height` integer null
-- `duration_ms` integer null
-- `checksum` text null
-- `created_at` timestamptz not null default now()
-- `updated_at` timestamptz not null default now()
+- uploaded or generated media outputs
+- `job_id = null` means imported/uploaded asset
+- `job_id != null` means generated asset
 
 ### `job_preview_frames`
-- `id` uuid pk
-- `job_id` uuid not null references `jobs(id)` on delete cascade
-- `output_index` integer not null
-- `preview_index` integer not null
-- `storage_ref` text not null
-- `mime_type` text not null
-- `width` integer null
-- `height` integer null
-- `created_at` timestamptz not null default now()
+- durable intermediate preview images for running jobs
+- keyed by job and output index
 
 ### `asset_feedback`
-- `asset_id` uuid pk references `assets(id)` on delete cascade
-- `rating` integer null check (`rating` between 1 and 5)
-- `flagged` boolean not null default false
-- `updated_at` timestamptz not null default now()
+- per-asset rating and flagged state
 
 ### `asset_tags`
-- `id` uuid pk
-- `project_id` uuid not null references `projects(id)` on delete cascade
-- `name` text not null
-- `created_at` timestamptz not null default now()
-- unique (`project_id`, `name`)
+- per-project tag dictionary
 
 ### `asset_tag_links`
-- `asset_id` uuid not null references `assets(id)` on delete cascade
-- `tag_id` uuid not null references `asset_tags(id)` on delete cascade
-- `created_at` timestamptz not null default now()
-- primary key (`asset_id`, `tag_id`)
+- join table between assets and tags
 
 ### `provider_models`
-- `provider_id` text not null
-- `model_id` text not null
-- `display_name` text not null
-- `capabilities` jsonb not null default '{}'
-- `active` boolean not null default true
-- `created_at` timestamptz not null default now()
-- `updated_at` timestamptz not null default now()
-- primary key (`provider_id`, `model_id`)
+- renderer-facing provider/model capability metadata synced from the registry
 
-## Indexing Guidance
-- Index `jobs(project_id, state, created_at desc)`.
-- Index `assets(project_id, created_at desc)`.
-- Index `projects(status, updated_at desc)`.
-- GIN indexes for `project_workspace_states.filter_state` and jsonb query-heavy columns if needed.
+## Removed Tables
+- `canvas_nodes`
+- `canvas_edges`
+
+These were dropped because the current app persists the graph inside `canvases.canvas_document` and does not use relational node/edge rows.
+
+## Queue Fields
+The SQLite queue uses these `jobs` columns:
+- `available_at`
+- `claimed_at`
+- `claim_token`
+- `last_heartbeat_at`
+
+Worker behavior:
+- selects the next eligible queued row
+- atomically transitions it to `running`
+- heartbeats during execution
+- retries by moving it back to `queued` with a future `available_at`
+- marks it terminal on final success or failure
+
+## Filesystem References
+- `assets.storage_ref`
+  - relative path under the app-data assets root
+- `job_preview_frames.storage_ref`
+  - relative path under the app-data previews root
+
+The renderer never sees absolute paths; those refs are resolved only in main/worker/storage code.
+
+## Text Output Model
+- GPT text generations now serialize parsed generated-node descriptors in `job_attempts.provider_response`.
+- Renderer-facing jobs expose:
+  - `latestTextOutputs`
+  - `generatedNodeDescriptors`
+- Generated node descriptors can materialize:
+  - `text-note`
+  - `list`
+  - `text-template`
+- `Smart Output` may produce multiple descriptors from one text response, but they stay unconnected in this pass.
+- Parse failure falls back to one generated text-note descriptor instead of failing the job.
+- Those outputs do not create `assets` rows.
+- Queue debug data stores both the returned text and the parsed structured-output metadata inline in `job_attempts.provider_response`.
+- Once a generated output is inserted onto the canvas, it becomes a normal user-owned node. Provenance remains for source/debug UI, but the polling loop no longer rewrites the node's content, layout, or connections.
+- `generatedOutputReceiptKeys` prevent already-inserted outputs from being re-created on reload and prevent deleted generated nodes from coming back automatically.
+
+## Canvas Presentation Metadata
+- `WorkflowNode.displayMode`
+  - `preview`: default persisted surface
+  - `compact`: persisted pill/tiny-node surface
+  - `resized`: persisted custom width/height
+- `WorkflowNode.size`
+  - stored only when the node is in `resized`
+  - used for text notes, lists, templates, and asset nodes
+- model-node `full` is intentionally not persisted; it is derived from active selection at render time
+- renderer-only phantom previews are never written into `canvasDocument`
 
 ## Integrity Rules
-- Assets must always reference a valid project.
-- Generated multi-output assets must retain stable `output_index` ordering inside a job.
-- Streamed preview frames are durable job data, not reviewable library assets.
-- Asset origin is derived, not persisted as a separate enum:
-  - `job_id is null` => uploaded
-  - `job_id is not null` => generated
-- Multiple canvas asset-source nodes may legally point at the same `asset.id`.
-- Canvas nodes/edges cannot cross project boundaries.
-- Text-note prompt-source links live inside canvas JSON and are project-scoped like other node relationships.
-- List data and text-template metadata live inside canvas JSON only; no relational schema changes are required for this feature.
-- Template-generated text notes are persisted as regular canvas text-note nodes with provenance stored in settings.
-- Deleting a project cascades to canvas, jobs, assets, and tags.
-- Archived projects remain readable but are excluded from default active list.
-
-## Migration Notes (Future Multitenancy)
-- Add `owner_type` and `owner_id` to `projects`.
-- Add `users`, `orgs`, and share tables.
-- Backfill existing local projects to a synthetic local user during migration.
+- Project deletion cascades through workspace state, canvas, jobs, attempts, assets, feedback, tags, and preview metadata.
+- Filesystem cleanup for project assets and job previews runs alongside row deletion.
+- SQLite foreign keys stay enabled at connection startup.

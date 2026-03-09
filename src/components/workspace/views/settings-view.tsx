@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useRouter } from "@/renderer/navigation";
 import { WorkspaceShell } from "@/components/workspace/workspace-shell";
 import {
   getProjects,
@@ -10,6 +11,7 @@ import {
   updateProject,
 } from "@/components/workspace/client-api";
 import type { Project } from "@/components/workspace/types";
+import { queryKeys } from "@/renderer/query";
 import styles from "./settings-view.module.css";
 
 type Props = {
@@ -27,26 +29,19 @@ function formatDate(value: string | null) {
 
 export function SettingsView({ projectId }: Props) {
   const router = useRouter();
-  const [projects, setProjects] = useState<Project[]>([]);
   const [name, setName] = useState("");
-  const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { data: projects = [], isLoading } = useQuery<Project[]>({
+    queryKey: queryKeys.projects,
+    queryFn: getProjects,
+  });
 
   const project = useMemo(() => projects.find((item) => item.id === projectId) || null, [projects, projectId]);
 
-  const refresh = useCallback(async () => {
-    const nextProjects = await getProjects();
-    setProjects(nextProjects);
-  }, []);
-
   useEffect(() => {
-    setLoading(true);
-
-    Promise.all([refresh(), openProject(projectId)])
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }, [projectId, refresh]);
+    openProject(projectId).catch(console.error);
+  }, [projectId]);
 
   useEffect(() => {
     if (project) {
@@ -60,7 +55,7 @@ export function SettingsView({ projectId }: Props) {
         <section className={styles.panel}>
           <h1>Project Settings</h1>
 
-          {loading ? (
+          {isLoading ? (
             <div className={styles.loading}>Loading project...</div>
           ) : !project ? (
             <div className={styles.error}>Project not found.</div>
@@ -95,8 +90,6 @@ export function SettingsView({ projectId }: Props) {
 
                     try {
                       await updateProject(projectId, { name: name.trim() });
-                      await refresh();
-                      window.dispatchEvent(new Event("workspace-projects-changed"));
                     } catch (nextError) {
                       setError(nextError instanceof Error ? nextError.message : "Failed to rename project");
                     } finally {
@@ -117,8 +110,6 @@ export function SettingsView({ projectId }: Props) {
                       await updateProject(projectId, {
                         status: project.status === "active" ? "archived" : "active",
                       });
-                      await refresh();
-                      window.dispatchEvent(new Event("workspace-projects-changed"));
                     } catch (nextError) {
                       setError(nextError instanceof Error ? nextError.message : "Failed to update status");
                     } finally {
@@ -144,7 +135,6 @@ export function SettingsView({ projectId }: Props) {
                   try {
                     await removeProject(projectId);
                     const nextProjects = await getProjects();
-                    window.dispatchEvent(new Event("workspace-projects-changed"));
 
                     const fallback = nextProjects.find((item) => item.status === "active") || nextProjects[0] || null;
                     if (!fallback) {

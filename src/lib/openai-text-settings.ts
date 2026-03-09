@@ -1,4 +1,10 @@
 import type { ModelParameterDefinition } from "@/lib/model-parameters";
+import { getStructuredTextOutputContract } from "@/lib/generated-text-output";
+import {
+  OPENAI_DEFAULT_TEXT_OUTPUT_TARGET,
+  isStructuredTextOutputTarget,
+  readOpenAiTextOutputTarget,
+} from "@/lib/text-output-targets";
 
 export type OpenAiTextVerbosity = "low" | "medium" | "high";
 export type OpenAiTextOutputFormat = "text" | "json_object" | "json_schema";
@@ -60,6 +66,7 @@ export function getOpenAiTextDefaultSettings(modelId: string | null | undefined)
 
   return {
     maxOutputTokens: null,
+    textOutputTarget: OPENAI_DEFAULT_TEXT_OUTPUT_TARGET,
     verbosity: profile.defaultVerbosity,
     outputFormat: OPENAI_DEFAULT_TEXT_OUTPUT_FORMAT,
     reasoningEffort: profile.defaultReasoningEffort,
@@ -98,6 +105,19 @@ export const OPENAI_TEXT_PARAMETER_DEFINITIONS: ModelParameterDefinition[] = [
     placeholder: "Auto",
   },
   {
+    key: "textOutputTarget",
+    label: "Output Target",
+    control: "select",
+    section: "core",
+    defaultValue: OPENAI_DEFAULT_TEXT_OUTPUT_TARGET,
+    options: [
+      { value: "note", label: "Text Note" },
+      { value: "list", label: "List" },
+      { value: "template", label: "Template" },
+      { value: "smart", label: "Smart Output" },
+    ],
+  },
+  {
     key: "verbosity",
     label: "Verbosity",
     control: "select",
@@ -115,6 +135,7 @@ export const OPENAI_TEXT_PARAMETER_DEFINITIONS: ModelParameterDefinition[] = [
     control: "select",
     section: "core",
     defaultValue: OPENAI_DEFAULT_TEXT_OUTPUT_FORMAT,
+    visibleWhen: [{ settingKey: "textOutputTarget", values: ["note"] }],
     options: [
       { value: "text", label: "Text" },
       { value: "json_object", label: "JSON Object" },
@@ -141,7 +162,10 @@ export const OPENAI_TEXT_PARAMETER_DEFINITIONS: ModelParameterDefinition[] = [
     control: "text",
     section: "advanced",
     placeholder: "prompt_output",
-    visibleWhen: [{ settingKey: "outputFormat", values: ["json_schema"] }],
+    visibleWhen: [
+      { settingKey: "textOutputTarget", values: ["note"] },
+      { settingKey: "outputFormat", values: ["json_schema"] },
+    ],
   },
   {
     key: "jsonSchemaDefinition",
@@ -150,7 +174,10 @@ export const OPENAI_TEXT_PARAMETER_DEFINITIONS: ModelParameterDefinition[] = [
     section: "advanced",
     placeholder: '{\n  "type": "object",\n  "properties": {\n    "prompt": { "type": "string" }\n  },\n  "required": ["prompt"]\n}',
     rows: 10,
-    visibleWhen: [{ settingKey: "outputFormat", values: ["json_schema"] }],
+    visibleWhen: [
+      { settingKey: "textOutputTarget", values: ["note"] },
+      { settingKey: "outputFormat", values: ["json_schema"] },
+    ],
   },
 ];
 
@@ -224,16 +251,22 @@ export function resolveOpenAiTextSettings(rawSettings: Record<string, unknown> |
   const settings = rawSettings || {};
   const profile = getOpenAiTextModelProfile(modelId);
   const maxOutputTokens = readMaxOutputTokens(settings.maxOutputTokens, profile);
+  const textOutputTarget = readOpenAiTextOutputTarget(settings.textOutputTarget, OPENAI_DEFAULT_TEXT_OUTPUT_TARGET);
   const verbosity = readVerbosity(settings.verbosity, profile.defaultVerbosity);
-  const outputFormat = readOutputFormat(settings.outputFormat, OPENAI_DEFAULT_TEXT_OUTPUT_FORMAT);
+  const outputFormat = isStructuredTextOutputTarget(textOutputTarget)
+    ? "json_schema"
+    : readOutputFormat(settings.outputFormat, OPENAI_DEFAULT_TEXT_OUTPUT_FORMAT);
   const reasoningEffort = readReasoningEffort(settings.reasoningEffort, profile);
-  const jsonSchemaName = outputFormat === "json_schema" ? readJsonSchemaName(settings.jsonSchemaName) : null;
+  const jsonSchemaName =
+    textOutputTarget === "note" && outputFormat === "json_schema" ? readJsonSchemaName(settings.jsonSchemaName) : null;
   const jsonSchemaDefinition =
-    outputFormat === "json_schema" ? readJsonSchemaDefinition(settings.jsonSchemaDefinition) : null;
+    textOutputTarget === "note" && outputFormat === "json_schema"
+      ? readJsonSchemaDefinition(settings.jsonSchemaDefinition)
+      : null;
 
   let validationError: string | null = null;
   let parsedJsonSchema: Record<string, unknown> | null = null;
-  if (outputFormat === "json_schema") {
+  if (textOutputTarget === "note" && outputFormat === "json_schema") {
     if (!jsonSchemaName) {
       validationError = "Schema name is required for JSON Schema output.";
     } else if (!jsonSchemaNamePattern.test(jsonSchemaName)) {
@@ -246,11 +279,12 @@ export function resolveOpenAiTextSettings(rawSettings: Record<string, unknown> |
   }
 
   const effectiveSettings: Record<string, unknown> = {
+    textOutputTarget,
     verbosity,
     outputFormat,
     reasoningEffort,
     ...(maxOutputTokens !== null ? { maxOutputTokens } : {}),
-    ...(outputFormat === "json_schema"
+    ...(textOutputTarget === "note" && outputFormat === "json_schema"
       ? {
           jsonSchemaName: jsonSchemaName || "",
           jsonSchemaDefinition: jsonSchemaDefinition || "",
@@ -260,6 +294,7 @@ export function resolveOpenAiTextSettings(rawSettings: Record<string, unknown> |
 
   return {
     maxOutputTokens,
+    textOutputTarget,
     verbosity,
     outputFormat,
     reasoningEffort,
@@ -271,18 +306,26 @@ export function resolveOpenAiTextSettings(rawSettings: Record<string, unknown> |
   };
 }
 
-export function buildOpenAiTextDebugRequest(input: {
-  modelId: string;
-  prompt: string;
-  rawSettings: Record<string, unknown>;
-}) {
-  const resolved = resolveOpenAiTextSettings(input.rawSettings, input.modelId);
-  const request: Record<string, unknown> = {
-    model: input.modelId,
-    input: input.prompt,
-    reasoning: {
-      effort: resolved.reasoningEffort,
-    },
+export function buildOpenAiTextRequestConfig(
+  resolved: ReturnType<typeof resolveOpenAiTextSettings>
+): { instructions?: string; text: { verbosity: OpenAiTextVerbosity; format: Record<string, unknown> } } {
+  if (isStructuredTextOutputTarget(resolved.textOutputTarget)) {
+    const contract = getStructuredTextOutputContract(resolved.textOutputTarget);
+    return {
+      instructions: contract.instructions,
+      text: {
+        verbosity: resolved.verbosity,
+        format: {
+          type: "json_schema",
+          name: contract.schemaName,
+          schema: contract.schema,
+          strict: true,
+        },
+      },
+    };
+  }
+
+  return {
     text: {
       verbosity: resolved.verbosity,
       format:
@@ -298,9 +341,30 @@ export function buildOpenAiTextDebugRequest(input: {
               },
     },
   };
+}
+
+export function buildOpenAiTextDebugRequest(input: {
+  modelId: string;
+  prompt: string;
+  rawSettings: Record<string, unknown>;
+}) {
+  const resolved = resolveOpenAiTextSettings(input.rawSettings, input.modelId);
+  const requestConfig = buildOpenAiTextRequestConfig(resolved);
+  const request: Record<string, unknown> = {
+    model: input.modelId,
+    input: input.prompt,
+    reasoning: {
+      effort: resolved.reasoningEffort,
+    },
+    text: requestConfig.text,
+  };
 
   if (resolved.maxOutputTokens !== null) {
     request.max_output_tokens = resolved.maxOutputTokens;
+  }
+
+  if (requestConfig.instructions) {
+    request.instructions = requestConfig.instructions;
   }
 
   return {

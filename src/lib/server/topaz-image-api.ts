@@ -1,4 +1,5 @@
 import path from "node:path";
+import { resolveProviderCredential, resolveProviderCredentialValue } from "@/lib/runtime/provider-credentials";
 import {
   buildTopazOutputDimensionFields,
   getTopazImageModelProfile,
@@ -37,28 +38,30 @@ function mimeTypeFromResponse(contentType: string | null, fallbackMimeType: stri
   return fallbackMimeType;
 }
 
-function getTopazApiKey() {
-  const apiKey = process.env[TOPAZ_API_KEY_ENV]?.trim();
+async function getTopazApiKey() {
+  const apiKey = await resolveProviderCredentialValue("TOPAZ_API_KEY");
   if (!apiKey) {
-    const error = new Error(`Topaz is not configured. Set ${TOPAZ_API_KEY_ENV} in .env.local and restart npm run dev.`) as Error & {
+    const error = new Error(
+      `Topaz is not configured. Save ${TOPAZ_API_KEY_ENV} in Settings or set it in .env.local and restart the app.`
+    ) as Error & {
       code?: string;
       details?: Record<string, unknown>;
     };
     error.code = "CONFIG_ERROR";
     error.details = {
-      requirement: getTopazApiRequirement(),
+      requirement: await getTopazApiRequirement(),
     };
     throw error;
   }
   return apiKey;
 }
 
-export function getTopazApiRequirement() {
-  const apiKey = process.env[TOPAZ_API_KEY_ENV]?.trim();
+export async function getTopazApiRequirement() {
+  const credential = await resolveProviderCredential("TOPAZ_API_KEY");
   return {
     kind: "env" as const,
     key: TOPAZ_API_KEY_ENV,
-    configured: Boolean(apiKey),
+    configured: credential.configured,
     label: "Topaz API key",
   };
 }
@@ -303,7 +306,7 @@ async function downloadTopazOutput(downloadUrl: string, apiKey: string, processI
     const buffer = Buffer.from(await response.arrayBuffer());
     const mimeType = mimeTypeFromResponse(response.headers.get("content-type"), fallbackMimeType);
     const contentDisposition = response.headers.get("content-disposition") || "";
-    const filenameMatch = contentDisposition.match(/filename\*?=(?:UTF-8''|\")?([^\";]+)/i);
+    const filenameMatch = contentDisposition.match(/filename\*?=(?:UTF-8''|")?([^";]+)/i);
     const filename = filenameMatch
       ? decodeURIComponent(filenameMatch[1].replace(/"/g, ""))
       : getFilenameFromUrl(response.url || activeUrl);
@@ -332,7 +335,7 @@ export async function executeTopazImageApi(options: {
   request: Record<string, unknown>;
   response: Record<string, unknown>;
 }> {
-  const apiKey = getTopazApiKey();
+  const apiKey = await getTopazApiKey();
   const normalizedModelId = normalizeLegacyTopazModelId(options.modelId) || "high_fidelity_v2";
   const profile = getTopazImageModelProfile(normalizedModelId);
   const resolvedSettings = resolveTopazImageSettings(options.settings, normalizedModelId);

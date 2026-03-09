@@ -3,8 +3,10 @@
   inset: 0;
   padding: 72px 14px 14px;
   display: flex;
-  align-items: flex-start;
-  justify-content: center;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  overflow: auto;
 }
 
 .panel {
@@ -25,6 +27,15 @@
 .panel h1 {
   margin: 0 0 6px;
   font-size: 1.2rem;
+}
+
+.panel h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.panel p {
+  margin: 0;
 }
 
 .panel label {
@@ -78,6 +89,83 @@
   gap: 8px;
 }
 
+.sectionHeader {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sectionHeader p {
+  color: #a8c4df;
+  font-size: 0.84rem;
+}
+
+.credentialsList {
+  display: grid;
+  gap: 10px;
+}
+
+.credentialCard {
+  border: 1px solid rgba(120, 200, 255, 0.18);
+  border-radius: 12px;
+  background: rgba(20, 24, 36, 0.28);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.credentialHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.credentialHeader p {
+  color: #7f96ad;
+  font-size: 0.76rem;
+}
+
+.badgeRow {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.badgeReady,
+.badgeMissing,
+.badgeSource {
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-size: 0.74rem;
+  border: 1px solid rgba(120, 200, 255, 0.2);
+}
+
+.badgeReady {
+  color: #d7f8e5;
+  background: rgba(37, 143, 92, 0.25);
+  border-color: rgba(78, 228, 151, 0.3);
+}
+
+.badgeMissing {
+  color: #ffd4e8;
+  background: rgba(176, 47, 98, 0.22);
+  border-color: rgba(255, 115, 160, 0.34);
+}
+
+.badgeSource {
+  color: #cce3ff;
+  background: rgba(73, 111, 170, 0.22);
+}
+
+.helpText {
+  color: #aec9e4;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
 .deleteButton {
   border-color: rgba(255, 115, 160, 0.64) !important;
   color: #ffd4e8 !important;
@@ -95,5 +183,13 @@
 @media (max-width: 720px) {
   .actionRow {
     flex-direction: column;
+  }
+
+  .credentialHeader {
+    flex-direction: column;
+  }
+
+  .badgeRow {
+    justify-content: flex-start;
   }
 }

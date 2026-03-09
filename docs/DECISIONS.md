@@ -1,126 +1,101 @@
 # Decisions Log
 
-## 2026-03-04 - Local-First Architecture
-- Decision: prioritize local runtime over hosted-first design.
-- Rationale: optimize iteration speed and developer onboarding for demo quality.
-- Consequence: local Postgres and filesystem storage are first-class from day one.
+## 2026-03-04 - Local-First Single-User Product
+- Decision: optimize for one local user with multiple isolated projects.
+- Rationale: the product loop is project -> canvas -> generation -> review, not collaboration.
+- Consequence: accounts, sharing, and permissions remain out of scope in v1.
 
-## 2026-03-04 - V1 Scope Is Single User
-- Decision: defer accounts, orgs, and sharing.
-- Rationale: focus on product core loop (project -> canvas -> generation -> asset curation).
-- Consequence: ownership and permissions are intentionally absent in initial schema.
-
-## 2026-03-04 - Projects Are First-Class in V1
-- Decision: support multiple local projects with one open workspace at a time.
-- Rationale: users need isolated experiments and rapid switching.
-- Consequence: explicit project lifecycle and workspace persistence required.
-
-## 2026-03-04 - One Canvas per Project (V1)
-- Decision: constrain each project to exactly one infinite canvas initially.
-- Rationale: reduces complexity while preserving project isolation.
+## 2026-03-05 - One Canvas per Project
+- Decision: keep exactly one canvas per project in v1.
+- Rationale: it keeps project switching and persistence deterministic while the node workflow is still evolving.
 - Consequence: future multi-canvas support will require schema and UX expansion.
 
-## 2026-03-04 - Provider-Agnostic Node System
-- Decision: all provider nodes share one contract and equal treatment.
-- Rationale: avoid provider lock-in and simplify expansion.
-- Consequence: provider adapters must normalize request/response behavior.
+## 2026-03-05 - Canvas Stores the Graph as JSON
+- Decision: persist the graph in `canvases.canvas_document` instead of relational node/edge tables.
+- Rationale: the current UI already operates on a document model, and extra node/edge tables were unused complexity.
+- Consequence: `canvas_nodes` and `canvas_edges` are not part of the desktop data model.
 
-## 2026-03-04 - Canonical Provider Set
-- Decision: include OpenAI, Gemini 3.1 Flash, and Topaz in v1 docs.
-- Rationale: cover text/image/video generation and enhancement scenarios.
-- Consequence: model registry must map stable IDs to mutable display names.
+## 2026-03-06 - GPT Text Outputs Stay Note-Native
+- Decision: OpenAI GPT text runs produce generated canvas notes, not assets.
+- Rationale: those outputs are meant to feed later graph steps, not clutter the visual asset library.
+- Consequence: text responses stay in queue attempt metadata and canvas state rather than asset storage.
 
-## 2026-03-04 - Gemini Display Name Override
-- Decision: expose Gemini 3.1 Flash as `Nano Banana 2` in UI.
-- Rationale: product language can differ from backend model IDs.
-- Consequence: display labels are lookup-driven, never persisted as primary IDs.
+## 2026-03-07 - Direct Electron Cutover
+- Decision: replace the Next.js web runtime with a direct Electron desktop app instead of wrapping the old web app.
+- Rationale: local file access, native dialogs, a dedicated worker, and a clean desktop boundary are all easier with a real Electron architecture.
+- Consequence: the runtime is now split into Electron main, preload, renderer, and worker processes.
 
-## 2026-03-04 - Queue Backend Is Postgres (`pg-boss`)
-- Decision: use `pg-boss` for async orchestration.
-- Rationale: same backend works locally and in deployment with Postgres.
-- Consequence: no Redis dependency in v1.
+## 2026-03-07 - SQLite and Drizzle Replace Postgres and Prisma
+- Decision: move local persistence to SQLite via Drizzle and `better-sqlite3`.
+- Rationale: the app is single-user and local-first, so an embedded database removes unnecessary setup and better fits the desktop runtime.
+- Consequence: there is no Postgres or Prisma dependency in the active runtime, and old data is not migrated.
 
-## 2026-03-04 - Storage Adapter Uses Local Filesystem in V1
-- Decision: generated binaries are stored on disk behind a storage abstraction.
-- Rationale: simple local-first behavior with easy migration path later.
-- Consequence: object storage adapter can be introduced without rewriting business logic.
+## 2026-03-07 - Durable Queue Moves into SQLite
+- Decision: replace `pg-boss` and inline execution modes with a worker-owned SQLite queue.
+- Rationale: the desktop app still needs durable retries and restart recovery, but it no longer needs a separate queue backend.
+- Consequence: queue state lives on the `jobs` table with claim, heartbeat, and availability fields.
 
-## 2026-03-05 - Provider Calls Stubbed for Milestone Implementation
-- Decision: keep OpenAI/Gemini/Topaz adapters concrete at the contract level but return deterministic stub outputs until keys are available.
-- Rationale: unblock full local implementation through Milestone 5 without waiting on API credentials.
-- Consequence: provider wiring, queueing, and asset pipelines are testable now; swapping to real API calls later only changes adapter internals.
+## 2026-03-07 - TanStack Is the Renderer Foundation
+- Decision: use TanStack Router for routing and TanStack Query for persisted app data.
+- Rationale: the Electron renderer still needs a modern client-side application foundation after leaving Next.js.
+- Consequence: renderer navigation is code-routed and desktop events invalidate query-backed data caches.
 
-## 2026-03-05 - Inline Execution Default with Queue Mode Option
-- Decision: default `JOB_EXECUTION_MODE=inline` while preserving a `queue` mode that uses `pg-boss` worker processes.
-- Rationale: simplest local run path for new contributors while keeping production-compatible queue architecture.
-- Consequence: single-process local demos work out of the box; queue mode can be enabled without code changes.
+## 2026-03-07 - Mac Packaging Uses Electron Builder
+- Decision: package the local mac app with `electron-builder`, targeting unsigned Apple Silicon `.app` and `.zip` artifacts first.
+- Rationale: it produces a repeatable local packaging pipeline with app metadata, icons, native-module handling, and stable artifact paths.
+- Consequence: packaged builds are generated under `release/`, and packaging verification is part of the desktop lifecycle.
 
-## 2026-03-05 - Replace TLDraw with Custom Canvas UI
-- Decision: remove TLDraw and use a custom React infinite canvas so layout and interaction design are fully controlled in-app.
-- Rationale: product direction requires tighter visual control and a full-viewport workspace with floating overlays.
-- Consequence: canvas behavior is now owned in local components (pan/zoom/node drag/drop/settings chrome), with project-persisted viewport and node coordinates.
+## 2026-03-07 - Provider Credentials Are Keychain-First
+- Decision: provider credentials resolve from macOS Keychain first, then fall back to environment variables.
+- Rationale: packaged apps need to be configurable from Finder without editing repo-local env files, while source-run development should keep working.
+- Consequence: App Settings now exposes credential status plus save/clear actions, and provider readiness reflects Keychain-backed state.
 
-## 2026-03-05 - OpenAI Is the First Real Provider Path
-- Decision: make `openai / gpt-image-1.5` the only live provider execution path for now, and keep Gemini/Topaz plus other OpenAI models visible as `Coming soon`.
-- Rationale: ship a real end-to-end prompt-note + image-reference generation loop without pretending the rest of the provider catalog is production-ready.
-- Consequence: UI gating now comes from provider-model capability metadata, job payloads snapshot resolved prompt/image inputs, and generated OpenAI outputs are materialized back onto the canvas as image nodes.
+## 2026-03-07 - Packaged Mac Smoke Uses Selenium and ChromeDriver
+- Decision: automate the packaged `.app` verification path with Selenium plus `electron-chromedriver`.
+- Rationale: the packaged app is more stable to drive through WebDriver than Playwright's Electron attachment path in this environment.
+- Consequence: `npm run smoke:packaged:mac` launches the bundled `.app` through ChromeDriver and verifies the packaged lifecycle against a temporary app-data root.
 
-## 2026-03-06 - OpenAI Image Support Is Model-Family Based
-- Decision: promote `openai / gpt-image-1-mini` to a full runnable peer of `openai / gpt-image-1.5`, while keeping `gpt-image-1.5` as the default new-node selection.
-- Rationale: the OpenAI Images integration is already architected as a family path, so leaving mini behind `Coming soon` only adds brittle model-ID branching without product benefit.
-- Consequence: canvas settings, job creation, validation, placeholder/output reconciliation, preview streaming, and source-call inspection now treat runnable OpenAI image models through one shared helper instead of hard-coding `gpt-image-1.5`, and model-specific supported values such as `input_fidelity` can diverge without forking the whole UI path.
+## 2026-03-08 - Canvas Undo/Redo Stays Local and Scoped
+- Decision: keep undo/redo as renderer-local canvas history instead of a persisted app-wide history system.
+- Rationale: the first pass needs reliable canvas editing recovery without coupling async worker hydration, queue changes, or viewport movement into a global command log.
+- Consequence: undo/redo covers user-initiated canvas graph edits and inline node edits only, and resets when the canvas view is reloaded or the session changes.
 
-## 2026-03-06 - Topaz Ships as a Hosted Image API Family
-- Decision: replace the Topaz placeholder with the hosted Topaz Image API and launch `topaz / high_fidelity_v2` plus `topaz / redefine` as the first live Topaz models.
-- Rationale: this app is provider-API driven, so Topaz needs to match the OpenAI integration pattern: API key, async submit/status/download, no local binary requirement.
-- Consequence: provider readiness is modeled through `TOPAZ_API_KEY`, saved legacy `topaz-studio-main` and temporary `gigapixel-*` ids normalize into the real API models, `High Fidelity V2` runs synchronously on `/image/v1/enhance`, `Redefine` runs asynchronously on `/image/v1/enhance-gen/async`, and queue/source-call inspection stores Topaz endpoint/request/response metadata through the existing job-attempt pipeline.
+## 2026-03-08 - Desktop Data Path Is Pinned Independently From Branding
+- Decision: pin Electron `userData` to a stable on-disk directory instead of letting it follow the display name.
+- Rationale: Electron defaults `userData` from the app name, and a branding-only rename should never make the app look blank or silently switch SQLite/assets folders.
+- Consequence: the packaged app name can change without moving live local data, and the macOS data root intentionally stays at the compatibility path `~/Library/Application Support/Nodes Node Nodes/node-interface-demo`.
 
-## 2026-03-06 - Topaz Async Downloads Must Resolve the Signed Binary URL
-- Decision: treat Topaz async `/download/{process_id}` as a JSON envelope step, not the final binary download itself.
-- Rationale: `redefine` download responses return signed Cloudflare R2 URLs inside JSON, and persisting that envelope as `.png` corrupts the generated asset while leaving metadata looking valid.
-- Consequence: the Topaz adapter now resolves the envelope to the real binary `download_url` before saving output bytes, and the asset file route self-heals any previously-saved Topaz JSON envelopes by hydrating them into the real image on first read.
+## 2026-03-08 - Startup Lands On App Home
+- Decision: route desktop startup to a persistent app-level home view instead of auto-opening the last project route.
+- Rationale: a visible project picker is a better top-level desktop pattern now that the app supports multiple local projects plus app-level settings.
+- Consequence: `/` always renders app home, project picking moves onto a dedicated grid/list screen, and the open-project marker remains metadata rather than startup routing state.
 
-## 2026-03-06 - Canvas Saves Must Wait for Initial Hydration
-- Decision: block all client canvas persistence until the current project's saved canvas document has been fetched and applied.
-- Rationale: the default in-memory canvas document is empty, so any early viewport or reconciliation save before hydration can overwrite a real project graph with `workflow.nodes = []`.
-- Consequence: the canvas view now holds pending saves until the initial fetch completes, which prevents empty-document overwrites on reload while preserving normal debounced saves after hydration.
+## 2026-03-08 - Text Models Emit Structured Generated Nodes
+- Decision: let runnable OpenAI text models target `Text Note`, `List`, `Template`, or `Smart Output` instead of hardcoding model text responses to generated notes only.
+- Rationale: issue `#22` needs model text runs to become useful downstream graph inputs, and the renderer should not infer node types by parsing raw provider text.
+- Consequence: the app now injects strict JSON schema plus instructions for structured targets, parses generated-node descriptors in the worker, falls back to one generated note on parse failure, and hydrates model-spawned note/list/template nodes from serialized descriptor metadata.
 
-## 2026-03-05 - OpenAI Infers Generate vs Edit from Connected Inputs
-- Decision: remove the explicit `generate` / `edit` control from the `gpt-image-1.5` node UI, infer the execution mode from whether supported image inputs are connected, and keep runtime job-state visibility on the immediately-created generated output node.
-- Rationale: users think in terms of prompt-only vs reference-image generation, not OpenAI endpoint names. The manual toggle adds API vocabulary without adding product value.
-- Consequence: queued job payloads still snapshot `executionMode`, but the client derives it automatically from resolved image inputs, generated nodes retain `sourceJobId` plus inline source-call inspection, and model nodes stay focused on prompt/input wiring instead of transport details.
+## 2026-03-08 - Canvas Shortcuts Use TanStack Hotkeys
+- Decision: move canvas keyboard shortcuts off manual `window` listeners and onto TanStack Hotkeys with input ignoring enabled.
+- Rationale: the canvas needs keyboard shortcuts to stay active on the route while reliably shutting off inside text inputs, list editors, and other editable surfaces.
+- Consequence: canvas hotkeys are declarative, route-scoped through `CanvasView`, and no longer rely on custom editable-target detection to avoid stealing typed characters.
 
-## 2026-03-05 - Model Parameters Are Schema-Driven and GPT Image 1.5 Uses the Fuller Images API Surface
-- Decision: move model controls to declarative provider metadata and expose GPT Image 1.5 aspect ratio, resolution, transparency, format, output count, and advanced controls from that schema.
-- Rationale: future model expansion should not require hard-coded settings-surface rewrites, and GPT Image 1.5 needs more of its real Images API surface than a fixed square/medium default.
-- Consequence: provider capabilities now include parameter definitions, OpenAI defaults shift to `auto` where supported, generated outputs can fan out to multiple placeholders, and generated assets persist `outputIndex` so canvas reconciliation remains deterministic.
+## 2026-03-08 - Canvas Nodes Edit Inline
+- Decision: move node editing out of the old bottom-bar flow and into adaptive inline node surfaces with `preview`, `compact`, transient `full`, and persisted `resized` presentation states.
+- Rationale: issue `#44` needs the canvas to feel flexible and customizable, and issue `#24` needs templates/list pairing to be inspectable and editable directly where the node lives.
+- Consequence: `CanvasView` now persists node-local presentation metadata inside the canvas document, full-node editing uses header-only drag chrome, template compatibility/merge preview lives inline, and phantom output previews plus the edge-mounted run launcher are renderer-only affordances instead of persisted nodes.
 
-## 2026-03-05 - Asset Nodes Are Peer Pointers and OpenAI Previews Are Durable
-- Decision: allow multiple canvas asset-source nodes to point at the same uploaded/generated asset, and persist streamed GPT Image 1.5 partial previews as separate durable job-preview records instead of normal assets.
-- Rationale: users need to reuse previous outputs/uploads freely on canvas without duplicating binaries, and progressive previews must survive refresh while remaining outside the review library.
-- Consequence: the insert picker now includes generated/uploaded asset library actions, generated pointer nodes retain source-call access through shared asset/job metadata, and `job_preview_frames` back the running-node preview UI until final assets are persisted.
+## 2026-03-08 - List Full Mode Uses An Inline Sheet
+- Decision: implement full/resized list nodes as an inline spreadsheet-like sheet backed by TanStack Table instead of reusing the old stacked form controls.
+- Rationale: issue `#19` needs list editing to feel like a real sheet on the canvas, and the adaptive-node cleanup pass showed that simply transplanting the old controls into full mode was not good enough.
+- Consequence: list preview stays lightweight, but full/resized list nodes now render a real editable grid with header edits, cell edits, row numbering, and node-chrome add/remove actions.
 
-## 2026-03-05 - Canvas Wiring and Node Chrome Encode Media Semantics
-- Decision: make canvas visuals communicate media type and generation state directly through connection colors, semantic border treatments, and generated-image placeholder shells instead of generic provider styling.
-- Rationale: the canvas is a composition tool first, so users need to read prompt/image/video flow and in-progress outputs at a glance without opening secondary chrome.
-- Consequence: prompt/text lines are solid neon pink, image lines are neon blue, video lines are neon orange, model output nipples and model-to-generated-output edges use citrus, generated output nodes reserve their final frame shape immediately, and image nodes use flatter image-first chrome with minimal overlay copy.
+## 2026-03-08 - Generated Outputs Spawn Once And Then Stop Syncing
+- Decision: treat generated text, list, template, and image outputs as one-time spawned child nodes instead of live-managed job outputs after insertion.
+- Rationale: users need generated child nodes to behave like normal canvas nodes once they exist, including keeping edits, size changes, and deletions without being rewritten by later job polls.
+- Consequence: the canvas document now records consumed generated-output receipt keys, pending placeholders/previews are limited to unresolved jobs, completed outputs append new children once, and provenance remains metadata only for source/debug UI.
 
-## 2026-03-06 - Replace the Draggable Node Modal with a Bottom Settings Bar
-- Decision: move single-node configuration and compare actions into one fixed full-width bottom bar, keep the bar mounted in an empty state, and move the queue pill to the top-right.
-- Rationale: the canvas should keep its chrome short and consistent, with settings, compare actions, and image viewing accessible from one predictable edge instead of splitting interaction between a selection bar and a draggable modal.
-- Consequence: the floating upload CTA is removed, upload remains available from the insert menu, core node controls stay inline in the bar, and verbose content now opens in upward trays/popovers from that bar.
-
-## 2026-03-06 - Tighten the Bottom Bar and Remove Manual Output Selection
-- Decision: hide the bottom bar completely when nothing is selected, remove the manual output picker from the bar, and make model availability explicit inside the model picker with `Coming soon` status.
-- Rationale: the idle shell adds chrome without helping canvas work, output type is provider-driven rather than a user-facing decision in this pass, and unavailable models need clearer visibility before users try to run them.
-- Consequence: single-selection bars no longer show node-type copy, multi-selection uses only a generic count chip, provider/model changes still resolve `outputType` internally, and the bar/popover chrome is tighter overall.
-
-## 2026-03-06 - List-to-Template Text Expansion Stays Canvas-Local
-- Decision: add `list` and `text-template` canvas nodes, and keep row expansion as a synchronous local canvas transform rather than a queued provider job.
-- Rationale: mail-merge style text expansion is deterministic local data shaping, so pushing it through jobs/assets/queueing adds latency and product noise without adding resilience.
-- Consequence: generated row outputs are materialized as new editable text-note nodes with provenance metadata in canvas JSON, the queue/assets views stay unchanged, and future server-side batch history would require a separate execution record instead of reusing provider jobs.
-
-## 2026-03-06 - OpenAI GPT Text Uses Responses API and Stays Note-Native
-- Decision: launch `openai / gpt-5.4`, `openai / gpt-5-mini`, and `openai / gpt-5-nano` through the OpenAI Responses API, and materialize their outputs as generated canvas `text-note` nodes instead of assets.
-- Rationale: GPT text generation is a first-class queued workflow, but the user-facing output is prompt text for further graph composition, not something that should clutter the visual asset library or asset pickers.
-- Consequence: GPT text nodes are prompt-only in this pass, queue runs snapshot schema-driven Responses settings, job attempts store returned text inline in `provider_response`, completed jobs hydrate generated notes on the canvas, and the asset viewer remains focused on visual media only.
+## 2026-03-08 - Node Metadata Lives In A Canonical Registry
+- Decision: centralize built-in node metadata in a canonical node registry that drives the Node Library, insert picker, native add menus, searchable model selection, and structured-output node summaries.
+- Rationale: the app needs one source of truth for what node types exist, how they should be presented to users, and how downstream systems should reason about them.
+- Consequence: UI/catalog/prompt metadata now flows from `src/lib/node-catalog.ts`, while actual node creation and mutation still stays in the existing canvas/workspace logic.

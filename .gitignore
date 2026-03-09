@@ -19,6 +19,8 @@
 
 # production
 /build
+/dist
+/release
 
 # misc
 .DS_Store
@@ -42,6 +44,10 @@ next-env.d.ts
 
 # local runtime artifacts
 .local-assets/
+.local-desktop/
 .local-pg/
 scaffoldapp/
 .tmp-mcp/
+tsup.config.bundled_*.mjs
+/build-resources/icon.iconset/
+/build-resources/icon.png

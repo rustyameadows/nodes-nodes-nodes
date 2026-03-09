@@ -40,9 +40,9 @@ export function formatProviderRequirementMessage(requirement: RequirementLike | 
   }
 
   if (requirement.kind === "env") {
-    return `Set ${requirement.key} in .env.local and restart npm run dev.`;
+    return `Save ${requirement.key} in Settings or set it in .env.local and restart the app.`;
   }
 
   const label = requirement.label || "Required executable";
-  return `${label} is unavailable. Install or configure ${requirement.key} and restart npm run dev.`;
+  return `${label} is unavailable. Install or configure ${requirement.key} and restart the app.`;
 }

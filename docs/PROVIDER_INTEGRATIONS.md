@@ -1,82 +1,47 @@
-# Provider Integrations (Current Runtime)
+# Provider Integrations (Desktop Runtime)
 
 ## Goals
-- Keep provider execution behind one adapter contract.
-- Snapshot real graph inputs before enqueue so job execution is deterministic.
-- Normalize provider outputs so image/video results can land in local storage and the asset viewer, while GPT text results can hydrate canvas notes without provider-specific UI code.
+- Keep provider execution behind one adapter boundary.
+- Snapshot concrete graph inputs before queueing a job.
+- Normalize outputs so the renderer never needs provider-specific transport logic.
 
 ## Current Provider Status
-- `openai / gpt-image-1.5`, `openai / gpt-image-1-mini`: real OpenAI image generation paths with both prompt-only (`generate`) and image-edit/reference (`edit`) modes.
-- `openai / gpt-5.4`, `openai / gpt-5-mini`, `openai / gpt-5-nano`: real OpenAI text-generation paths through the Responses API.
-- `topaz / high_fidelity_v2`, `topaz / redefine`: real Topaz Image API transform paths with one image input and one image output.
-- `openai / gpt-image-1`, `openai / gpt-4.1-mini`: visible in UI, `Coming soon`, not runnable.
-- `google-gemini / gemini-3.1-flash` (`Nano Banana 2`): visible in UI, `Coming soon`, not runnable.
-
-The dropdowns still expose the future catalog so node IDs and routing stay stable, but runnable provider families now include OpenAI Images, OpenAI GPT text generation, and the Topaz Image API.
+- `openai / gpt-image-1.5`
+- `openai / gpt-image-1-mini`
+  - runnable image generation and image edit/reference flows
+- `openai / gpt-5.4`
+- `openai / gpt-5-mini`
+- `openai / gpt-5-nano`
+  - runnable text-generation flows through the Responses API
+- `topaz / high_fidelity_v2`
+- `topaz / redefine`
+  - runnable Topaz image transforms
+- `google-gemini / gemini-3.1-flash`
+  - visible as `Nano Banana 2`, not runnable in this pass
 
 ## Runtime Contract
 
 ```ts
-export type ProviderId = "openai" | "google-gemini" | "topaz";
-
-export type NodePayload = {
-  nodeId: string;
-  nodeType: "text-gen" | "image-gen" | "video-gen" | "transform";
-  prompt: string; // resolved prompt snapshot
-  settings: Record<string, unknown>;
-  outputType: "text" | "image" | "video";
-  executionMode: "generate" | "edit";
-  outputCount: number;
-  promptSourceNodeId?: string | null;
-  upstreamNodeIds: string[];
-  upstreamAssetIds: string[];
-  inputImageAssetIds: string[];
-};
-
-export type ProviderInputAsset = {
-  assetId: string;
-  type: "image" | "video" | "text";
-  storageRef: string;
-  mimeType: string;
-  buffer: Buffer;
-  checksum?: string | null;
-  width?: number | null;
-  height?: number | null;
-};
-
-export type ProviderJobInput = {
+type ProviderJobInput = {
   projectId: string;
   jobId: string;
-  providerId: ProviderId;
+  providerId: "openai" | "google-gemini" | "topaz";
   modelId: string;
   payload: NodePayload;
   inputAssets: ProviderInputAsset[];
   onPreviewFrame?: (previewFrame: NormalizedPreviewFrame) => Promise<void> | void;
 };
-
-export type NormalizedOutput = {
-  type: "image" | "video" | "text";
-  mimeType: string;
-  metadata: Record<string, unknown>;
-  content: string | Buffer;
-  encoding: BufferEncoding | "binary";
-  extension: string;
-};
-
-export type NormalizedPreviewFrame = {
-  outputIndex: number;
-  previewIndex: number;
-  mimeType: string;
-  extension: string;
-  content: Buffer;
-  metadata: Record<string, unknown>;
-};
 ```
 
-## Model Capability Metadata
-Provider-model records sync into `provider_models.capabilities` with the runtime metadata the UI needs:
+Provider adapters return normalized outputs:
+- image/video buffers for persisted assets
+- inline text for GPT text responses plus parsed generated-node descriptors in worker-owned attempt metadata
+- preview frames when streaming is supported
+
+## Capability Metadata
+`provider_models.capabilities` stores the renderer-facing metadata needed for honest UI gating:
 - `runnable`
-- `availability` (`ready | coming_soon`)
+- `availability`
 - `requirements`
 - `promptMode`
 - `requiresApiKeyEnv`
@@ -87,198 +52,67 @@ Provider-model records sync into `provider_models.capabilities` with the runtime
 - `parameters`
 - `defaults`
 
-This keeps the browser truthful about whether a node can run without inventing client-side rules.
+## Environment Keys
+The renderer never receives these values directly:
 
-## OpenAI (`openai`)
+```bash
+OPENAI_API_KEY=...
+GOOGLE_API_KEY=...
+TOPAZ_API_KEY=...
+```
 
-### OpenAI Images
-- One model node targeting `gpt-image-1.5` or `gpt-image-1-mini`
-- Prompt comes from:
-  - connected text note when present
-  - otherwise the model node prompt textarea
-- Execution mode is inferred from connected image inputs:
-  - `generate`: no connected image inputs
-  - `edit`: one or more connected supported image inputs
-- Parameter UI is schema-driven from provider metadata and split into `core` and `advanced` sections.
-- Effective node settings are resolved before preview/enqueue so the UI, job payload, and provider request match.
-- Image references come from connected image-producing nodes when the inferred mode is `edit`
-- Server resolves those references into concrete asset bytes before invoking OpenAI
-- Run inserts one or more generated output placeholder nodes on the canvas immediately after job creation
-- OpenAI image runs request streaming partial images and persist them as transient `job_preview_frames`
-- Successful outputs are stored as project assets and attached back to the matching placeholder node by `(jobId, outputIndex)`
-- Failed output nodes remain on canvas and retain source-call inspection
+Credential resolution order:
+1. macOS Keychain values saved from App Settings
+2. `.env` / `.env.local` values loaded into `process.env`
 
-### Request Shape
-- API path:
-  - `generate`: `client.images.generate(...)`
-  - `edit`: `client.images.edit(...)`
-- Models:
-  - `gpt-image-1.5`
-  - `gpt-image-1-mini`
-- Defaults used in this pass:
-  - `output_format = png`
-  - `quality = auto`
-  - `size = auto`
-  - `background = auto`
-  - `n = 1`
-  - `input_fidelity = high` (`edit` only)
-  - `stream = true`
-  - `partial_images = 2`
-- Core controls exposed in node UI:
-  - aspect ratio (`size`): `auto`, `1024x1024`, `1024x1536`, `1536x1024`
-  - resolution (`quality`): `auto`, `low`, `medium`, `high`
-  - transparency (`background`): `auto`, `opaque`, `transparent`
-  - format (`output_format`): `png`, `jpeg`, `webp`
-  - outputs (`n`): `1..4`
-- Advanced controls exposed in node UI:
-  - `input_fidelity` (`edit` only, model-specific supported values)
-  - `output_compression` (`jpeg` / `webp` only)
-  - `moderation` (`generate` only in the current Node SDK surface)
-- current model-specific rule:
-    - `gpt-image-1.5`: `high` or `low`
-    - `gpt-image-1-mini`: `low` only
-- Input constraints enforced in app:
-  - `generate`: zero image inputs
-  - `edit`: only image inputs, first 5 connected images in stable connection order
-  - accepted types for `edit`: `image/png`, `image/jpeg`, `image/webp`
-- Compatibility rules:
-  - JPEG coerces transparent background to opaque
-  - compression is omitted unless format is JPEG or WebP
+Read locations:
+- main process
+- worker process
+- provider adapters
 
-### Run Gating
-OpenAI run is disabled when:
-- `OPENAI_API_KEY` is missing
-- resolved prompt is empty
-- one or more image connections exist but none resolve to supported image assets
+Renderer-facing credential APIs:
+- `listProviderCredentials()`
+- `saveProviderCredential(key, value)`
+- `clearProviderCredential(key)`
 
-### Output Normalization
-- Partial previews are decoded from streamed base64 and persisted as durable preview frames keyed by `(jobId, outputIndex, previewIndex)`.
-- Generated image bytes are decoded from OpenAI base64 output into `Buffer`
-- Asset metadata stores:
-  - `mimeType`
-  - `checksum`
-  - `width`
-  - `height`
-  - provider/model metadata in `job_attempts.provider_response`
-- Generated output nodes also retain:
-  - originating `jobId`
-  - originating `outputIndex`
-  - transient processing state (`queued | running | failed | null`)
-  - source-call inspection via the same `job_attempts` payloads shown in Queue
-- When the job is still running, the canvas renders the latest preview frame instead of waiting for the final asset.
+Renderer credential state includes:
+- `configured`
+- `source`: `keychain`, `environment`, or `none`
 
-### OpenAI GPT Text
+The packaged app can be fully configured from Finder without editing repo env files. In source-run development, `.env.local` remains supported.
 
-#### Supported Flow
-- One model node targeting:
-  - `gpt-5.4`
-  - `gpt-5-mini`
-  - `gpt-5-nano`
-- Prompt comes from:
-  - connected text note when present
-  - otherwise the model node prompt textarea
-- App scope in this pass is `text prompt in -> text note out`:
-  - no connected image inputs
-  - no tool calls or function calling
-  - no web search / MCP / image generation exposure
-- Run creates one generated `text-note` placeholder immediately to the right of the model node.
-- Queue completion hydrates that note from the latest successful attempt response.
-- Re-running appends another generated note instead of overwriting earlier note outputs.
-- Generated notes can connect into downstream image-model prompt inputs as normal prompt-source notes.
-- Generated GPT text does not create `asset` rows, storage files, asset-view entries, or asset-picker entries.
+## OpenAI Image Jobs
+- support prompt-only `generate` and reference-image `edit`
+- execution mode is inferred from connected image inputs
+- request settings are resolved before enqueue
+- partial previews are persisted as `job_preview_frames`
+- final outputs become `assets` rows plus local files
 
-#### Request Shape
-- API path:
-  - `client.responses.create(...)`
-- Shared controls exposed in node UI:
-  - `Max Output Tokens` (`1..128000`, optional)
-  - `Verbosity` (`low | medium | high`)
-  - `Output Format` (`text | json_object | json_schema`)
-- Advanced controls exposed in node UI:
-  - `Reasoning Effort` (model-profiled)
-  - `Schema Name` (`json_schema` only)
-  - `Schema JSON` (`json_schema` only)
-- Model-specific reasoning controls:
-  - `gpt-5.4`: `none | low | medium | high | xhigh`
-  - `gpt-5-mini`: `minimal | low | medium | high`
-  - `gpt-5-nano`: `minimal | low | medium | high`
-- Controls intentionally not exposed in v1:
-  - temperature / top_p / logprobs
-  - service tier / store / metadata / parallel tool calls
-  - image inputs / multimodal output / tools
+## OpenAI GPT Text Jobs
+- accept prompt text only
+- support four output targets:
+  - `Text Note`
+  - `List`
+  - `Template`
+  - `Smart Output`
+- `Text Note` remains the default and is fully backward compatible
+- `List`, `Template`, and `Smart Output` force app-owned strict JSON schema output through the Responses API
+- structured parsing happens in the worker/job pipeline, never in the renderer
+- `List` and `Template` create one deterministic generated placeholder node while queued/running
+- `Smart Output` spawns one or more unconnected generated nodes only after parsed descriptors are available
+- `Smart Output` follows explicit user instructions about node types first, and only falls back to the general node-selection rules when the prompt is ambiguous
+- parse failure still marks the job successful and falls back to one generated `text-note`
+- persist returned text plus parsed generated-node descriptors in `job_attempts.provider_response`
+- do not create asset rows or asset files
 
-#### Run Gating
-OpenAI GPT text run is disabled when:
-- `OPENAI_API_KEY` is missing
-- resolved prompt is empty
-- any asset/image upstream is connected
-- JSON Schema output is selected but schema name or schema JSON is invalid
+## Topaz Jobs
+- run as single-image transforms
+- `high_fidelity_v2` is synchronous
+- `redefine` is async and may require download-envelope resolution
+- final outputs are normalized back into standard asset storage
 
-#### Output Normalization
-- Responses output text is stored inline in `job_attempts.provider_response.outputs[].content`.
-- Jobs API exposes that text back to the client as `latestTextOutputs`.
-- Generated note metadata stores:
-  - originating `jobId`
-  - originating model node id
-  - output index
-- Source-call inspection for GPT text notes reuses the same queue/debug payloads as image jobs.
-- Generated note text is queue-backed but note-native: there is no asset persistence step for these outputs.
-
-## Topaz (`topaz`)
-
-### Supported Flow
-- One model node targeting:
-  - `high_fidelity_v2`
-  - `redefine`
-- Execution is through the hosted Topaz Image API using `TOPAZ_API_KEY`.
-- Both models behave as single-image transforms:
-  - exactly one connected image input
-  - exactly one image output
-  - `executionMode` stays `edit`
-  - no progressive preview frames in v1
-- Prompt behavior:
-  - `high_fidelity_v2`: prompt unsupported
-  - `redefine`: prompt optional through connected text note or fallback prompt field
-- Successful runs reuse the same placeholder output-node lifecycle already used by generated image nodes.
-
-### Settings Surface
-- Shared core control:
-  - `Scale`
-- Model-specific advanced controls:
-  - `high_fidelity_v2`: no extra controls in v1
-  - `redefine`:
-    - `Creativity`
-    - `Texture`
-- Source format is preserved in v1; there is no Topaz output-format selector yet.
-
-### Run Gating
-Topaz run is disabled when:
-- `TOPAZ_API_KEY` is missing
-- zero image inputs are connected
-- more than one image input is connected
-- a connected image input is not PNG / JPEG / TIFF
-- prompt input is present on `high_fidelity_v2`
-
-### Runtime and Debugging
-- `high_fidelity_v2` uses the synchronous `/image/v1/enhance` endpoint and returns one image directly.
-- `redefine` uses the asynchronous `/image/v1/enhance-gen/async` endpoint, polls status, downloads the final output, and ingests that file as a normal asset.
-- Topaz async `/download/{process_id}` returns a JSON envelope first; the runtime must follow that envelope's signed `download_url` before persisting the final binary image.
-- Queue/source-call inspection stores:
-  - Topaz endpoint
-  - API request payload summary
-  - `process_id` for async runs
-  - last status payload for async runs
-  - download URL for async runs
-- Generated Topaz assets preserve the same node-to-job source-call inspection path as OpenAI outputs.
-
-## Placeholder Providers
-Gemini and non-runnable future OpenAI models still use the same registry and dropdown surfaces but reject execution with `COMING_SOON`. This preserves the provider-agnostic node contract without pretending those backends are live.
-
-## Error Mapping
-- `CONFIG_ERROR`: missing `OPENAI_API_KEY`
-- `CONFIG_ERROR`: missing `TOPAZ_API_KEY`
-- `COMING_SOON`: non-runnable placeholder model/provider
-- `INVALID_INPUT`: missing prompt or unsupported/missing image inputs
-- `PROVIDER_ERROR`: adapter or upstream API failure
-
-All provider request/response summaries and error details are stored in `job_attempts` for the queue inspector.
+## Failure Model
+- queue attempts are persisted
+- failures surface explicit error code and message
+- retries use bounded backoff
+- worker restarts recover stale running jobs by re-queueing them

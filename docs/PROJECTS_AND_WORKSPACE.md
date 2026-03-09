@@ -1,73 +1,62 @@
-# Projects and Workspace (V1)
+# Projects and Workspace (Desktop V1)
 
 ## Objective
-Support multiple local projects with isolated state and simple switching. Each project owns exactly one infinite canvas.
+Support multiple local projects with strict isolation and exactly one open workspace at a time.
 
 ## Project Lifecycle
-- Create project:
-  - Required: `name`.
-  - Side effects: create `projects`, `canvases`, and `project_workspace_states` rows.
-- Rename project:
-  - Updates `projects.name`.
-- Archive project:
-  - Sets `projects.status = archived`.
-  - Excluded from default active list.
-- Unarchive project:
-  - Sets `projects.status = active`.
-- Delete project:
-  - Permanently removes project and all related canvas, jobs, assets, tags, and workspace state.
+- Create
+  - inserts `projects`, `project_workspace_states`, and `canvases`
+  - first project becomes the open workspace automatically
+- Rename
+  - updates `projects.name`
+- Archive / unarchive
+  - toggles `projects.status`
+- Open
+  - closes the previously open workspace and marks the new one open
+  - updates `last_opened_at`
+- Delete
+  - removes project rows and related app-data asset/preview folders
 
-## Sidebar UX Rules
-- Always visible in app shell.
-- Shows active projects by default.
-- Archived section collapsible/expandable.
-- Actions per project row: rename, archive/unarchive, delete.
-- Primary action: open project.
+## Workspace Rules
+- Only one project can be open at a time.
+- Opening a project does not merge state from any other project.
+- Startup always lands on app home at `/`.
+- App home shows a create-project panel, active project cards, and a separate archived-project section when archived projects exist.
+- The native macOS `Project` menu mirrors the in-canvas `Menu` pill for view switching and project switching.
+- `Home` is available from the in-canvas `Menu` pill, app settings, and the native macOS `Project` menu.
+- Native project switching preserves the current workspace view when that view is project-scoped.
 
-## Open/Close Semantics
-- Exactly one project may be open at any time.
-- Opening project `B` while `A` is open:
-  1. Save workspace state for `A`.
-  2. Mark `A` as not open.
-  3. Mark `B` as open.
-  4. Load `B` canvas and viewer state.
-- Explicit close action:
-  - Marks current project as not open.
-  - Returns to project launcher/empty workspace screen.
+## Persisted State
+- Canvas document
+- Canvas viewport inside that document
+- Asset viewer layout
+- Asset viewer filters
+- Open-project marker
+- Provider credentials are not project data; they are app-level settings shared across projects
 
-## Startup Restore
-- On app start:
-  1. Query last-opened active project.
-  2. Restore open workspace and associated state.
-  3. If no prior project exists, show launcher with create action.
-
-## Workspace State Persistence
-- Persist per project:
-  - canvas viewport
-  - current node/asset selection
-  - asset viewer mode
-  - filter/sort settings
-- Save on:
-  - project switch
-  - workspace close
-  - periodic debounce while active
+Current selection is treated as local UI state, not durable cross-restart state.
 
 ## Isolation Guarantees
-- Jobs and assets are always project-scoped.
-- Canvas nodes/edges are project-scoped.
-- Tags and rating/flag metadata are project-scoped.
-- No cross-project reads in default queries.
+- Jobs are always project-scoped.
+- Assets, feedback, tags, and previews are always project-scoped.
+- Canvas asset pointers may reference existing project assets, but never assets from another project.
+- Default queries never cross project boundaries.
 
-## Error and Edge Cases
-- Deleted active project:
-  - auto-close workspace and return to launcher.
-- Opening archived project directly:
-  - allow open if explicitly selected from archived list.
-- Corrupt/missing workspace state:
-  - fall back to defaults without blocking project open.
+## Delete Behavior
+Deleting a project removes:
+- project metadata
+- workspace state
+- canvas document
+- jobs and attempts
+- assets and feedback
+- tags and tag links
+- preview-frame metadata
+- stored asset files under `assets/<projectId>`
+- stored preview files for the project’s jobs
 
-## Acceptance Criteria
-1. User can create 3+ projects and switch with isolated state.
-2. Open project state is restored after app restart.
-3. Asset filters in one project do not affect others.
-4. Delete and archive operations behave predictably and are reversible only where intended.
+## Startup Behavior
+1. Desktop runtime initializes SQLite and provider metadata.
+2. Renderer requests projects.
+3. Renderer routes to app home at `/`.
+4. App home shows any existing projects and lets the user create or open a project.
+5. Opening a project routes to that project's canvas.

@@ -24,6 +24,7 @@ import type {
   ProviderModel,
   WorkflowNode,
 } from "@/components/workspace/types";
+import type { CanvasBottomBarPopoverId } from "@/lib/canvas-primary-editor";
 import type { ModelParameterDefinition } from "@/lib/model-parameters";
 import { isRunnableOpenAiImageModel } from "@/lib/openai-image-settings";
 import type { TextTemplatePreview } from "@/lib/list-template";
@@ -60,6 +61,7 @@ type Props = {
   selectedNodeIsAssetSource: boolean;
   selectedNodeIsGeneratedAsset: boolean;
   selectedNodeIsGeneratedTextNote: boolean;
+  selectedNodeIsGeneratedModelNode: boolean;
   selectedModel: ProviderModel | undefined;
   selectedGeneratedSourceJob: Job | null;
   selectedNodeSourceJobId: string | null;
@@ -101,6 +103,9 @@ type Props = {
   onDownloadAssets: (assetIds: string[]) => void;
   onOpenCompare: (mode: "compare_2" | "compare_4", count: number) => void;
   onOpenQueueInspect: (jobId: string) => void;
+  openPopoverId?: CanvasBottomBarPopoverId | null;
+  onOpenPopoverChange?: (id: CanvasBottomBarPopoverId | null) => void;
+  onCommitTextEdits?: () => void;
 };
 
 type PopoverProps = {
@@ -173,8 +178,8 @@ type SelectProps = {
   value: string;
   options: SelectOption[];
   disabled?: boolean;
-  openPopoverId: string | null;
-  onOpenPopoverChange: (id: string | null) => void;
+  openPopoverId: CanvasBottomBarPopoverId | null;
+  onOpenPopoverChange: (id: CanvasBottomBarPopoverId | null) => void;
   onSelect: (value: string) => void;
   triggerRefs: MutableRefObject<Map<string, HTMLButtonElement | null>>;
   popoverRef: RefObject<HTMLDivElement | null>;
@@ -206,7 +211,7 @@ function CanvasBarSelect({
         disabled={disabled}
         aria-haspopup="listbox"
         aria-expanded={isOpen}
-        onClick={() => onOpenPopoverChange(isOpen ? null : id)}
+        onClick={() => onOpenPopoverChange(isOpen ? null : (id as CanvasBottomBarPopoverId))}
       >
         <span className={styles.controlText}>
           <span className={styles.controlLabel}>{label}</span>
@@ -265,8 +270,8 @@ type TrayProps = {
   value: string;
   width?: number;
   maxWidth?: number;
-  openPopoverId: string | null;
-  onOpenPopoverChange: (id: string | null) => void;
+  openPopoverId: CanvasBottomBarPopoverId | null;
+  onOpenPopoverChange: (id: CanvasBottomBarPopoverId | null) => void;
   triggerRefs: MutableRefObject<Map<string, HTMLButtonElement | null>>;
   popoverRef: RefObject<HTMLDivElement | null>;
   headerNote?: string;
@@ -298,7 +303,7 @@ function CanvasBarTray({
         className={`${styles.trayButton} ${isOpen ? styles.trayButtonOpen : ""}`}
         aria-haspopup="dialog"
         aria-expanded={isOpen}
-        onClick={() => onOpenPopoverChange(isOpen ? null : id)}
+        onClick={() => onOpenPopoverChange(isOpen ? null : (id as CanvasBottomBarPopoverId))}
       >
         <span className={styles.controlText}>
           <span className={styles.controlLabel}>{label}</span>
@@ -328,6 +333,7 @@ function InlineParameterField({
   parameter,
   value,
   onChange,
+  onBlur,
   openPopoverId,
   onOpenPopoverChange,
   triggerRefs,
@@ -336,8 +342,9 @@ function InlineParameterField({
   parameter: ModelParameterDefinition;
   value: unknown;
   onChange: (nextValue: string | number | null) => void;
-  openPopoverId: string | null;
-  onOpenPopoverChange: (id: string | null) => void;
+  onBlur?: () => void;
+  openPopoverId: CanvasBottomBarPopoverId | null;
+  onOpenPopoverChange: (id: CanvasBottomBarPopoverId | null) => void;
   triggerRefs: MutableRefObject<Map<string, HTMLButtonElement | null>>;
   popoverRef: RefObject<HTMLDivElement | null>;
 }) {
@@ -370,6 +377,7 @@ function InlineParameterField({
           value={value === null || value === undefined ? "" : String(value)}
           placeholder={parameter.placeholder}
           onChange={(event) => onChange(event.target.value)}
+          onBlur={onBlur}
         />
       </label>
     );
@@ -385,6 +393,7 @@ function InlineParameterField({
           value={value === null || value === undefined ? "" : String(value)}
           placeholder={parameter.placeholder}
           onChange={(event) => onChange(event.target.value)}
+          onBlur={onBlur}
         />
       </label>
     );
@@ -399,13 +408,14 @@ function InlineParameterField({
         inputMode="numeric"
         min={parameter.min}
         max={parameter.max}
-        step={parameter.step}
-        value={value === null || value === undefined ? "" : String(value)}
-        placeholder={parameter.placeholder}
-        onChange={(event) => onChange(event.target.value === "" ? null : Number(event.target.value))}
-      />
-    </label>
-  );
+      step={parameter.step}
+      value={value === null || value === undefined ? "" : String(value)}
+      placeholder={parameter.placeholder}
+      onChange={(event) => onChange(event.target.value === "" ? null : Number(event.target.value))}
+      onBlur={onBlur}
+    />
+  </label>
+);
 }
 
 function selectionChipLabel(selectedNodeIds: string[], selectedNode: WorkflowNode | null) {
@@ -493,6 +503,7 @@ export function CanvasBottomBar({
   selectedNodeIsAssetSource,
   selectedNodeIsGeneratedAsset,
   selectedNodeIsGeneratedTextNote,
+  selectedNodeIsGeneratedModelNode,
   selectedModel,
   selectedGeneratedSourceJob,
   selectedNodeSourceJobId,
@@ -534,17 +545,31 @@ export function CanvasBottomBar({
   onDownloadAssets,
   onOpenCompare,
   onOpenQueueInspect,
+  openPopoverId: controlledOpenPopoverId,
+  onOpenPopoverChange: controlledSetOpenPopoverId,
+  onCommitTextEdits,
 }: Props) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const mainLaneRef = useRef<HTMLDivElement | null>(null);
   const popoverRef = useRef<HTMLDivElement | null>(null);
   const triggerRefs = useRef<Map<string, HTMLButtonElement | null>>(new Map());
-  const [openPopoverId, setOpenPopoverId] = useState<string | null>(null);
+  const [uncontrolledOpenPopoverId, setUncontrolledOpenPopoverId] = useState<CanvasBottomBarPopoverId | null>(null);
   const [sourceCallDebug, setSourceCallDebug] = useState<JobDebugResponse | null>(null);
   const [sourceCallLoading, setSourceCallLoading] = useState(false);
   const [sourceCallError, setSourceCallError] = useState<string | null>(null);
+  const previousOpenPopoverIdRef = useRef<CanvasBottomBarPopoverId | null>(null);
 
   const sourceCallLatestAttempt = sourceCallDebug?.attempts[0] || null;
+  const openPopoverId =
+    controlledOpenPopoverId === undefined ? uncontrolledOpenPopoverId : controlledOpenPopoverId;
+  const setOpenPopoverId = (nextPopoverId: CanvasBottomBarPopoverId | null) => {
+    if (controlledSetOpenPopoverId) {
+      controlledSetOpenPopoverId(nextPopoverId);
+      return;
+    }
+
+    setUncontrolledOpenPopoverId(nextPopoverId);
+  };
   const selectionKey = useMemo(
     () => `${selectedNodeIds.join(",")}:${selectedNode?.id || ""}`,
     [selectedNode?.id, selectedNodeIds]
@@ -557,11 +582,19 @@ export function CanvasBottomBar({
   );
 
   useEffect(() => {
+    onCommitTextEdits?.();
     setOpenPopoverId(null);
     setSourceCallDebug(null);
     setSourceCallLoading(false);
     setSourceCallError(null);
-  }, [selectionKey]);
+  }, [onCommitTextEdits, selectionKey]);
+
+  useEffect(() => {
+    if (previousOpenPopoverIdRef.current && previousOpenPopoverIdRef.current !== openPopoverId) {
+      onCommitTextEdits?.();
+    }
+    previousOpenPopoverIdRef.current = openPopoverId;
+  }, [onCommitTextEdits, openPopoverId]);
 
   useEffect(() => {
     if (!openPopoverId) {
@@ -698,6 +731,7 @@ export function CanvasBottomBar({
                 className={styles.textInput}
                 value={selectedNode.label}
                 onChange={(event) => onLabelChange(event.target.value)}
+                onBlur={onCommitTextEdits}
               />
             </label>
           ) : null}
@@ -747,6 +781,7 @@ export function CanvasBottomBar({
                       className={styles.trayTextarea}
                       value={selectedNode.prompt}
                       onChange={(event) => onPromptChange(event.target.value)}
+                      onBlur={onCommitTextEdits}
                       placeholder="Describe what this node should generate"
                     />
                   </div>
@@ -769,6 +804,7 @@ export function CanvasBottomBar({
                     parameter={parameter}
                     value={selectedNodeResolvedSettings[parameter.key]}
                     onChange={(value) => onParameterChange(parameter.key, value)}
+                    onBlur={onCommitTextEdits}
                     openPopoverId={openPopoverId}
                     onOpenPopoverChange={setOpenPopoverId}
                     triggerRefs={triggerRefs}
@@ -797,6 +833,7 @@ export function CanvasBottomBar({
                               className={styles.trayInput}
                               value={String(selectedNodeResolvedSettings[parameter.key] ?? parameter.defaultValue ?? "")}
                               onChange={(event) => onParameterChange(parameter.key, event.target.value)}
+                              onBlur={onCommitTextEdits}
                             >
                               {(parameter.options || []).map((option) => (
                                 <option key={String(option.value)} value={String(option.value)}>
@@ -816,6 +853,7 @@ export function CanvasBottomBar({
                               }
                               placeholder={parameter.placeholder}
                               onChange={(event) => onParameterChange(parameter.key, event.target.value)}
+                              onBlur={onCommitTextEdits}
                             />
                           ) : parameter.control === "textarea" ? (
                             <textarea
@@ -829,6 +867,7 @@ export function CanvasBottomBar({
                               }
                               placeholder={parameter.placeholder}
                               onChange={(event) => onParameterChange(parameter.key, event.target.value)}
+                              onBlur={onCommitTextEdits}
                             />
                           ) : (
                             <input
@@ -851,6 +890,7 @@ export function CanvasBottomBar({
                                   event.target.value === "" ? null : Number(event.target.value)
                                 )
                               }
+                              onBlur={onCommitTextEdits}
                             />
                           )}
                         </div>
@@ -963,6 +1003,7 @@ export function CanvasBottomBar({
                               className={styles.trayInput}
                               value={column.label}
                               onChange={(event) => onUpdateListColumnLabel(column.id, event.target.value)}
+                              onBlur={onCommitTextEdits}
                               placeholder="Column name"
                             />
                             <button
@@ -986,6 +1027,7 @@ export function CanvasBottomBar({
                                 className={styles.trayInput}
                                 value={row.values[column.id] ?? ""}
                                 onChange={(event) => onUpdateListCell(row.id, column.id, event.target.value)}
+                                onBlur={onCommitTextEdits}
                                 placeholder={column.label.trim() || "Value"}
                               />
                             ))}
@@ -1035,6 +1077,7 @@ export function CanvasBottomBar({
                       autoCorrect="off"
                       autoCapitalize="off"
                       onChange={(event) => onPromptChange(event.target.value)}
+                      onBlur={onCommitTextEdits}
                       placeholder="Write merge text with [[column]] placeholders"
                     />
                   </div>
@@ -1117,6 +1160,7 @@ export function CanvasBottomBar({
                       autoCapitalize="off"
                       readOnly={selectedPendingModelGeneratedText}
                       onChange={(event) => onPromptChange(event.target.value)}
+                      onBlur={onCommitTextEdits}
                       placeholder={selectedPendingModelGeneratedText ? "Generating text…" : "Write prompt notes here"}
                     />
                   </div>
@@ -1241,7 +1285,7 @@ export function CanvasBottomBar({
             {selectedNode &&
             selectedNodeIds.length === 1 &&
             selectedNodeSourceJobId &&
-            (selectedNodeIsGeneratedAsset || Boolean(selectedModelGeneratedTextSettings)) ? (
+            (selectedNodeIsGeneratedAsset || selectedNodeIsGeneratedModelNode) ? (
               <CanvasBarTray
                 id="source-call"
                 label="Source"
@@ -1295,7 +1339,7 @@ export function CanvasBottomBar({
         {selectedNode &&
         selectedNodeIds.length === 1 &&
         selectedNodeSourceJobId &&
-        (selectedNodeIsGeneratedAsset || Boolean(selectedModelGeneratedTextSettings)) ? (
+        (selectedNodeIsGeneratedAsset || selectedNodeIsGeneratedModelNode) ? (
           <button
             type="button"
             className={styles.actionButton}
