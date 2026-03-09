@@ -1,78 +1,212 @@
-# Node Interface Demo
+# Nodes Nodes Nodes
 
-Local-first Next.js app for node-based image/video/text generation workflows with a project-isolated infinite canvas and Lightroom-style asset review.
+Local-first desktop app for node-based media workflows.
 
-## Implemented Through Milestone 5
+`Nodes Nodes Nodes` is an Electron app for building generation and post-processing workflows on an infinite canvas, running jobs through multiple providers, and reviewing outputs in a fast local asset viewer.
 
-- Milestone 1: Next.js + TypeScript scaffold, Prisma schema, local Postgres setup, pg-boss worker scaffold.
-- Milestone 2: Local project CRUD, project sidebar, one-open-project switching, workspace restore state.
-- Milestone 3: Custom infinite canvas engine (pan/zoom/drag/drop) with persisted project document and workflow node runner.
-- Milestone 4: Provider adapter layer with a real OpenAI `gpt-image-1.5` image-edit path plus placeholder Gemini (`Nano Banana 2`) and Topaz catalog entries.
-- Milestone 5: Asset viewer with Grid / 2-up / 4-up modes, star ratings, flagging, tags, and filters.
+## What The App Does
 
-Current live provider status:
-- OpenAI `gpt-image-1.5`: real image edit/reference generation flow
-- Other OpenAI models, Gemini, and Topaz: visible in dropdowns, `Coming soon`, not runnable
+- create and switch between isolated local projects
+- build workflows on an infinite canvas with model nodes, prompt notes, lists, templates, and asset nodes
+- run image and text jobs through one provider-agnostic interface
+- inspect queue state and provider request/response debug data
+- review generated assets in grid, 2-up, and 4-up compare views
+- rate, flag, tag, and filter outputs locally
 
-## Quick Start
+## Current Provider Support
+
+- OpenAI
+  - `gpt-image-1.5`
+  - `gpt-image-1-mini`
+  - `gpt-5.4`
+  - `gpt-5-mini`
+  - `gpt-5-nano`
+- Google Gemini
+  - `gemini-2.5-flash-image` (`Nano Banana`)
+  - `gemini-3-pro-image-preview` (`Nano Banana Pro`)
+  - `gemini-3.1-flash-image-preview` (`Nano Banana 2`)
+  - `gemini-3.1-flash-lite-preview`
+  - `gemini-3-flash-preview`
+  - `gemini-2.5-pro`
+  - `gemini-2.5-flash`
+  - `gemini-2.5-flash-lite`
+- Topaz
+  - `high_fidelity_v2`
+  - `redefine`
+
+Gemini access is project-aware. The app refreshes Gemini model access from the saved `GOOGLE_API_KEY`, so some models may show as unavailable, paid-only, or temporarily limited depending on the Google project behind that key.
+
+## Install
+
+### Option 1: Use The Packaged Mac App
+
+The repo can produce an unsigned Apple Silicon macOS build:
+
+```bash
+npm install
+npm run package:mac
+```
+
+Artifacts are written to:
+
+- `release/mac-arm64/Nodes Nodes Nodes.app`
+- `release/Nodes Nodes Nodes-0.1.0-arm64-mac.zip`
+
+This is the easiest way to hand around a local build on macOS.
+
+### Option 2: Run From Source
+
+Requirements:
+
+- Node.js 20+
+- npm
+- macOS is the primary supported desktop target right now
+
+Install and launch:
 
 ```bash
 npm install
 npm run dev
 ```
 
-`npm run dev` auto-boots a local Postgres instance under `.local-pg/`, runs Prisma setup (`generate + db push`), and starts Next.js.
+That starts:
 
-The app boots without API keys. To run real OpenAI image generations, add `OPENAI_API_KEY` to `.env.local` and restart `npm run dev`:
+- Vite on `http://localhost:5173`
+- watched Electron main/preload/worker bundles
+- the Electron desktop app pointed at the dev server
 
-```bash
-OPENAI_API_KEY=your_key_here
-```
+Important:
 
-Open [http://localhost:3000](http://localhost:3000).
+- this is an Electron app, not a browser-only web app
+- no Postgres setup is required
+- app metadata is stored in local SQLite
+- generated assets and previews are stored on disk under the app data directory
 
-## First Real OpenAI Flow
+## Configure Providers
 
-Once `OPENAI_API_KEY` is configured:
+The app works without API keys, but runnable provider jobs require credentials.
 
-1. Create or open a project.
-2. In Canvas, add a text note and write the prompt.
-3. Upload one or more images.
-4. Add a model node and keep it on `OpenAI / GPT Image 1.5`.
-5. Connect the text note and image node(s) into the model node.
-6. Run the node from the node modal.
-7. The generated image is stored locally and auto-added back to the canvas as a new image node.
+You can configure providers in either of these ways:
 
-## Optional Queue Worker Mode (Advanced)
+1. App Settings inside the desktop app
+2. environment variables for source-run development
 
-Default mode is inline job execution (`JOB_EXECUTION_MODE=inline`) so the app works without a second process.
-
-To run with pg-boss worker queue:
-
-1. Configure a Postgres `DATABASE_URL` (pg-boss requires Postgres).
-2. Set `JOB_EXECUTION_MODE=queue` in `.env`.
-3. Run app + worker:
+Supported keys:
 
 ```bash
-npm run dev:all
+OPENAI_API_KEY=...
+GOOGLE_API_KEY=...
+TOPAZ_API_KEY=...
 ```
 
-## API Surface
+In the packaged app, App Settings is the intended path. Keys saved there are stored in the macOS Keychain and take precedence over environment variables.
 
-- `GET/POST /api/projects`
-- `PATCH/DELETE /api/projects/:projectId`
-- `POST /api/projects/:projectId/open`
-- `GET/PUT /api/projects/:projectId/canvas`
-- `GET/POST /api/projects/:projectId/jobs`
-- `GET /api/projects/:projectId/assets`
-- `PATCH /api/assets/:assetId`
-- `GET /api/assets/:assetId/file`
-- `GET /api/providers`
+## First Run
 
-## Notes
+1. Launch the app.
+2. Create a project from App Home.
+3. Open `App Settings` and add any provider keys you want to use.
+4. Return to the workspace canvas.
+5. Add a prompt note or upload an asset.
+6. Add a model node.
+7. Connect inputs into the model node.
+8. Run the node.
+9. Inspect queue status and generated outputs.
+10. Review results in the asset viewer.
 
-- `Gemini 3.1 Flash` is displayed as `Nano Banana 2` through model registry labels.
-- Asset binaries are stored under `.local-assets/<projectId>/...`.
-- Local dev Postgres data directory is `.local-pg/`.
-- Default local execution mode is `JOB_EXECUTION_MODE=inline`, so the first OpenAI test only needs `npm run dev`.
-- Accounts/orgs/sharing are deferred and documented in `docs/FUTURE_MULTITENANCY.md`.
+## Typical Workflow
+
+### Image Generation
+
+1. Add a `Text Note` with a prompt.
+2. Add an image-capable model node.
+3. Optionally connect one image for edit/reference mode when the model supports it.
+4. Run the model node.
+5. Review generated image outputs on the canvas and in the asset viewer.
+
+### Text Generation
+
+1. Add a `Text Note` with a prompt.
+2. Add a Gemini or OpenAI text model node.
+3. Choose an output target:
+   - `Text Note`
+   - `List`
+   - `Template`
+   - `Smart Output`
+4. Run the model node.
+5. Use the generated note/list/template nodes downstream on the canvas.
+
+### Topaz Transform
+
+1. Upload or select one image asset.
+2. Add a Topaz model node.
+3. Connect the image asset.
+4. Run the node.
+5. Review the transformed output in the same local project.
+
+## App Model
+
+- one local user
+- multiple isolated projects
+- one canvas per project in v1
+- local SQLite metadata
+- local filesystem asset storage
+- durable local queue worker
+
+The renderer does not receive raw API keys or raw filesystem paths.
+
+## Local Data
+
+On macOS desktop runs, app data is stored under a stable compatibility path so branding changes do not move your live data.
+
+Key local artifacts:
+
+- SQLite database
+- asset files
+- preview frames
+- provider model metadata
+
+## Main Commands
+
+```bash
+# source-run desktop app
+npm run dev
+
+# unit tests
+npm run test:unit
+
+# production build
+npm run build
+
+# launch built Electron app from dist/
+npm run start
+
+# package unsigned Apple Silicon mac app + zip
+npm run package:mac
+
+# unpackaged Electron smoke flow
+npm run smoke:electron
+
+# packaged mac smoke flow
+npm run smoke:packaged:mac
+```
+
+## Browser Fallback
+
+When you open `http://localhost:5173` directly, the renderer can boot with a browser fallback bridge for UI inspection. That is useful for quick route and component checks, but it is not a substitute for the real Electron runtime.
+
+## Documentation
+
+For deeper project context:
+
+- [Product Brief](docs/PRODUCT_BRIEF.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [Data Model](docs/DATA_MODEL.md)
+- [Provider Integrations](docs/PROVIDER_INTEGRATIONS.md)
+- [UX Canvas And Assets](docs/UX_CANVAS_AND_ASSETS.md)
+- [Testing Protocol](docs/TESTING_PROTOCOL.md)
+- [Decisions Log](docs/DECISIONS.md)
+
+## Status
+
+This repo is actively evolving. If README text and detailed docs ever disagree, treat the docs in `docs/` as the more precise source of truth.
