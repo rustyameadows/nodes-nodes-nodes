@@ -4485,113 +4485,121 @@ export function CanvasView({ projectId }: Props) {
               top: insertMenu.clientY,
             }}
           >
-            <div className={styles.insertMenuTitle}>
-              {insertMenu.mode === "model-input"
-                ? "Add Model Input"
-                : insertMenu.mode === "template-input"
-                  ? "Add Template Input"
-                  : "Add To Canvas"}
-            </div>
-            {insertMenuEntries.map((entry) => {
-              if (entry.id === "model") {
-                return (
-                  <div
-                    key={entry.id}
-                    className={styles.insertMenuSubmenuGroup}
-                    onMouseEnter={() => {
-                      setInsertMenuExpandedEntryId(entry.id);
+            <div className={styles.insertMenuColumns}>
+              <div className={styles.insertMenuPrimaryColumn}>
+                <div className={styles.insertMenuTitle}>
+                  {insertMenu.mode === "model-input"
+                    ? "Add Model Input"
+                    : insertMenu.mode === "template-input"
+                      ? "Add Template Input"
+                      : "Add To Canvas"}
+                </div>
+                {insertMenuEntries.map((entry) => {
+                  if (entry.id === "model") {
+                    return (
+                      <div
+                        key={entry.id}
+                        className={styles.insertMenuSubmenuGroup}
+                        onMouseEnter={() => {
+                          setInsertMenuExpandedEntryId(entry.id);
+                        }}
+                      >
+                        <div className={styles.insertMenuRow}>
+                          <button
+                            type="button"
+                            className={styles.insertMenuAction}
+                            onClick={() =>
+                              handleInsertCatalogEntry("model", { x: insertMenu.worldX, y: insertMenu.worldY }, {
+                                providerId: defaultModelCatalogVariant.providerId,
+                                modelId: defaultModelCatalogVariant.modelId,
+                              })
+                            }
+                          >
+                            Add Model Node
+                          </button>
+                          <button
+                            type="button"
+                            className={styles.insertMenuDisclosure}
+                            aria-expanded={insertMenuExpandedEntryId === entry.id}
+                            onClick={() =>
+                              setInsertMenuExpandedEntryId((current) => (current === entry.id ? null : entry.id))
+                            }
+                          >
+                            ▸
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <button
+                      key={entry.id}
+                      type="button"
+                      onClick={() =>
+                        handleInsertCatalogEntry(entry.id, {
+                          x: insertMenu.worldX,
+                          y: insertMenu.worldY,
+                        })
+                      }
+                    >
+                      {entry.id === "asset-uploaded"
+                        ? "Add Uploaded Asset"
+                        : entry.id === "asset-generated"
+                          ? "Add Generated Asset"
+                          : `Add ${entry.label}`}
+                    </button>
+                  );
+                })}
+                {insertMenuAllowsAssetInputs ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      pendingUploadAnchorRef.current = {
+                        x: insertMenu.worldX,
+                        y: insertMenu.worldY,
+                        connectToModelNodeId:
+                          insertMenu.mode === "model-input" ? insertMenu.connectToNodeId : undefined,
+                      };
+                      setInsertMenu(null);
+                      void openImportDialog();
                     }}
                   >
-                    <div className={styles.insertMenuRow}>
-                      <button
-                        type="button"
-                        className={styles.insertMenuAction}
-                        onClick={() =>
-                          handleInsertCatalogEntry("model", { x: insertMenu.worldX, y: insertMenu.worldY }, {
-                            providerId: defaultModelCatalogVariant.providerId,
-                            modelId: defaultModelCatalogVariant.modelId,
-                          })
-                        }
-                      >
-                        Add Model Node
-                      </button>
-                      <button
-                        type="button"
-                        className={styles.insertMenuDisclosure}
-                        aria-expanded={insertMenuExpandedEntryId === entry.id}
-                        onClick={() =>
-                          setInsertMenuExpandedEntryId((current) => (current === entry.id ? null : entry.id))
-                        }
-                      >
-                        ▸
-                      </button>
-                    </div>
-                    {insertMenuExpandedEntryId === entry.id ? (
-                      <div className={styles.insertMenuSubmenu}>
-                        {Object.entries(groupedModelCatalogVariants).map(([providerId, variants]) => (
-                          <div key={providerId} className={styles.insertMenuProviderGroup}>
-                            <span className={styles.insertMenuProviderLabel}>{variants[0]?.providerLabel || providerId}</span>
-                            {variants.map((variant) => (
-                              <button
-                                key={variant.id}
-                                type="button"
-                                className={styles.insertMenuVariantButton}
-                                onClick={() =>
-                                  handleInsertCatalogEntry(
-                                    "model",
-                                    { x: insertMenu.worldX, y: insertMenu.worldY },
-                                    { providerId: variant.providerId, modelId: variant.modelId }
-                                  )
-                                }
-                              >
-                                <span>{variant.label}</span>
-                                <span>{variant.availabilityLabel}</span>
-                              </button>
-                            ))}
-                          </div>
+                    Upload Assets
+                  </button>
+                ) : null}
+              </div>
+
+              {insertMenuExpandedEntryId === "model" ? (
+                <div className={styles.insertMenuSecondaryColumn}>
+                  <div className={styles.insertMenuSecondaryTitle}>Model Variants</div>
+                  <div className={styles.insertMenuSubmenu}>
+                    {Object.entries(groupedModelCatalogVariants).map(([providerId, variants]) => (
+                      <div key={providerId} className={styles.insertMenuProviderGroup}>
+                        <span className={styles.insertMenuProviderLabel}>{variants[0]?.providerLabel || providerId}</span>
+                        {variants.map((variant) => (
+                          <button
+                            key={variant.id}
+                            type="button"
+                            className={styles.insertMenuVariantButton}
+                            onClick={() =>
+                              handleInsertCatalogEntry(
+                                "model",
+                                { x: insertMenu.worldX, y: insertMenu.worldY },
+                                { providerId: variant.providerId, modelId: variant.modelId }
+                              )
+                            }
+                          >
+                            <span>{variant.label}</span>
+                            <span>{variant.availabilityLabel}</span>
+                          </button>
                         ))}
                       </div>
-                    ) : null}
+                    ))}
                   </div>
-                );
-              }
-
-              return (
-                <button
-                  key={entry.id}
-                  type="button"
-                  onClick={() =>
-                    handleInsertCatalogEntry(entry.id, {
-                      x: insertMenu.worldX,
-                      y: insertMenu.worldY,
-                    })
-                  }
-                >
-                  {entry.id === "asset-uploaded"
-                    ? "Add Uploaded Asset"
-                    : entry.id === "asset-generated"
-                      ? "Add Generated Asset"
-                      : `Add ${entry.label}`}
-                </button>
-              );
-            })}
-            {insertMenuAllowsAssetInputs ? (
-              <button
-                type="button"
-                onClick={() => {
-                  pendingUploadAnchorRef.current = {
-                    x: insertMenu.worldX,
-                    y: insertMenu.worldY,
-                    connectToModelNodeId:
-                      insertMenu.mode === "model-input" ? insertMenu.connectToNodeId : undefined,
-                  };
-                  setInsertMenu(null);
-                  void openImportDialog();
-                }}
-              >
-                Upload Assets
-              </button>
-            ) : null}
+                </div>
+              ) : null}
+            </div>
           </div>
         ) : null}
 

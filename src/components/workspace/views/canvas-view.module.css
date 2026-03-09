@@ -40,9 +40,6 @@
   position: fixed;
   z-index: 42;
   display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-width: 196px;
   padding: 10px;
   border: 1px solid rgba(0, 0, 0, 0.4);
   background: var(--canvas-selection-color);
@@ -53,11 +50,41 @@
   transform: translate(10px, 10px);
 }
 
+.insertMenuColumns {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.insertMenuPrimaryColumn {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 196px;
+  min-width: 196px;
+}
+
+.insertMenuSecondaryColumn {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 272px;
+  min-width: 272px;
+}
+
 .insertMenuTitle {
   font-size: 0.7rem;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+.insertMenuSecondaryTitle {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(14, 14, 14, 0.72);
 }
 
 .insertMenu button {
@@ -102,6 +129,7 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+  width: 100%;
   padding: 8px;
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.36);
