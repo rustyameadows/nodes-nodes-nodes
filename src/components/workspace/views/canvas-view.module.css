@@ -77,6 +77,64 @@
   background: rgba(255, 255, 255, 0.72);
 }
 
+.insertMenuSubmenuGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.insertMenuRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+}
+
+.insertMenuAction {
+  width: 100%;
+}
+
+.insertMenuDisclosure {
+  min-width: 38px;
+  text-align: center !important;
+}
+
+.insertMenuSubmenu {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.36);
+}
+
+.insertMenuProviderGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.insertMenuProviderLabel {
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(14, 14, 14, 0.72);
+}
+
+.insertMenuVariantButton {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.insertMenuVariantButton span:last-child {
+  font-size: 0.68rem;
+  color: rgba(14, 14, 14, 0.66);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
 .assetPickerBackdrop {
   position: absolute;
   inset: 0;

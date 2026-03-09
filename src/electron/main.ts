@@ -149,7 +149,7 @@ async function refreshApplicationMenu() {
     const context = targetWindow
       ? menuContextByWebContentsId.get(targetWindow.webContents.id) || defaultMenuContext
       : defaultMenuContext;
-    const projects = await listProjects();
+    const [projects, providerModels] = await Promise.all([listProjects(), listProviders()]);
     const template = buildNativeMenuTemplate({
       appName: APP_NAME,
       isMac: process.platform === "darwin",
@@ -164,6 +164,7 @@ async function refreshApplicationMenu() {
         status: project.status,
         isOpen: Boolean(project.workspaceState?.isOpen),
       })),
+      providerModels,
     });
 
     Menu.setApplicationMenu(

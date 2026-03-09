@@ -39,6 +39,9 @@ What it does:
 - inspects the native application menu from Electron main
 - waits for app home
 - opens app settings from app home before any project exists
+- opens the Node Library from app home
+- verifies model, list, and template library detail playgrounds render
+- verifies the shared searchable model selector updates the model playground
 - creates a project from the native `File > New Project` menu
 - triggers one native `Canvas > Add Model Node` command on canvas
 - writes a canvas snapshot with two nodes through the live preload bridge
@@ -67,6 +70,9 @@ What it does:
   - `Home` works from the workspace Menu pill and native mac menu
   - SQLite file is created
   - native new-project and add-node commands round-trip into the renderer
+  - Node Library routes and playgrounds render in the real Electron app
+  - the canvas insert picker shows registry-driven node labels
+  - native model-variant insertion can create a preconfigured model node
   - canvas data round-trips
   - canvas shortcuts stay canvas-scoped and do not fire while a prompt editor or other editable control is focused
   - asset metadata exists
@@ -84,6 +90,10 @@ Expected output:
   - `canvasScreenshotPath`
   - `modelPreviewScreenshotPath`
   - `modelFullScreenshotPath`
+  - `nodeLibraryScreenshotPath`
+  - `nodeLibraryModelScreenshotPath`
+  - `nodeLibraryListScreenshotPath`
+  - `nodeLibraryTemplateScreenshotPath`
   - `nodeFocusBeforeScreenshotPath`
   - `nodeFocusScreenshotPath`
   - `listFullScreenshotPath`
@@ -120,6 +130,9 @@ What it does:
   - branded bundle metadata and icon wiring
   - preload bridge availability
   - app home render
+  - Node Library gallery render
+  - one model detail playground screenshot
+  - one list detail playground screenshot
   - app settings render with provider credentials before any project exists
   - project creation
   - canvas round-trip
@@ -204,37 +217,41 @@ Run this when touching workflow or asset UX:
 1. Launch `npm run dev`.
 2. Confirm app home renders.
 3. Open App Settings from home and return to home.
-4. Create a project from app home.
-5. Confirm the canvas route loads.
-6. Open Home from the in-app `Menu` pill and confirm the project card is visible.
-7. Reopen the project from home.
-8. Add or restore at least one text note and one model node.
-9. Multi-select two nodes and drag them together.
-10. Press `C` with exactly two selected nodes and confirm a connection is created.
-11. Press `Enter` on a single selected node and confirm the expected inline full editor opens.
-12. Double-click a `preview` or `compact` node and confirm it opens the same primary inline editor as `Enter` with a gentle viewport focus animation.
-13. Double-click a `resized` node and confirm it stays resized while the viewport focuses to it.
-14. Click into a prompt, note, list cell, or template textarea and confirm canvas shortcuts do not fire while typing.
-15. Resize a text/list/template/asset node and confirm the size persists after deselecting or reloading.
-16. Open a template node with a connected list and confirm variable chips, compatibility state, and merge preview render inline.
-17. Open a list node in full mode and confirm it behaves like an inline editable sheet instead of the old stacked field controls.
-18. Resize an asset node, then drag it directly from the media surface and confirm it still moves cleanly.
-19. Confirm phantom output previews appear only for the active node and disappear when you deselect or change selection.
-20. Use `Cmd/Ctrl+Z` and `Cmd/Ctrl+Shift+Z` to undo/redo one move, one connection, and one inline edit.
-21. If a generated child node exists, resize or edit it, wait through at least one jobs poll, reload, and confirm it does not revert.
-22. Delete a generated child node, reload, and confirm it does not respawn.
-23. Import an asset.
-24. Open the Assets view and confirm the imported asset appears.
-25. Open Project Settings and confirm the project metadata renders and provider credentials do not appear there.
-26. Open App Settings and confirm provider credentials render there.
-27. If testing on macOS, confirm:
+4. Open Node Library from home.
+5. Open the model detail page and confirm the shared searchable model selector works.
+6. Open the list and template detail pages and confirm their playgrounds are interactive.
+7. Return home and create a project from app home.
+8. Confirm the canvas route loads.
+9. Open Home from the in-app `Menu` pill and confirm the project card is visible.
+10. Reopen the project from home.
+11. Add or restore at least one text note and one model node.
+12. Open the add-node picker and confirm registry-driven entries such as `Add List / Sheet`, `Add Template Node`, and `Add Uploaded Asset` are present.
+13. Multi-select two nodes and drag them together.
+14. Press `C` with exactly two selected nodes and confirm a connection is created.
+15. Press `Enter` on a single selected node and confirm the expected inline full editor opens.
+16. Double-click a `preview` or `compact` node and confirm it opens the same primary inline editor as `Enter` with a gentle viewport focus animation.
+17. Double-click a `resized` node and confirm it stays resized while the viewport focuses to it.
+18. Click into a prompt, note, list cell, or template textarea and confirm canvas shortcuts do not fire while typing.
+19. Resize a text/list/template/asset node and confirm the size persists after deselecting or reloading.
+20. Open a template node with a connected list and confirm variable chips, compatibility state, and merge preview render inline.
+21. Open a list node in full mode and confirm it behaves like an inline editable sheet instead of the old stacked field controls.
+22. Resize an asset node, then drag it directly from the media surface and confirm it still moves cleanly.
+23. Confirm phantom output previews appear only for the active node and disappear when you deselect or change selection.
+24. Use `Cmd/Ctrl+Z` and `Cmd/Ctrl+Shift+Z` to undo/redo one move, one connection, and one inline edit.
+25. If a generated child node exists, resize or edit it, wait through at least one jobs poll, reload, and confirm it does not revert.
+26. Delete a generated child node, reload, and confirm it does not respawn.
+27. Import an asset.
+28. Open the Assets view and confirm the imported asset appears.
+29. Open Project Settings and confirm the project metadata renders and provider credentials do not appear there.
+30. Open App Settings and confirm provider credentials render there.
+31. If testing on macOS, confirm:
    - `File`, `Project`, `Canvas`, `Edit`, `View`, and `Window` menus appear
    - `Cmd+,` opens App Settings
    - `File > New Project` opens a new project
    - `Project > Home` returns to app home
    - `Project > Assets` / `Queue` / `Project Settings` match the in-app menu behavior
    - `Canvas > Add Node…`, `Connect Selected Nodes`, `Duplicate Selected Node`, `Undo Canvas Change`, and `Redo Canvas Change` enable or disable correctly on canvas
-28. If API keys are configured, run at least one real provider job and verify:
+32. If API keys are configured, run at least one real provider job and verify:
   - queue row created
   - state changes visible
   - output lands on canvas or in assets as appropriate

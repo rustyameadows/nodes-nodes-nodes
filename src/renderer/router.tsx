@@ -3,6 +3,8 @@ import { AssetDetailView } from "@/components/workspace/views/asset-detail-view"
 import { AppSettingsView } from "@/components/workspace/views/app-settings-view";
 import { AssetsView } from "@/components/workspace/views/assets-view";
 import { CanvasView } from "@/components/workspace/views/canvas-view";
+import { NodeLibraryDetailView } from "@/components/workspace/views/node-library-detail-view";
+import { NodeLibraryView } from "@/components/workspace/views/node-library-view";
 import { RootRouter } from "@/components/workspace/root-router";
 import { SettingsView } from "@/components/workspace/views/settings-view";
 import { QueueView } from "@/components/workspace/views/queue-view";
@@ -31,6 +33,21 @@ const appSettingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/settings/app",
   component: AppSettingsView,
+});
+
+const nodeLibraryRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/nodes",
+  component: NodeLibraryView,
+});
+
+const nodeLibraryDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/nodes/$nodeId",
+  component: () => {
+    const { nodeId } = nodeLibraryDetailRoute.useParams();
+    return <NodeLibraryDetailView nodeId={nodeId} />;
+  },
 });
 
 const projectCanvasRoute = createRoute({
@@ -90,6 +107,8 @@ const projectRootRedirectRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   indexRoute,
   appSettingsRoute,
+  nodeLibraryRoute,
+  nodeLibraryDetailRoute,
   projectCanvasRoute,
   projectAssetsRoute,
   projectAssetDetailRoute,

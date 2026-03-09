@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { buildNativeMenuTemplate, type NativeMenuItemDescriptor } from "@/electron/native-menu";
+import type { ProviderModel } from "@/components/workspace/types";
 
 function findMenuItem(items: NativeMenuItemDescriptor[], itemId: string): NativeMenuItemDescriptor | null {
   for (const item of items) {
@@ -16,6 +17,51 @@ function findMenuItem(items: NativeMenuItemDescriptor[], itemId: string): Native
 
   return null;
 }
+
+const providerModels: ProviderModel[] = [
+  {
+    providerId: "openai",
+    modelId: "gpt-image-1.5",
+    displayName: "GPT Image 1.5",
+    capabilities: {
+      text: false,
+      image: true,
+      video: false,
+      runnable: true,
+      availability: "ready",
+      requiresApiKeyEnv: "OPENAI_API_KEY",
+      apiKeyConfigured: true,
+      requirements: [],
+      promptMode: "required",
+      executionModes: ["generate", "edit"],
+      acceptedInputMimeTypes: [],
+      maxInputImages: 0,
+      parameters: [],
+      defaults: {},
+    },
+  },
+  {
+    providerId: "openai",
+    modelId: "gpt-5-mini",
+    displayName: "GPT 5 Mini",
+    capabilities: {
+      text: true,
+      image: false,
+      video: false,
+      runnable: true,
+      availability: "ready",
+      requiresApiKeyEnv: "OPENAI_API_KEY",
+      apiKeyConfigured: true,
+      requirements: [],
+      promptMode: "required",
+      executionModes: ["generate"],
+      acceptedInputMimeTypes: [],
+      maxInputImages: 0,
+      parameters: [],
+      defaults: {},
+    },
+  },
+];
 
 test("builds project and canvas menu items with context-aware enabled states", () => {
   const template = buildNativeMenuTemplate({
@@ -46,16 +92,20 @@ test("builds project and canvas menu items with context-aware enabled states", (
         isOpen: false,
       },
     ],
+    providerModels,
   });
 
   assert.equal(findMenuItem(template, "file.import-assets")?.enabled, true);
   assert.equal(findMenuItem(template, "app.settings")?.accelerator, "CommandOrControl+,");
   assert.equal(findMenuItem(template, "project.home")?.enabled, true);
   assert.equal(findMenuItem(template, "project.home")?.checked, false);
+  assert.equal(findMenuItem(template, "project.node-library")?.enabled, true);
   assert.equal(findMenuItem(template, "project.view.canvas")?.checked, true);
   assert.equal(findMenuItem(template, "canvas.open-insert-menu")?.enabled, true);
   assert.equal(findMenuItem(template, "canvas.open-insert-menu")?.accelerator, undefined);
   assert.equal(findMenuItem(template, "canvas.add.model")?.enabled, true);
+  assert.equal(findMenuItem(template, "canvas.add.model.default")?.enabled, true);
+  assert.equal(findMenuItem(template, "canvas.add.model.variant.openai.gpt-5-mini")?.enabled, true);
   assert.equal(findMenuItem(template, "canvas.connect-selected")?.enabled, true);
   assert.equal(findMenuItem(template, "canvas.connect-selected")?.accelerator, undefined);
   assert.equal(findMenuItem(template, "canvas.duplicate-selected")?.enabled, false);
@@ -89,6 +139,7 @@ test("disables canvas insertion when no canvas project is active", () => {
         isOpen: true,
       },
     ],
+    providerModels,
   });
 
   assert.equal(findMenuItem(template, "canvas.add.model")?.enabled, false);
@@ -122,6 +173,7 @@ test("keeps project-scoped actions separate from app settings", () => {
         isOpen: true,
       },
     ],
+    providerModels,
   });
 
   assert.equal(findMenuItem(template, "canvas.add.model")?.enabled, false);
@@ -145,6 +197,7 @@ test("keeps app-level navigation available when no projects exist", () => {
       canRedo: false,
     },
     projects: [],
+    providerModels,
   });
 
   assert.equal(findMenuItem(template, "project.home")?.enabled, true);
@@ -176,9 +229,11 @@ test("marks Home as the current project menu item on the app home route", () => 
         isOpen: true,
       },
     ],
+    providerModels,
   });
 
   assert.equal(findMenuItem(template, "project.home")?.checked, true);
+  assert.equal(findMenuItem(template, "project.node-library")?.checked, false);
   assert.equal(findMenuItem(template, "project.view.canvas")?.checked, false);
   assert.equal(findMenuItem(template, "project.settings")?.checked, false);
 });

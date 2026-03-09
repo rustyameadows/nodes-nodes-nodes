@@ -14,6 +14,7 @@ import { useRouter } from "@/renderer/navigation";
 import {
   buildAppHomeRoute,
   buildAppSettingsRoute,
+  buildNodeLibraryRoute,
   buildWorkspaceRoute,
   inferWorkspaceRoute,
 } from "@/renderer/workspace-route";
@@ -83,7 +84,11 @@ export function NativeMenuBridge() {
 
   const resolveCurrentView = useCallback(
     (): WorkspaceView =>
-      routeState.view && routeState.view !== "app-settings" && routeState.view !== "home"
+      routeState.view &&
+      routeState.view !== "app-settings" &&
+      routeState.view !== "home" &&
+      routeState.view !== "nodes" &&
+      routeState.view !== "node-detail"
         ? routeState.view
         : "canvas",
     [routeState.view]
@@ -136,6 +141,10 @@ export function NativeMenuBridge() {
     router.push(buildAppSettingsRoute());
   }, [router]);
 
+  const handleOpenNodeLibrary = useCallback(() => {
+    router.push(buildNodeLibraryRoute());
+  }, [router]);
+
   const handleImportAssets = useCallback(async () => {
     const projectId = resolveTargetProjectId();
     if (!projectId) {
@@ -171,6 +180,11 @@ export function NativeMenuBridge() {
         return;
       }
 
+      if (command.type === "app.node-library") {
+        handleOpenNodeLibrary();
+        return;
+      }
+
       if (command.type === "project.settings") {
         handleOpenSettings();
         return;
@@ -197,6 +211,7 @@ export function NativeMenuBridge() {
     handleNewProject,
     handleOpenAppSettings,
     handleOpenHome,
+    handleOpenNodeLibrary,
     handleOpenProject,
     handleOpenSettings,
     handleOpenView,

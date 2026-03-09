@@ -76,9 +76,36 @@ Native menu flow:
 
 TanStack Query owns persisted app data in the renderer and is invalidated from those desktop events.
 
+## Canonical Node Catalog
+- `src/lib/node-catalog.ts` is the canonical registry for built-in node metadata.
+- The catalog describes user-visible node entries, not just raw `WorkflowNode.kind` values.
+- It drives:
+  - the app-level Node Library routes
+  - the canvas insert picker
+  - native macOS `Canvas > Add…` menus
+  - the shared searchable provider+model control
+  - the machine-readable node summaries used by structured text-output prompt builders
+- The catalog is pure metadata and fixture generation. Real node creation and mutation still happen through the existing canvas/workspace mutation paths.
+- Model variants are derived from the provider catalog with stable IDs like `model:openai:gpt-image-1.5`.
+
+## Node Library
+- App-level routes:
+  - `/nodes`
+  - `/nodes/$nodeId`
+- `/nodes` is a searchable gallery of built-in node entries from the catalog.
+- `/nodes/$nodeId` is a design/debug detail page with:
+  - left-rail node metadata and settings summary
+  - a reusable searchable provider+model selector for model nodes
+  - an ephemeral interactive playground
+- The playground intentionally reuses the real canvas node renderers and editing surfaces instead of a separate mock UI.
+
 ## Canvas Interaction Model
 - `CanvasView` owns a local canvas command layer for native menu commands and canvas-scoped keyboard shortcuts.
 - Canvas keyboard shortcuts are registered through TanStack Hotkeys with input ignoring enabled, so canvas commands do not fire while editable controls are focused.
+- Canvas insertion surfaces are registry-driven:
+  - the insert picker builds visible node rows from the node catalog
+  - `Add Model Node` expands into provider-grouped model variants from the provider catalog
+  - native macOS `Canvas` add menus use the same catalog/provider source
 - `CanvasView` derives node presentation from persisted node-local metadata (`displayMode`, `size`) plus transient active-node state (`activeFullNodeId`).
 - `CanvasNodeContent` renders mode-aware inline node surfaces for model, text note, list, template, and asset nodes.
 - `InfiniteCanvas` renders live drag previews, resize handles, phantom previews, quick mode transitions, and the edge-mounted run launcher, but committed node movement is written back once per drag through `onCommitNodePositions`.
@@ -137,6 +164,7 @@ TanStack Query owns persisted app data in the renderer and is invalidated from t
 - Pending generated-output placeholders/previews may exist while a job is unresolved, but once the final child nodes are inserted the polling loop no longer mutates them.
 - The canvas document stores `generatedOutputReceiptKeys` so completed outputs are materialized once, deleted generated nodes do not return, and reruns append fresh children instead of replacing older ones.
 - `smart` spawns multiple unconnected nodes in this pass; explicit `list` and `template` targets may still show deterministic placeholders while queued/running.
+- The smart-output prompt builder derives allowed node kinds and payload summaries from the node catalog instead of hardcoded node descriptions.
 
 ## Queue Recovery
 - Queue source of truth is the `jobs` table.

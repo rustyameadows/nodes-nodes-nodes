@@ -1,3 +1,5 @@
+import type { ProviderModel } from "@/components/workspace/types";
+import { getDefaultModelCatalogVariant, getInsertableNodeCatalogEntries, groupModelCatalogVariants } from "@/lib/node-catalog";
 import type { MenuCommand, MenuContext } from "@/lib/ipc-contract";
 
 export type NativeMenuProject = {
@@ -25,6 +27,7 @@ type BuildNativeMenuTemplateOptions = {
   isDev: boolean;
   context: MenuContext;
   projects: NativeMenuProject[];
+  providerModels: ProviderModel[];
 };
 
 function buildProjectItems(projects: NativeMenuProject[]) {
@@ -57,11 +60,16 @@ export function buildNativeMenuTemplate({
   isDev,
   context,
   projects,
+  providerModels,
 }: BuildNativeMenuTemplateOptions): NativeMenuItemDescriptor[] {
   const hasActiveProject = Boolean(context.projectId);
   const hasCanvasProject = hasActiveProject && context.view === "canvas";
+  const isNodeLibraryView = context.view === "nodes" || context.view === "node-detail";
   const activeProjects = projects.filter((project) => project.status === "active");
   const archivedProjects = projects.filter((project) => project.status === "archived");
+  const modelVariantGroups = groupModelCatalogVariants(providerModels);
+  const defaultModelVariant = getDefaultModelCatalogVariant(providerModels);
+  const canvasInsertEntries = getInsertableNodeCatalogEntries("canvas", providerModels);
 
   const template: NativeMenuItemDescriptor[] = [];
 
@@ -77,6 +85,12 @@ export function buildNativeMenuTemplate({
           accelerator: "CommandOrControl+,",
           enabled: true,
           command: { type: "app.settings" },
+        },
+        {
+          id: "app.node-library",
+          label: "Node Library",
+          enabled: true,
+          command: { type: "app.node-library" },
         },
         { type: "separator" },
         { role: "hide" },
@@ -119,6 +133,14 @@ export function buildNativeMenuTemplate({
           checked: context.view === "home",
           enabled: true,
           command: { type: "app.home" },
+        },
+        {
+          id: "project.node-library",
+          label: "Node Library",
+          type: "checkbox",
+          checked: isNodeLibraryView,
+          enabled: true,
+          command: { type: "app.node-library" },
         },
         { type: "separator" },
         {
@@ -180,26 +202,52 @@ export function buildNativeMenuTemplate({
           id: "canvas.add.model",
           label: "Add Model Node",
           enabled: hasCanvasProject,
-          command: { type: "canvas.add-node", nodeType: "model" },
+          submenu: [
+            {
+              id: "canvas.add.model.default",
+              label: `${defaultModelVariant.providerLabel} · ${defaultModelVariant.label}`,
+              enabled: hasCanvasProject,
+              command: {
+                type: "canvas.add-node",
+                nodeType: "model",
+                providerId: defaultModelVariant.providerId,
+                modelId: defaultModelVariant.modelId,
+              },
+            },
+            { type: "separator" },
+            ...Object.entries(modelVariantGroups).map(([providerId, variants]) => ({
+              id: `canvas.add.model.provider.${providerId}`,
+              label: variants[0]?.providerLabel || providerId,
+              submenu: variants.map((variant) => ({
+                id: `canvas.add.model.variant.${variant.providerId}.${variant.modelId}`,
+                label: variant.label,
+                enabled: hasCanvasProject,
+                command: {
+                  type: "canvas.add-node",
+                  nodeType: "model",
+                  providerId: variant.providerId,
+                  modelId: variant.modelId,
+                },
+              })),
+            })),
+          ],
         },
-        {
-          id: "canvas.add.text-note",
-          label: "Add Text Note",
-          enabled: hasCanvasProject,
-          command: { type: "canvas.add-node", nodeType: "text-note" },
-        },
-        {
-          id: "canvas.add.list",
-          label: "Add List",
-          enabled: hasCanvasProject,
-          command: { type: "canvas.add-node", nodeType: "list" },
-        },
-        {
-          id: "canvas.add.text-template",
-          label: "Add Text Template",
-          enabled: hasCanvasProject,
-          command: { type: "canvas.add-node", nodeType: "text-template" },
-        },
+        ...canvasInsertEntries
+          .filter((entry) => entry.id !== "model")
+          .map((entry) => ({
+            id: `canvas.add.${entry.id}`,
+            label:
+              entry.id === "asset-uploaded"
+                ? "Add Uploaded Asset"
+                : entry.id === "asset-generated"
+                  ? "Add Generated Asset"
+                  : `Add ${entry.label}`,
+            enabled: hasCanvasProject,
+            command: {
+              type: "canvas.add-node",
+              nodeType: entry.id,
+            } as MenuCommand,
+          })),
         { type: "separator" },
         {
           id: "canvas.connect-selected",

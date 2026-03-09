@@ -49,6 +49,18 @@ function appHomeRoutePattern() {
   return /#?\/$/;
 }
 
+function nodeLibraryRoutePattern() {
+  return /#?\/nodes$/;
+}
+
+function nodeLibraryDetailRoutePattern(nodeId?: string) {
+  if (nodeId) {
+    return new RegExp(`#?/nodes/${nodeId}$`);
+  }
+
+  return /#?\/nodes\/[^/]+$/;
+}
+
 type SmokeCanvasNode = {
   id: string;
   label: string;
@@ -438,6 +450,10 @@ async function main() {
   const templateFullScreenshotPath = path.join(appDataRoot, "canvas-template-full.png");
   const listFullScreenshotPath = path.join(appDataRoot, "canvas-list-full.png");
   const resizedAssetScreenshotPath = path.join(appDataRoot, "canvas-resized-asset.png");
+  const nodeLibraryScreenshotPath = path.join(appDataRoot, "node-library-smoke.png");
+  const nodeLibraryModelScreenshotPath = path.join(appDataRoot, "node-library-model-detail.png");
+  const nodeLibraryListScreenshotPath = path.join(appDataRoot, "node-library-list-detail.png");
+  const nodeLibraryTemplateScreenshotPath = path.join(appDataRoot, "node-library-template-detail.png");
   const assetsScreenshotPath = path.join(appDataRoot, "assets-smoke.png");
   const queueScreenshotPath = path.join(appDataRoot, "queue-smoke.png");
   const projectSettingsScreenshotPath = path.join(appDataRoot, "project-settings-smoke.png");
@@ -531,6 +547,108 @@ async function main() {
       window.getByRole("heading", { name: "App Home" }).waitFor({ state: "visible", timeout: 15_000 })
     );
     console.log("Returned to app home from app settings");
+
+    await withTimeout(
+      "home node library button",
+      window.getByRole("button", { name: "Node Library" }).waitFor({ state: "visible", timeout: 15_000 })
+    );
+    await window.getByRole("button", { name: "Node Library" }).click();
+    await withTimeout("node library route", window.waitForURL(nodeLibraryRoutePattern()));
+    await withTimeout(
+      "node library heading",
+      window.getByRole("heading", { name: "Node Library" }).waitFor({ state: "visible", timeout: 15_000 })
+    );
+    await window.screenshot({ path: nodeLibraryScreenshotPath, fullPage: true });
+    console.log("Node library screenshot:", nodeLibraryScreenshotPath);
+
+    const modelLibraryCard = window.locator("button").filter({ hasText: "Model Node" }).first();
+    await withTimeout("model library card", modelLibraryCard.waitFor({ state: "visible", timeout: 15_000 }));
+    await modelLibraryCard.click();
+    await withTimeout("model library detail route", window.waitForURL(nodeLibraryDetailRoutePattern("model")));
+    await withTimeout(
+      "model library detail heading",
+      window.getByRole("heading", { name: "Model Node" }).waitFor({ state: "visible", timeout: 15_000 })
+    );
+    const libraryModelSelect = window.locator("button").filter({ hasText: "OpenAI" }).first();
+    await withTimeout("library model select trigger", libraryModelSelect.waitFor({ state: "visible", timeout: 15_000 }));
+    await libraryModelSelect.click();
+    const libraryModelSearch = window.getByPlaceholder("Search provider or model");
+    await withTimeout("library model search", libraryModelSearch.waitFor({ state: "visible", timeout: 15_000 }));
+    await libraryModelSearch.fill("topaz");
+    const topazOption = window.locator("button").filter({ hasText: "High Fidelity V2" }).first();
+    await withTimeout("topaz model option", topazOption.waitFor({ state: "visible", timeout: 15_000 }));
+    await topazOption.click();
+    await withTimeout(
+      "library model variant selected",
+      window.waitForFunction(() => document.body.textContent?.includes("Topaz · High Fidelity V2"), undefined, {
+        timeout: 15_000,
+      })
+    );
+    await withTimeout(
+      "library playground node updated",
+      window.locator("div[role='button']").filter({ hasText: "High Fidelity V2" }).first().waitFor({
+        state: "visible",
+        timeout: 15_000,
+      })
+    );
+    await window.screenshot({ path: nodeLibraryModelScreenshotPath, fullPage: true });
+    console.log("Node library model detail screenshot:", nodeLibraryModelScreenshotPath);
+
+    await window.getByRole("button", { name: "Node Library" }).first().click();
+    await withTimeout("node library route from detail", window.waitForURL(nodeLibraryRoutePattern()));
+    const listLibraryCard = window.locator("button").filter({ hasText: "List / Sheet" }).first();
+    await withTimeout("list library card", listLibraryCard.waitFor({ state: "visible", timeout: 15_000 }));
+    await listLibraryCard.click();
+    await withTimeout("list library detail route", window.waitForURL(nodeLibraryDetailRoutePattern("list")));
+    await withTimeout(
+      "list library detail heading",
+      window.getByRole("heading", { name: "List / Sheet" }).waitFor({ state: "visible", timeout: 15_000 })
+    );
+    const listHeaderInput = window.locator('input[value="Common name"]').first();
+    await withTimeout("list detail header input", listHeaderInput.waitFor({ state: "visible", timeout: 15_000 }));
+    await listHeaderInput.fill("Animal");
+    const listCellInput = window.locator('input[value="Red Fox"]').first();
+    await withTimeout("list detail cell input", listCellInput.waitFor({ state: "visible", timeout: 15_000 }));
+    await listCellInput.fill("Grey Seal");
+    await withTimeout(
+      "list detail cell updated",
+      window.locator('input[value="Grey Seal"]').first().waitFor({ state: "visible", timeout: 15_000 })
+    );
+    await window.screenshot({ path: nodeLibraryListScreenshotPath, fullPage: true });
+    console.log("Node library list detail screenshot:", nodeLibraryListScreenshotPath);
+
+    await window.getByRole("button", { name: "Node Library" }).first().click();
+    await withTimeout("node library route from list detail", window.waitForURL(nodeLibraryRoutePattern()));
+    const templateLibraryCard = window.locator("button").filter({ hasText: "Template Node" }).first();
+    await withTimeout("template library card", templateLibraryCard.waitFor({ state: "visible", timeout: 15_000 }));
+    await templateLibraryCard.click();
+    await withTimeout("template library detail route", window.waitForURL(nodeLibraryDetailRoutePattern("text-template")));
+    await withTimeout(
+      "template library detail heading",
+      window.getByRole("heading", { name: "Template Node" }).waitFor({ state: "visible", timeout: 15_000 })
+    );
+    await withTimeout(
+      "template compatibility",
+      window.waitForFunction(() => document.body.textContent?.includes("Compatibility"), undefined, {
+        timeout: 15_000,
+      })
+    );
+    await withTimeout(
+      "template merge preview",
+      window.waitForFunction(() => document.body.textContent?.includes("Merge preview"), undefined, {
+        timeout: 15_000,
+      })
+    );
+    await window.screenshot({ path: nodeLibraryTemplateScreenshotPath, fullPage: true });
+    console.log("Node library template detail screenshot:", nodeLibraryTemplateScreenshotPath);
+
+    await window.getByRole("button", { name: "Home" }).first().click();
+    await withTimeout("home route from node library", window.waitForURL(appHomeRoutePattern()));
+    await withTimeout(
+      "home heading after node library",
+      window.getByRole("heading", { name: "App Home" }).waitFor({ state: "visible", timeout: 15_000 })
+    );
+    console.log("Node Library home flow verified");
 
     if (runtime.triggerNativeMenuItem) {
       await runtime.triggerNativeMenuItem("file.new-project");
@@ -726,8 +844,44 @@ async function main() {
       "canvas insert menu via keyboard",
       window.getByRole("button", { name: "Add Model Node" }).waitFor({ state: "visible", timeout: 15_000 })
     );
+    await withTimeout(
+      "registry-driven list entry",
+      window.getByRole("button", { name: "Add List / Sheet" }).waitFor({ state: "visible", timeout: 15_000 })
+    );
+    await withTimeout(
+      "registry-driven template entry",
+      window.getByRole("button", { name: "Add Template Node" }).waitFor({ state: "visible", timeout: 15_000 })
+    );
+    await withTimeout(
+      "registry-driven asset entry",
+      window.getByRole("button", { name: "Add Uploaded Asset" }).waitFor({ state: "visible", timeout: 15_000 })
+    );
+    await withTimeout(
+      "registry-driven picker copy",
+      window.waitForFunction(() => document.body.textContent?.includes("Add Model Node"), undefined, {
+        timeout: 15_000,
+      })
+    );
     await window.keyboard.press("Escape");
-    console.log("Canvas keyboard shortcut A verified");
+    console.log("Canvas keyboard shortcut A and registry-driven model picker verified");
+
+    if (runtime.triggerNativeMenuItem) {
+      await runtime.triggerNativeMenuItem("canvas.add.model.variant.openai.gpt-5-mini");
+      await withTimeout(
+        "native menu model variant insertion",
+        window.waitForFunction(
+          async (activeProjectId) => {
+            const snapshot = await window.nodeInterface.getWorkspaceSnapshot(activeProjectId);
+            const nodes = (((snapshot.canvas?.canvasDocument as { workflow?: { nodes?: Array<{ kind?: string; modelId?: string }> } } | null)
+              ?.workflow?.nodes || []) as Array<{ kind?: string; modelId?: string }>);
+            return nodes.some((node) => node.kind === "model" && node.modelId === "gpt-5-mini");
+          },
+          projectId,
+          { timeout: 15_000 }
+        )
+      );
+      console.log("Registry-driven native menu model variant insertion verified");
+    }
 
     const interactionNodes = await getCanvasNodes(window, projectId);
     const promptNodeId = getRequiredCanvasNodeId(interactionNodes, "Smoke Prompt");
@@ -992,6 +1146,7 @@ async function main() {
     console.log("Canvas node double-click editor + focus zoom verified");
 
     await blurActiveElement(window);
+    const nodeCountBeforeAddMenuInsert = (await getCanvasNodes(window, projectId)).length;
     await window.keyboard.press("a");
     await withTimeout(
       "canvas insert menu before add note",
@@ -1000,13 +1155,25 @@ async function main() {
     await window.getByRole("button", { name: "Add Text Note" }).click();
     await window.waitForTimeout(900);
     const addedNodes = await getCanvasNodes(window, projectId);
-    assert.equal(addedNodes.length, 5, "Expected Add Node menu to insert a fifth node.");
+    assert.equal(
+      addedNodes.length,
+      nodeCountBeforeAddMenuInsert + 1,
+      "Expected Add Node menu to insert exactly one additional node."
+    );
     await window.keyboard.press(`${process.platform === "darwin" ? "Meta" : "Control"}+z`);
     await window.waitForTimeout(900);
-    assert.equal((await getCanvasNodes(window, projectId)).length, 4, "Expected undo to remove inserted node.");
+    assert.equal(
+      (await getCanvasNodes(window, projectId)).length,
+      nodeCountBeforeAddMenuInsert,
+      "Expected undo to remove the inserted node."
+    );
     await window.keyboard.press(`${process.platform === "darwin" ? "Meta+Shift" : "Control+Shift"}+z`);
     await window.waitForTimeout(900);
-    assert.equal((await getCanvasNodes(window, projectId)).length, 5, "Expected redo to restore inserted node.");
+    assert.equal(
+      (await getCanvasNodes(window, projectId)).length,
+      nodeCountBeforeAddMenuInsert + 1,
+      "Expected redo to restore the inserted node."
+    );
 
     await clickCanvasNode(window, "Smoke List");
     const listNodeButton = window.locator("div[role='button']").filter({ hasText: "Smoke List" }).first();
@@ -1572,6 +1739,27 @@ async function main() {
     );
     console.log("Workspace Menu pill Home navigation verified");
 
+    await window.getByRole("button", { name: `Open project ${projectNameValue}` }).click();
+    await withTimeout("canvas route after workspace home", window.waitForURL(projectRoutePattern(projectId, "canvas")));
+
+    await withTimeout(
+      "node library menu item from workspace",
+      window.getByRole("button", { name: "Menu" }).waitFor({ state: "visible", timeout: 15_000 })
+    );
+    await openMenuItem(window, "Node Library");
+    await withTimeout("node library route from workspace menu", window.waitForURL(nodeLibraryRoutePattern()));
+    await withTimeout(
+      "node library heading from workspace menu",
+      window.getByRole("heading", { name: "Node Library" }).waitFor({ state: "visible", timeout: 15_000 })
+    );
+    console.log("Workspace Menu pill Node Library navigation verified");
+    await window.getByRole("button", { name: "Home" }).first().click();
+    await withTimeout("home route after workspace node library", window.waitForURL(appHomeRoutePattern()));
+    await withTimeout(
+      "home heading after workspace node library",
+      window.getByRole("heading", { name: "App Home" }).waitFor({ state: "visible", timeout: 15_000 })
+    );
+
     await window.reload();
     await withTimeout("home reload", window.waitForLoadState("domcontentloaded"));
     await withTimeout(
@@ -1614,6 +1802,18 @@ async function main() {
 
       await window.getByRole("button", { name: `Open project ${projectNameValue}` }).click();
       await withTimeout("canvas route after native home", window.waitForURL(projectRoutePattern(projectId, "canvas")));
+
+      await runtime.triggerNativeMenuItem("app.node-library");
+      await withTimeout("native menu node library route", window.waitForURL(nodeLibraryRoutePattern()));
+      await withTimeout(
+        "native menu node library heading",
+        window.getByRole("heading", { name: "Node Library" }).waitFor({ state: "visible", timeout: 15_000 })
+      );
+      console.log("Native menu Node Library navigation verified");
+      await window.getByRole("button", { name: "Home" }).first().click();
+      await withTimeout("home route after native node library", window.waitForURL(appHomeRoutePattern()));
+      await window.getByRole("button", { name: `Open project ${projectNameValue}` }).click();
+      await withTimeout("canvas route after native node library", window.waitForURL(projectRoutePattern(projectId, "canvas")));
     }
 
     if (runtime.triggerNativeMenuItem) {
@@ -1649,6 +1849,10 @@ async function main() {
           canvasScreenshotPath,
           modelPreviewScreenshotPath,
           modelFullScreenshotPath,
+          nodeLibraryScreenshotPath,
+          nodeLibraryModelScreenshotPath,
+          nodeLibraryListScreenshotPath,
+          nodeLibraryTemplateScreenshotPath,
           nodeFocusBeforeScreenshotPath,
           nodeFocusScreenshotPath,
           templateFullScreenshotPath,

@@ -4,6 +4,7 @@ import {
   applyGeneratedDescriptorToNode,
   createFallbackGeneratedTextNoteDescriptor,
   createGeneratedModelNode,
+  getStructuredTextOutputContract,
   parseStructuredTextOutput,
   type GeneratedNodeDescriptor,
 } from "@/lib/generated-text-output";
@@ -148,6 +149,15 @@ test("allows smart output templates to repeat placeholders in any order", () => 
       : null,
     "Show [[Pose]] behavior for a [[Species]]. Then show the [[Species]] again."
   );
+});
+
+test("builds smart-output instructions from the node catalog summaries", () => {
+  const contract = getStructuredTextOutputContract("smart");
+
+  assert.match(contract.instructions, /Allowed kinds are text-note, list, text-template\./);
+  assert.match(contract.instructions, /text-note: Use for plain written content/i);
+  assert.match(contract.instructions, /list: Use for structured repeated data/i);
+  assert.match(contract.instructions, /text-template: Use for reusable prompt or writing patterns/i);
 });
 
 test("falls back to a generated text note when structured parsing fails", () => {

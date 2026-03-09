@@ -7,24 +7,18 @@ import {
   useReactTable,
   type ColumnDef,
 } from "@tanstack/react-table";
+import { SearchableModelSelect } from "@/components/searchable-model-select";
 import type { CanvasRenderNode } from "@/components/canvas-node-types";
 import type {
   ListNodeSettings,
-  ProviderId,
   ProviderModel,
   WorkflowNode,
 } from "@/components/workspace/types";
 import type { ModelParameterDefinition } from "@/lib/model-parameters";
 import { getListNodeSettings } from "@/lib/list-template";
 import type { TextTemplatePreview } from "@/lib/list-template";
+import type { NodeCatalogVariant } from "@/lib/node-catalog";
 import styles from "@/components/infinite-canvas.module.css";
-
-type SelectOption = {
-  value: string;
-  label: string;
-  description?: string;
-  statusLabel?: string;
-};
 
 type RunPreview = {
   disabledReason: string | null;
@@ -47,8 +41,7 @@ export type ActiveCanvasNodeEditorState = {
   selectedTemplateListNode: WorkflowNode | null;
   selectedNodeSourceJobId: string | null;
   selectedSingleImageAssetId: string | null;
-  providerOptions: SelectOption[];
-  modelOptions: SelectOption[];
+  modelCatalogVariants: NodeCatalogVariant[];
 };
 
 type Props = {
@@ -57,8 +50,7 @@ type Props = {
   onSetDisplayMode: (mode: "preview" | "compact") => void;
   onLabelChange: (value: string) => void;
   onPromptChange: (value: string) => void;
-  onProviderChange: (providerId: ProviderId) => void;
-  onModelChange: (modelId: string) => void;
+  onModelVariantChange: (variantId: string) => void;
   onParameterChange: (parameterKey: string, value: string | number | null) => void;
   onUpdateListColumnLabel: (columnId: string, label: string) => void;
   onUpdateListCell: (rowId: string, columnId: string, value: string) => void;
@@ -503,8 +495,7 @@ export function CanvasNodeContent({
   onSetDisplayMode,
   onLabelChange,
   onPromptChange,
-  onProviderChange,
-  onModelChange,
+  onModelVariantChange,
   onParameterChange,
   onUpdateListColumnLabel,
   onUpdateListCell,
@@ -800,6 +791,7 @@ export function CanvasNodeContent({
   }
 
   if (node.kind === "model") {
+    const selectedVariantId = `model:${activeEditor.selectedNode.providerId}:${activeEditor.selectedNode.modelId}`;
     const summaryLines = [
       activeEditor.selectedNodeRunPreview?.readyMessage ||
         activeEditor.selectedNodeRunPreview?.disabledReason ||
@@ -848,38 +840,14 @@ export function CanvasNodeContent({
               <strong>Model setup</strong>
               <span>Provider, model, and output tuning.</span>
             </div>
-            <div className={styles.inlineSelectRow}>
-              <label className={styles.inlineFieldLabel}>
-                Provider
-                <select
-                  className={styles.inlineSelect}
-                  value={activeEditor.selectedNode.providerId}
-                  onChange={(event) => onProviderChange(event.target.value as ProviderId)}
-                  onPointerDown={stopPointer}
-                >
-                  {activeEditor.providerOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className={styles.inlineFieldLabel}>
-                Model
-                <select
-                  className={styles.inlineSelect}
-                  value={activeEditor.selectedNode.modelId}
-                  onChange={(event) => onModelChange(event.target.value)}
-                  onPointerDown={stopPointer}
-                >
-                  {activeEditor.modelOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
+            <label className={styles.inlineFieldLabel}>
+              Model
+              <SearchableModelSelect
+                value={selectedVariantId}
+                options={activeEditor.modelCatalogVariants}
+                onChange={(variant) => onModelVariantChange(variant.id)}
+              />
+            </label>
             <div className={styles.inlineParameterGrid}>
               {[...activeEditor.selectedCoreParameters, ...activeEditor.selectedAdvancedParameters].map((parameter) => (
                 <label key={parameter.key} className={styles.inlineFieldLabel}>

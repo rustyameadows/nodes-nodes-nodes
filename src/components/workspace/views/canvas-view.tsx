@@ -86,6 +86,13 @@ import {
 import { getOpenAiTextOutputTargetLabel, readOpenAiTextOutputTarget } from "@/lib/text-output-targets";
 import { canConnectCanvasNodes } from "@/lib/canvas-connection-rules";
 import {
+  getDefaultModelCatalogVariant,
+  getInsertableNodeCatalogEntries,
+  getModelCatalogVariantById,
+  getModelCatalogVariants,
+  groupModelCatalogVariants,
+} from "@/lib/node-catalog";
+import {
   applyCanvasHistoryPatch,
   createCanvasHistoryPatch,
   type CanvasHistoryPatch,
@@ -607,6 +614,7 @@ export function CanvasView({ projectId }: Props) {
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [insertMenu, setInsertMenu] = useState<CanvasInsertMenuState | null>(null);
+  const [insertMenuExpandedEntryId, setInsertMenuExpandedEntryId] = useState<string | null>(null);
   const [assetPicker, setAssetPicker] = useState<AssetPickerState | null>(null);
   const [assetPickerQuery, setAssetPickerQuery] = useState("");
   const [assetPickerAssets, setAssetPickerAssets] = useState<Asset[]>([]);
@@ -654,6 +662,12 @@ export function CanvasView({ projectId }: Props) {
   useEffect(() => {
     activeFullNodeIdRef.current = activeFullNodeId;
   }, [activeFullNodeId]);
+
+  useEffect(() => {
+    if (!insertMenu) {
+      setInsertMenuExpandedEntryId(null);
+    }
+  }, [insertMenu]);
 
   const clearViewportFocusSetupFrames = useCallback(() => {
     for (const frameId of viewportFocusSetupFrameIdsRef.current) {
@@ -906,13 +920,9 @@ export function CanvasView({ projectId }: Props) {
     [applyCanvasHistoryState, captureCanvasHistoryState, recordImmediateHistory, scheduleCoalescedHistory]
   );
 
-  const groupedProviders = useMemo(() => {
-    return providers.reduce<Record<string, ProviderModel[]>>((acc, model) => {
-      acc[model.providerId] = acc[model.providerId] || [];
-      acc[model.providerId].push(model);
-      return acc;
-    }, {});
-  }, [providers]);
+  const modelCatalogVariants = useMemo(() => getModelCatalogVariants(providers), [providers]);
+  const groupedModelCatalogVariants = useMemo(() => groupModelCatalogVariants(providers), [providers]);
+  const defaultModelCatalogVariant = useMemo(() => getDefaultModelCatalogVariant(providers), [providers]);
 
   const providerModelDisplayNames = useMemo(() => {
     return providers.reduce<Record<string, string>>((acc, model) => {
@@ -2059,12 +2069,21 @@ export function CanvasView({ projectId }: Props) {
   }, []);
 
   const addModelNode = useCallback(
-    (position?: { x: number; y: number }, options?: { connectFromNodeId?: string }) => {
-      const defaultProvider = fallbackProviderModel(providers);
+    (
+      position?: { x: number; y: number },
+      options?: { connectFromNodeId?: string; providerId?: WorkflowNode["providerId"]; modelId?: string }
+    ) => {
+      const chosenProvider =
+        (options?.providerId && options?.modelId
+          ? providers.find(
+              (provider) =>
+                provider.providerId === options.providerId && provider.modelId === options.modelId
+            )
+          : null) || fallbackProviderModel(providers);
 
       runUserCanvasMutation((currentState) => {
         const prev = currentState.canvasDoc;
-        const outputType = resolveOutputType(undefined, getModelSupportedOutputs(defaultProvider));
+        const outputType = resolveOutputType(undefined, getModelSupportedOutputs(chosenProvider));
         const nextPosition = nextCanvasNodePosition(prev.workflow.nodes.length, position);
         const connectFromNode = options?.connectFromNodeId
           ? prev.workflow.nodes.find((candidate) => candidate.id === options.connectFromNodeId) || null
@@ -2073,12 +2092,12 @@ export function CanvasView({ projectId }: Props) {
           id: uid(),
           label: `Node ${prev.workflow.nodes.length + 1}`,
           kind: "model",
-          providerId: defaultProvider.providerId,
-          modelId: defaultProvider.modelId,
+          providerId: chosenProvider.providerId,
+          modelId: chosenProvider.modelId,
           nodeType: nodeTypeFromOutput(outputType),
           outputType,
           prompt: "",
-          settings: getModelDefaultSettings(defaultProvider),
+          settings: getModelDefaultSettings(chosenProvider),
           sourceAssetId: null,
           sourceAssetMimeType: null,
           sourceJobId: null,
@@ -2345,6 +2364,71 @@ export function CanvasView({ projectId }: Props) {
     });
   }, [commitPendingCoalescedHistory, getCanvasViewportCenterAnchor, setTrackedSelectedConnection]);
 
+  const handleInsertCatalogEntry = useCallback(
+    (
+      entryId: "model" | "text-note" | "list" | "text-template" | "asset-uploaded" | "asset-generated",
+      position: { x: number; y: number },
+      options?: { providerId?: WorkflowNode["providerId"]; modelId?: string }
+    ) => {
+      if (!insertMenu) {
+        return;
+      }
+
+      if (entryId === "model") {
+        addModelNode(position, {
+          providerId: options?.providerId,
+          modelId: options?.modelId,
+        });
+        return;
+      }
+
+      if (entryId === "text-note") {
+        addTextNote(
+          position,
+          insertMenu.mode === "model-input" && insertMenu.connectToNodeId
+            ? { connectToModelNodeId: insertMenu.connectToNodeId }
+            : undefined
+        );
+        return;
+      }
+
+      if (entryId === "list") {
+        addListNode(
+          position,
+          insertMenu.mode === "template-input" && insertMenu.connectToNodeId
+            ? { connectToTemplateNodeId: insertMenu.connectToNodeId }
+            : undefined
+        );
+        return;
+      }
+
+      if (entryId === "text-template") {
+        addTextTemplateNode(position);
+        return;
+      }
+
+      if (entryId === "asset-uploaded") {
+        setInsertMenu(null);
+        setAssetPicker({
+          origin: "uploaded",
+          worldX: position.x,
+          worldY: position.y,
+          connectToModelNodeId: insertMenu.mode === "model-input" ? insertMenu.connectToNodeId : undefined,
+        });
+        return;
+      }
+
+      setInsertMenu(null);
+      setAssetPicker({
+        origin: "generated",
+        worldX: position.x,
+        worldY: position.y,
+        connectToModelNodeId: insertMenu.mode === "model-input" ? insertMenu.connectToNodeId : undefined,
+      });
+    },
+    [addListNode, addModelNode, addTextNote, addTextTemplateNode, insertMenu]
+  );
+
   const updateNode = useCallback(
     (
       nodeId: string,
@@ -2567,27 +2651,6 @@ export function CanvasView({ projectId }: Props) {
     [selectedModel, selectedNode, selectedNodeExecutionMode, selectedNodeIsModel, updateNode]
   );
 
-  const providerOptions = useMemo(
-    () =>
-      Object.entries(groupedProviders).map(([providerId, providerModels]) => ({
-        value: providerId,
-        label: providerId,
-        description: `${providerModels.length} model${providerModels.length === 1 ? "" : "s"}`,
-      })),
-    [groupedProviders]
-  );
-
-  const modelOptions = useMemo(
-    () =>
-      selectedNode ? (groupedProviders[selectedNode.providerId] || []).map((model) => ({
-        value: model.modelId,
-        label: model.displayName,
-        statusLabel: model.capabilities.availability === "ready" ? undefined : "Coming soon",
-        description: model.modelId,
-      })) : [],
-    [groupedProviders, selectedNode]
-  );
-
   const handleSelectedNodeLabelChange = useCallback(
     (label: string) => {
       if (!selectedNode) {
@@ -2622,13 +2685,21 @@ export function CanvasView({ projectId }: Props) {
     [selectedNode, updateNode]
   );
 
-  const handleSelectedNodeProviderChange = useCallback(
-    (providerId: WorkflowNode["providerId"]) => {
+  const handleSelectedNodeModelVariantChange = useCallback(
+    (variantId: string) => {
       if (!selectedNode || !selectedNodeIsModel) {
         return;
       }
 
-      const model = (groupedProviders[providerId] || [])[0];
+      const variant = getModelCatalogVariantById(providers, variantId);
+      if (!variant) {
+        return;
+      }
+
+      const model = providers.find(
+        (providerModel) =>
+          providerModel.providerId === variant.providerId && providerModel.modelId === variant.modelId
+      );
       const supportedOutputs = getModelSupportedOutputs(model);
       const outputType = resolveOutputType(selectedNode.outputType, supportedOutputs);
       const nextUpstreamNodeIds = isRunnableOpenAiTextModel(model?.providerId, model?.modelId)
@@ -2639,8 +2710,8 @@ export function CanvasView({ projectId }: Props) {
       updateNode(
         selectedNode.id,
         {
-          providerId,
-          modelId: model?.modelId || "",
+          providerId: variant.providerId,
+          modelId: variant.modelId,
           outputType,
           nodeType: nodeTypeFromOutput(outputType),
           upstreamNodeIds: nextUpstreamNodeIds,
@@ -2654,43 +2725,7 @@ export function CanvasView({ projectId }: Props) {
         }
       );
     },
-    [canvasDoc.workflow.nodes, getExecutionModeForModel, groupedProviders, selectedNode, selectedNodeIsModel, updateNode]
-  );
-
-  const handleSelectedNodeModelChange = useCallback(
-    (modelId: string) => {
-      if (!selectedNode || !selectedNodeIsModel) {
-        return;
-      }
-
-      const model = (groupedProviders[selectedNode.providerId] || []).find(
-        (providerModel) => providerModel.modelId === modelId
-      );
-      const supportedOutputs = getModelSupportedOutputs(model);
-      const outputType = resolveOutputType(selectedNode.outputType, supportedOutputs);
-      const nextUpstreamNodeIds = isRunnableOpenAiTextModel(model?.providerId, model?.modelId)
-        ? []
-        : selectedNode.upstreamNodeIds;
-      const nextExecutionMode = getExecutionModeForModel(model, nextUpstreamNodeIds);
-
-      updateNode(
-        selectedNode.id,
-        {
-          modelId,
-          outputType,
-          nodeType: nodeTypeFromOutput(outputType),
-          upstreamNodeIds: nextUpstreamNodeIds,
-          upstreamAssetIds: isRunnableOpenAiTextModel(model?.providerId, model?.modelId)
-            ? []
-            : buildAssetRefsFromNodes(nextUpstreamNodeIds, canvasDoc.workflow.nodes),
-          settings: resolveModelSettings(model, selectedNode.settings, nextExecutionMode),
-        },
-        {
-          historyMode: "immediate",
-        }
-      );
-    },
-    [canvasDoc.workflow.nodes, getExecutionModeForModel, groupedProviders, selectedNode, selectedNodeIsModel, updateNode]
+    [canvasDoc.workflow.nodes, getExecutionModeForModel, providers, selectedNode, selectedNodeIsModel, updateNode]
   );
 
   const handleClearSelectedInputs = useCallback(() => {
@@ -3366,7 +3401,10 @@ export function CanvasView({ projectId }: Props) {
 
       const position = getNativeMenuInsertPosition();
       if (command.nodeType === "model") {
-        addModelNode(position);
+        addModelNode(position, {
+          providerId: command.providerId,
+          modelId: command.modelId,
+        });
         return;
       }
 
@@ -3380,7 +3418,16 @@ export function CanvasView({ projectId }: Props) {
         return;
       }
 
-      addTextTemplateNode(position);
+      if (command.nodeType === "text-template") {
+        addTextTemplateNode(position);
+        return;
+      }
+
+      setAssetPicker({
+        origin: command.nodeType === "asset-generated" ? "generated" : "uploaded",
+        worldX: position.x,
+        worldY: position.y,
+      });
     });
   }, [
     addListNode,
@@ -4077,13 +4124,11 @@ export function CanvasView({ projectId }: Props) {
       selectedTemplateListNode,
       selectedNodeSourceJobId,
       selectedSingleImageAssetId,
-      providerOptions,
-      modelOptions,
+      modelCatalogVariants,
     };
   }, [
     activeSelectedNode,
-    modelOptions,
-    providerOptions,
+    modelCatalogVariants,
     selectedAdvancedParameters,
     selectedCoreParameters,
     selectedInputNodes,
@@ -4106,8 +4151,7 @@ export function CanvasView({ projectId }: Props) {
         onSetDisplayMode={(mode) => handleNodeDisplayModeChange(node.id, mode)}
         onLabelChange={handleSelectedNodeLabelChange}
         onPromptChange={handleSelectedNodePromptChange}
-        onProviderChange={handleSelectedNodeProviderChange}
-        onModelChange={handleSelectedNodeModelChange}
+        onModelVariantChange={handleSelectedNodeModelVariantChange}
         onParameterChange={updateSelectedModelParameter}
         onUpdateListColumnLabel={updateSelectedListColumnLabel}
         onUpdateListCell={updateSelectedListCell}
@@ -4131,9 +4175,8 @@ export function CanvasView({ projectId }: Props) {
       handleClearSelectedInputs,
       handleNodeDisplayModeChange,
       handleSelectedNodeLabelChange,
-      handleSelectedNodeModelChange,
       handleSelectedNodePromptChange,
-      handleSelectedNodeProviderChange,
+      handleSelectedNodeModelVariantChange,
       openAssetViewer,
       openQueueInspect,
       removeSelectedListColumn,
@@ -4265,6 +4308,15 @@ export function CanvasView({ projectId }: Props) {
   const insertMenuAllowsAssetInputs = insertMenu
     ? insertMenu.mode === "canvas" || (insertMenu.mode === "model-input" && !insertMenuTargetIsOpenAiTextModel)
     : false;
+  const insertMenuEntries = useMemo(
+    () =>
+      insertMenu
+        ? getInsertableNodeCatalogEntries(insertMenu.mode, providers).filter((entry) =>
+            entry.id === "asset-uploaded" || entry.id === "asset-generated" ? insertMenuAllowsAssetInputs : true
+          )
+        : [],
+    [insertMenu, insertMenuAllowsAssetInputs, providers]
+  );
   const canUndo = historyStacks.undo.length > 0;
   const canRedo = historyStacks.redo.length > 0;
 
@@ -4440,49 +4492,89 @@ export function CanvasView({ projectId }: Props) {
                   ? "Add Template Input"
                   : "Add To Canvas"}
             </div>
-            {insertMenu.mode === "canvas" ? (
-              <button type="button" onClick={() => addModelNode({ x: insertMenu.worldX, y: insertMenu.worldY })}>
-                Add Model Node
-              </button>
-            ) : null}
-            {insertMenu.mode !== "template-input" ? (
-              <button
-                type="button"
-                onClick={() =>
-                  addTextNote(
-                    { x: insertMenu.worldX, y: insertMenu.worldY },
-                    insertMenu.mode === "model-input" && insertMenu.connectToNodeId
-                      ? { connectToModelNodeId: insertMenu.connectToNodeId }
-                      : undefined
-                  )
-                }
-              >
-                Add Text Note
-              </button>
-            ) : null}
-            {insertMenu.mode !== "model-input" ? (
-              <button
-                type="button"
-                onClick={() =>
-                  addListNode(
-                    { x: insertMenu.worldX, y: insertMenu.worldY },
-                    insertMenu.mode === "template-input" && insertMenu.connectToNodeId
-                      ? { connectToTemplateNodeId: insertMenu.connectToNodeId }
-                      : undefined
-                  )
-                }
-              >
-                Add List
-              </button>
-            ) : null}
-            {insertMenu.mode === "canvas" ? (
-              <button
-                type="button"
-                onClick={() => addTextTemplateNode({ x: insertMenu.worldX, y: insertMenu.worldY })}
-              >
-                Add Text Template
-              </button>
-            ) : null}
+            {insertMenuEntries.map((entry) => {
+              if (entry.id === "model") {
+                return (
+                  <div
+                    key={entry.id}
+                    className={styles.insertMenuSubmenuGroup}
+                    onMouseEnter={() => {
+                      setInsertMenuExpandedEntryId(entry.id);
+                    }}
+                  >
+                    <div className={styles.insertMenuRow}>
+                      <button
+                        type="button"
+                        className={styles.insertMenuAction}
+                        onClick={() =>
+                          handleInsertCatalogEntry("model", { x: insertMenu.worldX, y: insertMenu.worldY }, {
+                            providerId: defaultModelCatalogVariant.providerId,
+                            modelId: defaultModelCatalogVariant.modelId,
+                          })
+                        }
+                      >
+                        Add Model Node
+                      </button>
+                      <button
+                        type="button"
+                        className={styles.insertMenuDisclosure}
+                        aria-expanded={insertMenuExpandedEntryId === entry.id}
+                        onClick={() =>
+                          setInsertMenuExpandedEntryId((current) => (current === entry.id ? null : entry.id))
+                        }
+                      >
+                        ▸
+                      </button>
+                    </div>
+                    {insertMenuExpandedEntryId === entry.id ? (
+                      <div className={styles.insertMenuSubmenu}>
+                        {Object.entries(groupedModelCatalogVariants).map(([providerId, variants]) => (
+                          <div key={providerId} className={styles.insertMenuProviderGroup}>
+                            <span className={styles.insertMenuProviderLabel}>{variants[0]?.providerLabel || providerId}</span>
+                            {variants.map((variant) => (
+                              <button
+                                key={variant.id}
+                                type="button"
+                                className={styles.insertMenuVariantButton}
+                                onClick={() =>
+                                  handleInsertCatalogEntry(
+                                    "model",
+                                    { x: insertMenu.worldX, y: insertMenu.worldY },
+                                    { providerId: variant.providerId, modelId: variant.modelId }
+                                  )
+                                }
+                              >
+                                <span>{variant.label}</span>
+                                <span>{variant.availabilityLabel}</span>
+                              </button>
+                            ))}
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              }
+
+              return (
+                <button
+                  key={entry.id}
+                  type="button"
+                  onClick={() =>
+                    handleInsertCatalogEntry(entry.id, {
+                      x: insertMenu.worldX,
+                      y: insertMenu.worldY,
+                    })
+                  }
+                >
+                  {entry.id === "asset-uploaded"
+                    ? "Add Uploaded Asset"
+                    : entry.id === "asset-generated"
+                      ? "Add Generated Asset"
+                      : `Add ${entry.label}`}
+                </button>
+              );
+            })}
             {insertMenuAllowsAssetInputs ? (
               <button
                 type="button"
@@ -4498,40 +4590,6 @@ export function CanvasView({ projectId }: Props) {
                 }}
               >
                 Upload Assets
-              </button>
-            ) : null}
-            {insertMenuAllowsAssetInputs ? (
-              <button
-                type="button"
-                onClick={() => {
-                  setInsertMenu(null);
-                  setAssetPicker({
-                    origin: "generated",
-                    worldX: insertMenu.worldX,
-                    worldY: insertMenu.worldY,
-                    connectToModelNodeId:
-                      insertMenu.mode === "model-input" ? insertMenu.connectToNodeId : undefined,
-                  });
-                }}
-              >
-                Add Generated Asset
-              </button>
-            ) : null}
-            {insertMenuAllowsAssetInputs ? (
-              <button
-                type="button"
-                onClick={() => {
-                  setInsertMenu(null);
-                  setAssetPicker({
-                    origin: "uploaded",
-                    worldX: insertMenu.worldX,
-                    worldY: insertMenu.worldY,
-                    connectToModelNodeId:
-                      insertMenu.mode === "model-input" ? insertMenu.connectToNodeId : undefined,
-                  });
-                }}
-              >
-                Add Uploaded Asset
               </button>
             ) : null}
           </div>

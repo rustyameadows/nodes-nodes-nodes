@@ -12,6 +12,14 @@ export function buildAppSettingsRoute() {
   return "/settings/app";
 }
 
+export function buildNodeLibraryRoute() {
+  return "/nodes";
+}
+
+export function buildNodeLibraryDetailRoute(nodeId: string) {
+  return `/nodes/${nodeId}`;
+}
+
 export function inferWorkspaceRoute(pathname: string) {
   if (pathname === buildAppHomeRoute()) {
     return {
@@ -24,6 +32,20 @@ export function inferWorkspaceRoute(pathname: string) {
     return {
       projectId: null,
       view: "app-settings" as AppRouteView,
+    } as const;
+  }
+
+  if (pathname === buildNodeLibraryRoute()) {
+    return {
+      projectId: null,
+      view: "nodes" as AppRouteView,
+    } as const;
+  }
+
+  if (/^\/nodes\/[^/]+$/.test(pathname)) {
+    return {
+      projectId: null,
+      view: "node-detail" as AppRouteView,
     } as const;
   }
 

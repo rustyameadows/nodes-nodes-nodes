@@ -19,13 +19,14 @@ Ship a local-first desktop app where one person can:
 
 ## Core User Flows
 1. Start on app home and create or reopen a project.
-2. Land on an empty or previously saved canvas for that project.
-3. Add text notes, models, list nodes, text templates, or asset pointers.
-4. Connect nodes and run a model node.
-5. Watch queue state and inspect the exact provider call.
-6. Review outputs in grid, 2-up, or 4-up modes.
-7. Rate, flag, tag, and filter assets.
-8. Return to app home and switch projects cleanly.
+2. Optionally open the Node Library to inspect node behavior, compare model variants, and design/debug real node surfaces in an ephemeral playground.
+3. Land on an empty or previously saved canvas for a project.
+4. Add text notes, models, list nodes, text templates, or asset pointers.
+5. Connect nodes and run a model node.
+6. Watch queue state and inspect the exact provider call.
+7. Review outputs in grid, 2-up, or 4-up modes.
+8. Rate, flag, tag, and filter assets.
+9. Return to app home and switch projects cleanly.
 
 ## In Scope
 - Single local user
@@ -33,8 +34,9 @@ Ship a local-first desktop app where one person can:
 - One canvas per project
 - Durable local job execution
 - Provider/model registry with stable IDs
+- Canonical node registry and app-level Node Library
 - OpenAI image generation
-- OpenAI GPT text generation as note-native outputs
+- OpenAI GPT text generation as note/list/template/smart structured outputs
 - Topaz image transforms
 - Asset import, viewing, tagging, rating, and filtering
 - Existing color system and canvas semantic colors
@@ -52,3 +54,4 @@ Ship a local-first desktop app where one person can:
 - Jobs survive app restarts and recover deterministically.
 - The asset viewer stays fast and predictable for typical local project sizes.
 - Renderer code never receives raw API keys or filesystem paths.
+- Node Library, insert picker, native add menus, and searchable model selection stay in sync because they share one canonical node/provider registry.

@@ -14,6 +14,24 @@ import type {
   NodeInterface,
   WorkspaceSnapshotResponse,
 } from "@/lib/ipc-contract";
+import {
+  OPENAI_IMAGE_INPUT_MIME_TYPES,
+  OPENAI_MAX_INPUT_IMAGES,
+  getOpenAiImageDefaultSettings,
+  getOpenAiImageParameterDefinitions,
+} from "@/lib/openai-image-settings";
+import {
+  getOpenAiTextDefaultSettings,
+  getOpenAiTextParameterDefinitions,
+} from "@/lib/openai-text-settings";
+import {
+  TOPAZ_GIGAPIXEL_INPUT_MIME_TYPES,
+  TOPAZ_GIGAPIXEL_MAX_INPUT_IMAGES,
+  getTopazExecutionModes,
+  getTopazGigapixelDefaultSettings,
+  getTopazGigapixelParameterDefinitions,
+  getTopazPromptMode,
+} from "@/lib/topaz-gigapixel-settings";
 
 const STORAGE_KEY = "node-interface-browser-fallback";
 
@@ -118,6 +136,243 @@ function listStoredProviderCredentials(): ProviderCredentialStatus[] {
     configured: Boolean(stored[key as ProviderCredentialKey]?.trim()),
     source: stored[key as ProviderCredentialKey]?.trim() ? "environment" : "none",
   }));
+}
+
+function hasStoredProviderCredential(key: ProviderCredentialKey) {
+  const store = readStore();
+  return Boolean(store.providerCredentials?.[key]?.trim());
+}
+
+function buildEnvRequirement(key: ProviderCredentialKey, configured: boolean, label: string) {
+  return {
+    kind: "env" as const,
+    key,
+    configured,
+    label,
+  };
+}
+
+function buildBrowserProviderModels(): ProviderModel[] {
+  const openAiConfigured = hasStoredProviderCredential("OPENAI_API_KEY");
+  const googleConfigured = hasStoredProviderCredential("GOOGLE_API_KEY");
+  const topazConfigured = hasStoredProviderCredential("TOPAZ_API_KEY");
+
+  const openAiRequirement = buildEnvRequirement("OPENAI_API_KEY", openAiConfigured, "OpenAI API key");
+  const googleRequirement = buildEnvRequirement("GOOGLE_API_KEY", googleConfigured, "Google API key");
+  const topazRequirement = buildEnvRequirement("TOPAZ_API_KEY", topazConfigured, "Topaz API key");
+
+  return [
+    {
+      providerId: "google-gemini",
+      modelId: "gemini-3.1-flash",
+      displayName: "Nano Banana 2",
+      capabilities: {
+        text: true,
+        image: true,
+        video: true,
+        runnable: false,
+        availability: "coming_soon",
+        requiresApiKeyEnv: googleRequirement.key,
+        apiKeyConfigured: googleConfigured,
+        requirements: [googleRequirement],
+        promptMode: "optional",
+        executionModes: [],
+        acceptedInputMimeTypes: [],
+        maxInputImages: 0,
+        parameters: [],
+        defaults: {},
+      },
+    },
+    {
+      providerId: "openai",
+      modelId: "gpt-4.1-mini",
+      displayName: "GPT 4.1 Mini",
+      capabilities: {
+        text: true,
+        image: false,
+        video: false,
+        runnable: false,
+        availability: "coming_soon",
+        requiresApiKeyEnv: null,
+        apiKeyConfigured: openAiConfigured,
+        requirements: [],
+        promptMode: "required",
+        executionModes: [],
+        acceptedInputMimeTypes: [],
+        maxInputImages: 0,
+        parameters: [],
+        defaults: {},
+      },
+    },
+    {
+      providerId: "openai",
+      modelId: "gpt-5.4",
+      displayName: "GPT 5.4",
+      capabilities: {
+        text: true,
+        image: false,
+        video: false,
+        runnable: openAiConfigured,
+        availability: "ready",
+        requiresApiKeyEnv: openAiRequirement.key,
+        apiKeyConfigured: openAiConfigured,
+        requirements: [openAiRequirement],
+        promptMode: "required",
+        executionModes: ["generate"],
+        acceptedInputMimeTypes: [],
+        maxInputImages: 0,
+        parameters: getOpenAiTextParameterDefinitions("gpt-5.4"),
+        defaults: getOpenAiTextDefaultSettings("gpt-5.4"),
+      },
+    },
+    {
+      providerId: "openai",
+      modelId: "gpt-5-mini",
+      displayName: "GPT 5 Mini",
+      capabilities: {
+        text: true,
+        image: false,
+        video: false,
+        runnable: openAiConfigured,
+        availability: "ready",
+        requiresApiKeyEnv: openAiRequirement.key,
+        apiKeyConfigured: openAiConfigured,
+        requirements: [openAiRequirement],
+        promptMode: "required",
+        executionModes: ["generate"],
+        acceptedInputMimeTypes: [],
+        maxInputImages: 0,
+        parameters: getOpenAiTextParameterDefinitions("gpt-5-mini"),
+        defaults: getOpenAiTextDefaultSettings("gpt-5-mini"),
+      },
+    },
+    {
+      providerId: "openai",
+      modelId: "gpt-5-nano",
+      displayName: "GPT 5 Nano",
+      capabilities: {
+        text: true,
+        image: false,
+        video: false,
+        runnable: openAiConfigured,
+        availability: "ready",
+        requiresApiKeyEnv: openAiRequirement.key,
+        apiKeyConfigured: openAiConfigured,
+        requirements: [openAiRequirement],
+        promptMode: "required",
+        executionModes: ["generate"],
+        acceptedInputMimeTypes: [],
+        maxInputImages: 0,
+        parameters: getOpenAiTextParameterDefinitions("gpt-5-nano"),
+        defaults: getOpenAiTextDefaultSettings("gpt-5-nano"),
+      },
+    },
+    {
+      providerId: "openai",
+      modelId: "gpt-image-1",
+      displayName: "GPT Image 1",
+      capabilities: {
+        text: false,
+        image: true,
+        video: false,
+        runnable: false,
+        availability: "coming_soon",
+        requiresApiKeyEnv: null,
+        apiKeyConfigured: openAiConfigured,
+        requirements: [],
+        promptMode: "optional",
+        executionModes: [],
+        acceptedInputMimeTypes: [],
+        maxInputImages: 0,
+        parameters: [],
+        defaults: {},
+      },
+    },
+    {
+      providerId: "openai",
+      modelId: "gpt-image-1-mini",
+      displayName: "GPT Image 1 Mini",
+      capabilities: {
+        text: false,
+        image: true,
+        video: false,
+        runnable: openAiConfigured,
+        availability: "ready",
+        requiresApiKeyEnv: openAiRequirement.key,
+        apiKeyConfigured: openAiConfigured,
+        requirements: [openAiRequirement],
+        promptMode: "required",
+        executionModes: ["generate", "edit"],
+        acceptedInputMimeTypes: OPENAI_IMAGE_INPUT_MIME_TYPES,
+        maxInputImages: OPENAI_MAX_INPUT_IMAGES,
+        parameters: getOpenAiImageParameterDefinitions("gpt-image-1-mini"),
+        defaults: getOpenAiImageDefaultSettings("gpt-image-1-mini"),
+      },
+    },
+    {
+      providerId: "openai",
+      modelId: "gpt-image-1.5",
+      displayName: "GPT Image 1.5",
+      capabilities: {
+        text: false,
+        image: true,
+        video: false,
+        runnable: openAiConfigured,
+        availability: "ready",
+        requiresApiKeyEnv: openAiRequirement.key,
+        apiKeyConfigured: openAiConfigured,
+        requirements: [openAiRequirement],
+        promptMode: "required",
+        executionModes: ["generate", "edit"],
+        acceptedInputMimeTypes: OPENAI_IMAGE_INPUT_MIME_TYPES,
+        maxInputImages: OPENAI_MAX_INPUT_IMAGES,
+        parameters: getOpenAiImageParameterDefinitions("gpt-image-1.5"),
+        defaults: getOpenAiImageDefaultSettings("gpt-image-1.5"),
+      },
+    },
+    {
+      providerId: "topaz",
+      modelId: "high_fidelity_v2",
+      displayName: "High Fidelity V2",
+      capabilities: {
+        text: false,
+        image: true,
+        video: false,
+        runnable: topazConfigured,
+        availability: "ready",
+        requiresApiKeyEnv: topazRequirement.key,
+        apiKeyConfigured: topazConfigured,
+        requirements: [topazRequirement],
+        promptMode: getTopazPromptMode("high_fidelity_v2"),
+        executionModes: getTopazExecutionModes("high_fidelity_v2"),
+        acceptedInputMimeTypes: TOPAZ_GIGAPIXEL_INPUT_MIME_TYPES,
+        maxInputImages: TOPAZ_GIGAPIXEL_MAX_INPUT_IMAGES,
+        parameters: getTopazGigapixelParameterDefinitions("high_fidelity_v2"),
+        defaults: getTopazGigapixelDefaultSettings("high_fidelity_v2"),
+      },
+    },
+    {
+      providerId: "topaz",
+      modelId: "redefine",
+      displayName: "Redefine",
+      capabilities: {
+        text: false,
+        image: true,
+        video: false,
+        runnable: topazConfigured,
+        availability: "ready",
+        requiresApiKeyEnv: topazRequirement.key,
+        apiKeyConfigured: topazConfigured,
+        requirements: [topazRequirement],
+        promptMode: getTopazPromptMode("redefine"),
+        executionModes: getTopazExecutionModes("redefine"),
+        acceptedInputMimeTypes: TOPAZ_GIGAPIXEL_INPUT_MIME_TYPES,
+        maxInputImages: TOPAZ_GIGAPIXEL_MAX_INPUT_IMAGES,
+        parameters: getTopazGigapixelParameterDefinitions("redefine"),
+        defaults: getTopazGigapixelDefaultSettings("redefine"),
+      },
+    },
+  ];
 }
 
 export function installBrowserNodeInterface() {
@@ -230,7 +485,7 @@ export function installBrowserNodeInterface() {
       throw new Error("Browser preview mode does not expose queue debug details.");
     },
     async listProviders(): Promise<ProviderModel[]> {
-      return [];
+      return buildBrowserProviderModels();
     },
     async listProviderCredentials(): Promise<ProviderCredentialStatus[]> {
       return listStoredProviderCredentials();

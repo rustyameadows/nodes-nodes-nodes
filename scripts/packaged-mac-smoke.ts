@@ -53,6 +53,15 @@ async function clickButton(driver: WebDriver, label: string) {
   await button.click();
 }
 
+async function clickButtonContaining(driver: WebDriver, labelFragment: string) {
+  const button = await driver.wait(
+    until.elementLocated(By.xpath(`//button[contains(normalize-space(.), '${labelFragment}')]`)),
+    15_000
+  );
+  await driver.wait(until.elementIsVisible(button), 15_000);
+  await button.click();
+}
+
 async function waitForHeading(driver: WebDriver, label: string) {
   const heading = await driver.wait(
     until.elementLocated(By.xpath(`//*[self::h1 or self::h2][normalize-space()='${label}']`)),
@@ -98,6 +107,9 @@ async function main() {
   const modelFullScreenshotPath = path.join(appDataRoot, "packaged-model-full.png");
   const listFullScreenshotPath = path.join(appDataRoot, "packaged-list-full.png");
   const templateFullScreenshotPath = path.join(appDataRoot, "packaged-template-full.png");
+  const nodeLibraryScreenshotPath = path.join(appDataRoot, "packaged-node-library.png");
+  const nodeLibraryModelScreenshotPath = path.join(appDataRoot, "packaged-node-library-model.png");
+  const nodeLibraryListScreenshotPath = path.join(appDataRoot, "packaged-node-library-list.png");
   const assetsScreenshotPath = path.join(appDataRoot, "packaged-assets-smoke.png");
   const queueScreenshotPath = path.join(appDataRoot, "packaged-queue-smoke.png");
   const projectSettingsScreenshotPath = path.join(appDataRoot, "packaged-project-settings-smoke.png");
@@ -166,6 +178,26 @@ async function main() {
     await waitForHeading(driver, "App Settings");
     await waitForHeading(driver, "Provider Credentials");
     await clickButton(driver, "Back to Home");
+    await waitForHeading(driver, "App Home");
+
+    await clickButton(driver, "Node Library");
+    await waitForUrl(driver, /#?\/nodes$/);
+    await waitForHeading(driver, "Node Library");
+    await saveScreenshot(driver, nodeLibraryScreenshotPath);
+
+    await clickButtonContaining(driver, "Model Node");
+    await waitForUrl(driver, /#?\/nodes\/model$/);
+    await waitForHeading(driver, "Model Node");
+    await saveScreenshot(driver, nodeLibraryModelScreenshotPath);
+
+    await clickButton(driver, "Node Library");
+    await waitForUrl(driver, /#?\/nodes$/);
+    await clickButtonContaining(driver, "List / Sheet");
+    await waitForUrl(driver, /#?\/nodes\/list$/);
+    await waitForHeading(driver, "List / Sheet");
+    await saveScreenshot(driver, nodeLibraryListScreenshotPath);
+
+    await clickButton(driver, "Home");
     await waitForHeading(driver, "App Home");
     await clickButton(driver, "Create Project");
     await waitForUrl(driver, /#\/projects\/[^/]+\/canvas$/);
@@ -524,6 +556,9 @@ async function main() {
           modelFullScreenshotPath,
           listFullScreenshotPath,
           templateFullScreenshotPath,
+          nodeLibraryScreenshotPath,
+          nodeLibraryModelScreenshotPath,
+          nodeLibraryListScreenshotPath,
           assetsScreenshotPath,
           queueScreenshotPath,
           projectSettingsScreenshotPath,

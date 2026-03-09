@@ -12,6 +12,7 @@ import { useRouter } from "@/renderer/navigation";
 import { queryKeys } from "@/renderer/query";
 import {
   buildAppSettingsRoute,
+  buildNodeLibraryRoute,
   buildWorkspaceRoute,
 } from "@/renderer/workspace-route";
 import styles from "./app-home-view.module.css";
@@ -182,6 +183,17 @@ export function AppHomeView() {
             }}
           >
             {busy ? "Creating..." : "Create Project"}
+          </button>
+
+          <button
+            type="button"
+            className={styles.secondaryButton}
+            disabled={busy || Boolean(busyProjectId)}
+            onClick={() => {
+              router.push(buildNodeLibraryRoute());
+            }}
+          >
+            Node Library
           </button>
 
           <button

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { ProviderId, WorkflowNode } from "@/components/workspace/types";
+import { getSpawnableNodeCatalogSummaries } from "@/lib/node-catalog";
 import {
   createGeneratedModelListSettings,
   createGeneratedModelTextNoteSettings,
@@ -144,6 +145,15 @@ function normalizeGeneratedTemplateText(templateText: string) {
   });
 }
 
+function buildSmartOutputInstructions() {
+  const summaries = getSpawnableNodeCatalogSummaries();
+  const allowedKinds = summaries.map((summary) => summary.kind).join(", ");
+  const generalRules = summaries.map((summary) => `${summary.kind}: ${summary.promptSummary}`).join(" ");
+  const payloadRules = summaries.map((summary) => summary.payloadSummary).join(" ");
+
+  return `Respond with JSON only. Generate the set of nodes that best fulfills the user's request. If the user gives specific instructions about what nodes to create, follow those instructions first. Apply the general rules below only when the user has not already made the desired node types clear. Allowed kinds are ${allowedKinds}. You may return one node or many. Create only the node types that are actually useful for the request. Do not force a list or template unless the user's request clearly calls for one. ${generalRules} You may return multiple nodes when the request naturally implies multiple useful outputs. Template rules: placeholder variables must use only [[variable]] syntax. Placeholders may appear in any order and may repeat any number of times. Do not use single-bracket placeholders like [variable]. Do not use mustache placeholders like {{variable}}. Do not use any other delimiter style for placeholder variables. Curly braces, single brackets, parentheses, quotes, and other punctuation may appear as literal text when they are not placeholder variables, so preserve them when they are meant literally. Before returning a text-template node, rewrite placeholder-like variable references into [[variable]] syntax while leaving literal punctuation unchanged. If you return both a list and a text-template that are meant to work together, every template placeholder must correspond to a list column, do not invent template placeholders that are not backed by the list, and make them compatible enough that the template can be filled from the list without missing variables. Every node must include kind, label, text, columns, rows, and templateText. For unused fields, set the value to null. ${payloadRules} Do not include explanations, markdown, commentary, or connections. Return only valid JSON that matches the schema.`;
+}
+
 export function getGeneratedDescriptorDefaultLabel(kind: GeneratedNodeKind, visualIndex = 0) {
   if (kind === "list") {
     return `Generated List ${visualIndex + 1}`;
@@ -204,8 +214,7 @@ export function getStructuredTextOutputContract(target: Exclude<OpenAiTextOutput
 
   return {
     schemaName: "generated_smart_nodes",
-    instructions:
-      "Respond with JSON only. Generate the set of nodes that best fulfills the user's request. If the user gives specific instructions about what nodes to create, follow those instructions first. Apply the general rules below only when the user has not already made the desired node types clear. Allowed kinds are text-note, list, and text-template. You may return one node or many. Create only the node types that are actually useful for the request. Do not force a list or template unless the user's request clearly calls for one. Use text-note for plain written content, ideas, explanations, captions, briefs, or standalone text. Use list for structured repeated data, records, options, comparisons, rows, tabular information, or datasets. Use text-template for reusable prompt or writing patterns with fill-in placeholders. You may return multiple nodes when the request naturally implies multiple useful outputs. Template rules: placeholder variables must use only [[variable]] syntax. Placeholders may appear in any order and may repeat any number of times. Do not use single-bracket placeholders like [variable]. Do not use mustache placeholders like {{variable}}. Do not use any other delimiter style for placeholder variables. Curly braces, single brackets, parentheses, quotes, and other punctuation may appear as literal text when they are not placeholder variables, so preserve them when they are meant literally. Before returning a text-template node, rewrite placeholder-like variable references into [[variable]] syntax while leaving literal punctuation unchanged. If you return both a list and a text-template that are meant to work together, every template placeholder must correspond to a list column, do not invent template placeholders that are not backed by the list, and make them compatible enough that the template can be filled from the list without missing variables. Every node must include kind, label, text, columns, rows, and templateText. For unused fields, set the value to null. Use text for text-note nodes, columns plus rows for list nodes, and templateText for text-template nodes. Do not include explanations, markdown, commentary, or connections. Return only valid JSON that matches the schema.",
+    instructions: buildSmartOutputInstructions(),
     schema: {
       type: "object",
       additionalProperties: false,

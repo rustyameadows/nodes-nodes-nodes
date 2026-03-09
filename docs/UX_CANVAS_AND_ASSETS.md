@@ -3,6 +3,10 @@
 ## Workspace Views
 - `/`
   - app home with create-project actions, active project grid, and archived project section
+- `/nodes`
+  - app-level Node Library gallery sourced from the canonical node catalog
+- `/nodes/$nodeId`
+  - node detail page with left-rail metadata and an interactive playground using the real node renderer
 - `/settings/app`
   - app-wide provider credentials and readiness
 - `/projects/$projectId/canvas`
@@ -33,6 +37,11 @@
   - native asset import
   - generated asset pointer
   - uploaded asset pointer
+- the insert picker is registry-driven:
+  - visible node rows come from the canonical node catalog
+  - `Add Model Node` is the parent model row
+  - provider/model variants are derived from the live provider catalog
+  - add rows stay context-aware for `canvas`, `model-input`, and `template-input`
 - macOS native `Canvas` menu mirrors the primary node insert actions:
   - add node popup
   - add model node
@@ -44,6 +53,9 @@
   - undo canvas change
   - redo canvas change
 - native canvas insertions land at the current viewport center with a small stagger and use the same save/selection path as the insert popup
+- the same provider/model catalog also powers the shared searchable model picker used in:
+  - full model nodes
+  - node-library model detail/playground
 - node presentation states:
   - `preview` is the default persisted state
   - `compact` is a persisted pill/tiny-node state
@@ -129,6 +141,7 @@ Controls:
 ## Desktop-Specific UX Changes
 - app startup lands on the app home view instead of auto-resuming directly into a project route
 - app home is reachable from the in-canvas `Menu` pill, app settings, and the native macOS `Project` menu
+- Node Library is reachable from app home, the in-canvas `Menu` pill, and the native macOS app/project menus
 - browser uploads are replaced by native file dialogs
 - asset and preview rendering uses `app-asset://` URLs
 - renderer never sees raw local file paths

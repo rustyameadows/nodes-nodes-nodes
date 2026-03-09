@@ -94,3 +94,8 @@
 - Decision: treat generated text, list, template, and image outputs as one-time spawned child nodes instead of live-managed job outputs after insertion.
 - Rationale: users need generated child nodes to behave like normal canvas nodes once they exist, including keeping edits, size changes, and deletions without being rewritten by later job polls.
 - Consequence: the canvas document now records consumed generated-output receipt keys, pending placeholders/previews are limited to unresolved jobs, completed outputs append new children once, and provenance remains metadata only for source/debug UI.
+
+## 2026-03-08 - Node Metadata Lives In A Canonical Registry
+- Decision: centralize built-in node metadata in a canonical node registry that drives the Node Library, insert picker, native add menus, searchable model selection, and structured-output node summaries.
+- Rationale: the app needs one source of truth for what node types exist, how they should be presented to users, and how downstream systems should reason about them.
+- Consequence: UI/catalog/prompt metadata now flows from `src/lib/node-catalog.ts`, while actual node creation and mutation still stays in the existing canvas/workspace logic.

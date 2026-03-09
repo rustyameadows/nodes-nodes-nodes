@@ -23,10 +23,17 @@ export type AppEventPayload = {
   projectId?: string;
 };
 
-export type CanvasMenuNodeType = "model" | "text-note" | "list" | "text-template";
+export type CanvasMenuNodeType =
+  | "model"
+  | "text-note"
+  | "list"
+  | "text-template"
+  | "asset-uploaded"
+  | "asset-generated";
 
 export type MenuCommand =
   | { type: "app.home" }
+  | { type: "app.node-library" }
   | { type: "project.new" }
   | { type: "project.open"; projectId: string }
   | { type: "app.settings" }
@@ -40,7 +47,7 @@ export type MenuCommand =
   | { type: "canvas.open-primary-editor" }
   | { type: "canvas.undo" }
   | { type: "canvas.redo" }
-  | { type: "canvas.add-node"; nodeType: CanvasMenuNodeType };
+  | { type: "canvas.add-node"; nodeType: CanvasMenuNodeType; providerId?: ProviderId; modelId?: string };
 
 export type MenuContext = {
   projectId: string | null;
