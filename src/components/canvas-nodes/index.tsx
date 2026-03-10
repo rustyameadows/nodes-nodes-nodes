@@ -16,7 +16,11 @@ import type {
   WorkflowNode,
 } from "@/components/workspace/types";
 import { getCanvasNodeActionDescriptors } from "@/lib/canvas-node-actions";
-import { getListNodeSettings } from "@/lib/list-template";
+import {
+  buildTemplateVariableInsertText,
+  getListNodeSettings,
+  getTemplateVariableDisplayLabel,
+} from "@/lib/list-template";
 import type { TextTemplatePreview } from "@/lib/list-template";
 import type { ModelParameterDefinition } from "@/lib/model-parameters";
 import type { NodeCatalogVariant } from "@/lib/node-catalog";
@@ -79,6 +83,11 @@ type NodeFooterSpacing = "default" | "tight";
 function cx(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
 }
+
+type TemplateVariableChip = {
+  key: string;
+  label: string;
+};
 
 function stopPointer(event: ReactPointerEvent<HTMLElement>) {
   event.stopPropagation();
@@ -365,10 +374,55 @@ function InlineTemplatePreviewText({
       {parts.map((part, index) =>
         part.type === "token" ? (
           <span key={`${part.raw}:${index}`} className={styles.inlineTemplatePill}>
-            {part.raw}
+            {getTemplateVariableDisplayLabel(part.value)}
           </span>
         ) : (
           <span key={`${part.value}:${index}`}>{part.value}</span>
+        )
+      )}
+    </div>
+  );
+}
+
+function TemplateVariablePillList({
+  tokens,
+  interactive = false,
+  onSelect,
+  className,
+}: {
+  tokens: TemplateVariableChip[];
+  interactive?: boolean;
+  onSelect?: (token: TemplateVariableChip) => void;
+  className?: string;
+}) {
+  const visibleTokens = tokens
+    .map((token) => ({
+      ...token,
+      displayLabel: getTemplateVariableDisplayLabel(token.label),
+    }))
+    .filter((token) => token.displayLabel.length > 0);
+
+  if (visibleTokens.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className={cx(styles.templateVariableShelf, className)}>
+      {visibleTokens.map((token) =>
+        interactive ? (
+          <button
+            key={token.key}
+            type="button"
+            className={styles.templateVariableButton}
+            onPointerDown={stopPointer}
+            onClick={() => onSelect?.(token)}
+          >
+            {token.displayLabel}
+          </button>
+        ) : (
+          <span key={token.key} className={styles.templatePill}>
+            {token.displayLabel}
+          </span>
         )
       )}
     </div>
@@ -726,24 +780,28 @@ function TemplateEditorBody({
           key: token.key,
           label: token.label,
         }));
+  const unresolvedTokens = (activeEditor.selectedTemplatePreview?.unresolvedTokens || []).map((token) => ({
+    key: token.key,
+    label: token.label,
+  }));
+  const statusMessage =
+    unresolvedTokens.length > 0
+      ? "Add columns for the missing variables."
+      : activeEditor.selectedTemplatePreview?.disabledReason || activeEditor.selectedTemplatePreview?.readyMessage || "Ready";
 
   return (
     <div className={styles.templateEditorShell}>
-      <div className={styles.templateVariableShelf}>
-        {variableChips.map((token) => (
-          <button
-            key={token.key}
-            type="button"
-            className={styles.templateVariableButton}
-            onPointerDown={stopPointer}
-            onClick={() => {
-              onPromptChange(`${activeEditor.selectedNode.prompt}[[${token.label}]]`);
-            }}
-          >
-            {`[[${token.label}]]`}
-          </button>
-        ))}
-      </div>
+      <TemplateVariablePillList
+        tokens={variableChips}
+        interactive
+        onSelect={(token) => {
+          const insertText = buildTemplateVariableInsertText(token.label);
+          if (!insertText) {
+            return;
+          }
+          onPromptChange(`${activeEditor.selectedNode.prompt}${insertText}`);
+        }}
+      />
       <textarea
         className={styles.templateEditor}
         value={activeEditor.selectedNode.prompt}
@@ -752,13 +810,17 @@ function TemplateEditorBody({
         onPointerDown={stopPointer}
         placeholder="Write template with [[variables]]"
       />
-      <div className={styles.templateStatusStrip}>
-        <span>
-          {activeEditor.selectedTemplatePreview?.disabledReason ||
-            activeEditor.selectedTemplatePreview?.readyMessage ||
-            "Ready"}
-        </span>
-        <span>{`${activeEditor.selectedTemplatePreview?.nonBlankRowCount || 0} rows`}</span>
+      <div className={styles.templateStatusArea}>
+        <div className={styles.templateStatusStrip}>
+          <span>{statusMessage}</span>
+          <span>{`${activeEditor.selectedTemplatePreview?.nonBlankRowCount || 0} rows`}</span>
+        </div>
+        {unresolvedTokens.length > 0 ? (
+          <TemplateVariablePillList
+            tokens={unresolvedTokens}
+            className={styles.templateMissingVariableShelf}
+          />
+        ) : null}
       </div>
     </div>
   );

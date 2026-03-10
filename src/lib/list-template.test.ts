@@ -1,10 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  buildTemplateVariableInsertText,
   buildTextTemplatePreview,
   createListColumn,
   createListRow,
   extractTemplateTokens,
+  getTemplateVariableDisplayLabel,
   normalizeTemplateLabel,
 } from "./list-template";
 import type { ListNodeSettings } from "@/components/workspace/types";
@@ -39,6 +41,11 @@ test("extractTemplateTokens returns unique normalized placeholders in source ord
   );
 });
 
+test("template variable display and insert helpers keep labels clean while preserving bracket syntax", () => {
+  assert.equal(getTemplateVariableDisplayLabel("  Dog   Breed "), "Dog Breed");
+  assert.equal(buildTemplateVariableInsertText("  Dog   Breed "), "[[Dog Breed]]");
+});
+
 test("buildTextTemplatePreview resolves placeholders case-insensitively", () => {
   const settings = createSettings(["Dog Breed", "Coat"], [{ "Dog Breed": "Akita", Coat: "Fluffy" }]);
   const preview = buildTextTemplatePreview("Meet [[ dog   breed ]] with [[COAT]].", settings);
@@ -59,7 +66,7 @@ test("buildTextTemplatePreview blocks unresolved placeholders", () => {
   const settings = createSettings(["Dog Breed"], [{ "Dog Breed": "Akita" }]);
   const preview = buildTextTemplatePreview("Meet [[dog breed]] with [[coat]].", settings);
 
-  assert.equal(preview.disabledReason, "Add columns for: coat.");
+  assert.equal(preview.disabledReason, "Add columns for the missing variables.");
   assert.deepEqual(
     preview.unresolvedTokens.map((token) => token.label),
     ["coat"]

@@ -592,6 +592,10 @@
   gap: var(--ds-space-2);
 }
 
+.templateMissingVariableShelf {
+  gap: 6px;
+}
+
 .templatePill,
 .templateVariableButton {
   border-radius: var(--ds-radius-round);
@@ -606,6 +610,10 @@
   color: color-mix(in srgb, var(--node-accent-function) 72%, var(--node-surface-ink) 28%);
   font-size: var(--ds-font-size-xs);
   font-weight: 700;
+}
+
+.templateVariableButton {
+  cursor: pointer;
 }
 
 .templatePreviewText {
@@ -821,6 +829,12 @@
   resize: none;
   font-size: 0.82rem;
   line-height: 1.48;
+}
+
+.templateStatusArea {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .templateStatusStrip {

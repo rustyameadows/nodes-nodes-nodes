@@ -106,9 +106,10 @@
   - row/column remove controls as overlay affordances that do not consume layout space
 - template mode includes:
   - text-note-like preview styling when not editing
-  - inline variable pills inside preview copy as the primary differentiator
+  - inline variable pills inside preview copy as the primary differentiator, rendered with clean labels instead of bracketed syntax
   - no bottom variable shelf in preview mode
-  - a larger edit mode with variable insert buttons and compact compatibility status
+  - a larger edit mode with clean-label variable insert buttons that still insert canonical `[[variable]]` syntax
+  - missing-variable compatibility states render the unresolved variables as pills instead of comma-separated text
 - active-node phantom previews:
   - appear only when exactly one source node is active
   - show likely downstream outputs without persisting real nodes

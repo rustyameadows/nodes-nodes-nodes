@@ -23,6 +23,7 @@ import type {
   WorkflowNode,
 } from "@/components/workspace/types";
 import type { CanvasBottomBarPopoverId } from "@/lib/canvas-primary-editor";
+import { getTemplateVariableDisplayLabel } from "@/lib/list-template";
 import type { ModelParameterDefinition } from "@/lib/model-parameters";
 import { isRunnableImageModel } from "@/lib/provider-model-helpers";
 import type { TextTemplatePreview } from "@/lib/list-template";
@@ -136,6 +137,30 @@ function CanvasBarPopover({ anchorEl, open, width, maxWidth, popoverRef, childre
     >
       {children}
     </AnchoredOverlay>
+  );
+}
+
+function TrayTemplateVariablePills({
+  labels,
+}: {
+  labels: string[];
+}) {
+  const visibleLabels = labels
+    .map((label) => getTemplateVariableDisplayLabel(label))
+    .filter((label) => label.length > 0);
+
+  if (visibleLabels.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className={styles.trayTemplatePills}>
+      {visibleLabels.map((label) => (
+        <span key={label} className={styles.trayTemplatePill}>
+          {label}
+        </span>
+      ))}
+    </div>
   );
 }
 
@@ -1079,7 +1104,10 @@ export function CanvasBottomBar({
                     <div className={styles.traySection}>
                       <span className={styles.traySectionLabel}>Unresolved Placeholders</span>
                       <div className={`${styles.traySummary} ${styles.traySummaryWarning}`}>
-                        {selectedTemplatePreview.unresolvedTokens.map((token) => token.label).join(", ")}
+                        <span>Add columns for the missing variables.</span>
+                        <TrayTemplateVariablePills
+                          labels={selectedTemplatePreview.unresolvedTokens.map((token) => token.label)}
+                        />
                       </div>
                     </div>
                   ) : null}

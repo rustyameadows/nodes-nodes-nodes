@@ -378,6 +378,26 @@
   line-height: 1.4;
 }
 
+.trayTemplatePills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: var(--ds-space-2);
+}
+
+.trayTemplatePill {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border: 1px solid color-mix(in srgb, var(--ds-state-warning-border) 82%, transparent);
+  border-radius: var(--ds-radius-round);
+  background: color-mix(in srgb, var(--ds-state-warning-bg) 72%, var(--ds-control-bg));
+  color: var(--ds-state-warning-fg);
+  font-size: 0.62rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
 .traySummaryReady {
   border-color: var(--ds-state-success-border);
   background: var(--ds-state-success-bg);

@@ -1315,7 +1315,7 @@ async function main() {
       "template editor",
       window.locator('textarea[placeholder="Write template with [[variables]]"]').waitFor({ state: "visible", timeout: 15_000 })
     );
-    await screenshotCanvasNode(window, "[[Animal]]", templateFullScreenshotPath);
+    await screenshotCanvasNode(window, "Illustrate a", templateFullScreenshotPath);
     console.log("Template full screenshot:", templateFullScreenshotPath);
     await window.evaluate(
       ({ nodeId }) => {
@@ -1336,7 +1336,7 @@ async function main() {
     assert.equal(resizedTemplateNode?.displayMode, "resized", "Expected template node to persist resized mode.");
     await withTimeout(
       "resized template keeps variable pills after deselect",
-      getCanvasNodeLocator(window, "[[Animal]]").getByText("[[Animal]]").waitFor({ state: "visible", timeout: 15_000 })
+      getCanvasNodeLocator(window, "Illustrate a").getByText("Animal").waitFor({ state: "visible", timeout: 15_000 })
     );
 
     await window.reload();
@@ -1356,7 +1356,7 @@ async function main() {
     );
     await withTimeout(
       "resized template keeps variable pills after reload",
-      getCanvasNodeLocator(window, "[[Animal]]").getByText("[[Animal]]").waitFor({ state: "visible", timeout: 15_000 })
+      getCanvasNodeLocator(window, "Illustrate a").getByText("Animal").waitFor({ state: "visible", timeout: 15_000 })
     );
     console.log("Resized template persistence verified");
 

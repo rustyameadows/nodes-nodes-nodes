@@ -66,6 +66,15 @@ export function normalizeTemplateDisplayLabel(value: string) {
   return value.trim().replace(whitespacePattern, " ");
 }
 
+export function getTemplateVariableDisplayLabel(value: string) {
+  return normalizeTemplateDisplayLabel(value);
+}
+
+export function buildTemplateVariableInsertText(value: string) {
+  const label = getTemplateVariableDisplayLabel(value);
+  return label ? `[[${label}]]` : "";
+}
+
 export function createListColumn(label = "", id = nextLocalId("col")): ListColumn {
   return {
     id,
@@ -473,7 +482,7 @@ export function buildTextTemplatePreview(template: string, settings: ListNodeSet
   } else if (!template.trim()) {
     disabledReason = "Write template text to generate rows.";
   } else if (unresolvedTokens.length > 0) {
-    disabledReason = `Add columns for: ${unresolvedTokens.map((token) => token.label).join(", ")}.`;
+    disabledReason = "Add columns for the missing variables.";
   } else if (rows.length === 0) {
     disabledReason = "Add at least one non-empty row.";
   }
