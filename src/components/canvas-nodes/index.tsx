@@ -435,6 +435,7 @@ function ImageFooterCaption({
   node: CanvasRenderNode;
 }) {
   const secondaryLabel =
+    (node.assetOrigin === "uploaded" ? node.displaySourceLabel : null) ||
     node.displayModelName ||
     node.displaySourceLabel ||
     (node.assetOrigin === "uploaded" ? "Uploaded image" : `${node.outputType} source`);

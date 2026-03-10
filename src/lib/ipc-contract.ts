@@ -3,6 +3,7 @@ import type {
   AssetFilterState,
   AppRouteView,
   CanvasDocument,
+  ImportedAssetResult,
   Job,
   JobRunOrigin,
   JobDebugResponse,
@@ -22,6 +23,7 @@ export type AppEventName = "projects.changed" | "workspace.changed" | "assets.ch
 export type AppEventPayload = {
   event: AppEventName;
   projectId?: string;
+  reason?: "asset-import";
 };
 
 export type CanvasMenuNodeType =
@@ -146,7 +148,7 @@ export type NodeInterface = {
   ) => Promise<Asset[]>;
   getAsset: (assetId: string) => Promise<Asset>;
   updateAsset: (assetId: string, payload: { rating?: number | null; flagged?: boolean; tags?: string[] }) => Promise<Asset>;
-  importAssets: (projectId: string, items?: ImportAssetInput[]) => Promise<Asset[]>;
+  importAssets: (projectId: string, items?: ImportAssetInput[]) => Promise<ImportedAssetResult[]>;
   importAssetsToProjectCanvas: (
     projectId: string,
     request?: ImportAssetsToProjectCanvasRequest

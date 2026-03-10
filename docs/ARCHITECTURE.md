@@ -59,6 +59,7 @@ On macOS desktop runs, local project data is resolved from a stable compatibilit
   - load and save canvas/workspace snapshots
 - `assets`
   - import, list, inspect, update curation metadata, resolve binary files
+  - canvas upload flows and menu bar imports reuse the same uploaded-asset node insertion helper so uploaded source nodes get consistent labels, metadata, and aspect ratios
 - `jobs`
   - validate submissions, create durable jobs, expose queue/debug state, handle stale-job recovery
 - `providers`
@@ -131,6 +132,7 @@ TanStack Query owns persisted app data in the renderer and is invalidated from t
 - Canvas overlays use the `canvas-overlay` surface, while node cards use the dedicated canvas-node system.
 - `CanvasView` also mounts a renderer-local `CanvasCopilotWidget` in the overlay layer. It is not persisted in the canvas document and is not represented by a hidden model node.
 - `CanvasView` and `NodePlaygroundCanvas` derive node presentation from persisted node-local metadata (`displayMode`, `size`) plus transient active-node state through `resolveCanvasNodePresentation`.
+- `CanvasView` also listens for external same-project workspace mutations flagged as asset imports so menu bar uploads can refresh the live canvas without forcing a route remount.
 - `CanvasNodeContent` in `src/components/canvas-nodes/` renders shared rails plus mode-aware node bodies for model, text note, list, template, and asset nodes.
 - `InfiniteCanvas` renders live drag previews, resize handles, phantom previews, quick mode transitions, and the edge-mounted run launcher, but committed node movement is written back once per drag through `onCommitNodePositions`.
 - Multi-node drag uses the current selection as a batch and preserves relative spacing across the moved nodes.
@@ -167,6 +169,7 @@ TanStack Query owns persisted app data in the renderer and is invalidated from t
   - `app-asset://asset/<assetId>`
   - `app-asset://preview/<previewFrameId>?ts=<createdAt>`
 - The renderer never receives raw filesystem paths.
+- Native asset imports can return lightweight `ImportedAssetResult` envelopes so renderer insertion preserves user-facing source names from the file dialog while still persisting normal `Asset` records.
 
 ## Job Flow
 1. Canvas resolves a concrete run request from the active graph.

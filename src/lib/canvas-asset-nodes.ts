@@ -1,4 +1,10 @@
-import type { Asset, CanvasDocument, ProviderModel, WorkflowNode } from "@/components/workspace/types";
+import type {
+  Asset,
+  CanvasDocument,
+  ProviderModel,
+  UploadedAssetNodeSettings,
+  WorkflowNode,
+} from "@/components/workspace/types";
 import { createCanvasLocalId, nextCanvasNodePosition } from "@/lib/canvas-document";
 import { isRunnableTextModel } from "@/lib/provider-model-helpers";
 
@@ -25,8 +31,17 @@ export function normalizeAssetNodeLabel(fileName: string, index: number) {
   return trimmed.length <= 28 ? trimmed : `${trimmed.slice(0, 26)}...`;
 }
 
-export function getImportedAssetNodeLabel(asset: Asset, index: number) {
-  const fileName = asset.storageRef.split("/").at(-1) || "";
+export function getImportedAssetDisplayName(asset: Asset, index: number, explicitLabel?: string | null) {
+  const fileName = explicitLabel?.trim() || asset.storageRef.split("/").at(-1) || "";
+  const trimmed = fileName.trim();
+  if (!trimmed) {
+    return `Asset ${index + 1}`;
+  }
+  return trimmed;
+}
+
+export function getImportedAssetNodeLabel(asset: Asset, index: number, explicitLabel?: string | null) {
+  const fileName = getImportedAssetDisplayName(asset, index, explicitLabel);
   return normalizeAssetNodeLabel(fileName, index);
 }
 
@@ -42,6 +57,89 @@ export function getAssetPointerNodeLabel(asset: Asset, index: number) {
     return normalizeAssetNodeLabel(fileName, index);
   }
   return `Upload ${index + 1}`;
+}
+
+function normalizeAssetDimension(value: unknown) {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return null;
+  }
+  return Math.round(value);
+}
+
+export function buildUploadedAssetNodeSettings(
+  asset: Asset,
+  index: number,
+  explicitLabel?: string | null
+): UploadedAssetNodeSettings {
+  return {
+    source: "upload",
+    assetName: getImportedAssetDisplayName(asset, index, explicitLabel),
+    assetWidth: normalizeAssetDimension(asset.width),
+    assetHeight: normalizeAssetDimension(asset.height),
+  };
+}
+
+export function isUploadedAssetSourceNode(
+  node: Pick<WorkflowNode, "kind" | "settings"> | null | undefined
+): boolean {
+  if (!node || node.kind !== "asset-source" || !node.settings || typeof node.settings !== "object") {
+    return false;
+  }
+
+  const source = (node.settings as Record<string, unknown>).source;
+  return source === "upload" || source === "uploaded";
+}
+
+export function getUploadedAssetNodeAspectRatio(
+  node: Pick<WorkflowNode, "kind" | "outputType" | "settings"> | null | undefined
+) {
+  if (!node || node.kind !== "asset-source" || node.outputType !== "image" || !isUploadedAssetSourceNode(node)) {
+    return null;
+  }
+
+  const settings = node.settings as Record<string, unknown>;
+  const width = normalizeAssetDimension(settings.assetWidth);
+  const height = normalizeAssetDimension(settings.assetHeight);
+  if (!width || !height) {
+    return null;
+  }
+
+  return width / height;
+}
+
+export function createUploadedAssetSourceNode(
+  asset: Asset,
+  index: number,
+  options: {
+    defaultProvider: Pick<ProviderModel, "providerId" | "modelId">;
+    position: { x: number; y: number };
+    label?: string | null;
+  }
+): WorkflowNode {
+  const label = getImportedAssetNodeLabel(asset, index, options.label);
+  return {
+    id: createCanvasLocalId(),
+    label,
+    kind: "asset-source",
+    providerId: options.defaultProvider.providerId,
+    modelId: options.defaultProvider.modelId,
+    nodeType: "transform",
+    outputType: outputTypeFromAssetType(asset.type),
+    prompt: "",
+    settings: buildUploadedAssetNodeSettings(asset, index, options.label),
+    sourceAssetId: asset.id,
+    sourceAssetMimeType: asset.mimeType,
+    sourceJobId: null,
+    sourceOutputIndex: null,
+    processingState: null,
+    promptSourceNodeId: null,
+    upstreamNodeIds: [],
+    upstreamAssetIds: [],
+    x: Math.round(options.position.x),
+    y: Math.round(options.position.y),
+    displayMode: "preview",
+    size: null,
+  };
 }
 
 export function buildAssetRefsFromNodes(upstreamNodeIds: string[], nodes: WorkflowNode[]) {
@@ -109,30 +207,14 @@ export function insertImportedAssetsIntoCanvasDocument(
   const basePosition = nextCanvasNodePosition(canvasDocument.workflow.nodes.length, options.position);
   const sourceNodes = assets.map((asset, index) => {
     const explicitLabel = options.assetLabels?.[index] || "";
-    const outputType = outputTypeFromAssetType(asset.type);
-    return {
-      id: createCanvasLocalId(),
-      label: explicitLabel ? normalizeAssetNodeLabel(explicitLabel, index) : getImportedAssetNodeLabel(asset, index),
-      kind: "asset-source" as const,
-      providerId: options.defaultProvider.providerId,
-      modelId: options.defaultProvider.modelId,
-      nodeType: "transform" as const,
-      outputType,
-      prompt: "",
-      settings: { source: "upload" },
-      sourceAssetId: asset.id,
-      sourceAssetMimeType: asset.mimeType,
-      sourceJobId: null,
-      sourceOutputIndex: null,
-      processingState: null,
-      promptSourceNodeId: null,
-      upstreamNodeIds: [],
-      upstreamAssetIds: [],
-      x: Math.round(basePosition.x + index * 34),
-      y: Math.round(basePosition.y + index * 26),
-      displayMode: "preview" as const,
-      size: null,
-    };
+    return createUploadedAssetSourceNode(asset, index, {
+      defaultProvider: options.defaultProvider,
+      position: {
+        x: basePosition.x + index * 34,
+        y: basePosition.y + index * 26,
+      },
+      label: explicitLabel,
+    });
   });
 
   const sourceNodeIds = sourceNodes.map((node) => node.id);

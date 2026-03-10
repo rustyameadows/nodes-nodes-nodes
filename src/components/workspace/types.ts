@@ -136,6 +136,12 @@ export type GeneratedModelTextTemplateSettings = GeneratedModelNodeProvenance & 
 
 export type ListNodeSettings = BaseListNodeSettings | GeneratedModelListSettings;
 export type TextTemplateNodeSettings = BaseTextTemplateNodeSettings | GeneratedModelTextTemplateSettings;
+export type UploadedAssetNodeSettings = {
+  source: "upload";
+  assetName?: string;
+  assetWidth?: number | null;
+  assetHeight?: number | null;
+};
 
 export type WorkflowNodeSettings = Record<string, unknown>;
 
@@ -291,6 +297,11 @@ export type Asset = {
     modelId: string;
     state: string;
   } | null;
+};
+
+export type ImportedAssetResult = {
+  asset: Asset;
+  sourceName: string | null;
 };
 
 export type AssetFilterState = {

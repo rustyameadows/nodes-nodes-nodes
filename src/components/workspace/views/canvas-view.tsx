@@ -59,6 +59,7 @@ import {
   normalizeNode,
   openProject,
   putCanvasWorkspace,
+  subscribeToAppEvent,
   uid,
   uploadProjectAsset,
 } from "@/components/workspace/client-api";
@@ -88,9 +89,10 @@ import {
 import { getOpenAiTextOutputTargetLabel, readOpenAiTextOutputTarget } from "@/lib/text-output-targets";
 import {
   buildAssetRefsFromNodes,
+  createUploadedAssetSourceNode,
   getAssetPointerNodeLabel,
-  getImportedAssetNodeLabel,
-  normalizeAssetNodeLabel,
+  getUploadedAssetNodeAspectRatio,
+  insertImportedAssetsIntoCanvasDocument,
   outputTypeFromAssetType,
 } from "@/lib/canvas-asset-nodes";
 import {
@@ -1148,11 +1150,13 @@ export function CanvasView({ projectId }: Props) {
 
   const canvasNodes = useMemo(() => {
     return canvasDoc.workflow.nodes.map((node) => {
+      const uploadedAssetAspectRatio = getUploadedAssetNodeAspectRatio(node) || undefined;
       const presentation = resolveCanvasNodePresentation({
         node,
         activeNodeId,
         fullNodeId: activeFullNodeId,
         nodeId: node.id,
+        aspectRatio: uploadedAssetAspectRatio,
       });
       const displayModelName = providerModelDisplayNames[`${node.providerId}:${node.modelId}`] || node.modelId;
       const inputSemanticTypes = sortSemanticTypes([
@@ -1190,7 +1194,7 @@ export function CanvasView({ projectId }: Props) {
           assetOrigin: node.kind === "asset-source" ? ("uploaded" as const) : null,
           sourceModelNodeId: getSourceModelNodeId(node),
           displayModelName:
-            node.kind === "list" ? "List" : node.kind === "text-template" ? "Template" : displayModelName,
+            node.kind === "asset-source" ? null : node.kind === "list" ? "List" : node.kind === "text-template" ? "Template" : displayModelName,
           displaySourceLabel:
             node.kind === "asset-source"
               ? "Uploaded Asset"
@@ -1696,6 +1700,18 @@ export function CanvasView({ projectId }: Props) {
         setIsLoading(false);
       });
   }, [fetchCanvas, fetchJobs, projectId]);
+
+  useEffect(() => {
+    return subscribeToAppEvent("workspace.changed", (payload) => {
+      if (payload.projectId !== projectId || payload.reason !== "asset-import") {
+        return;
+      }
+
+      fetchCanvas().catch((error) => {
+        console.error("Failed to refresh canvas after external asset import", error);
+      });
+    });
+  }, [fetchCanvas, projectId]);
 
   useEffect(() => {
     const hasActiveJobs = jobs.some((job) => job.state === "queued" || job.state === "running");
@@ -2262,7 +2278,7 @@ export function CanvasView({ projectId }: Props) {
               (provider) =>
                 provider.providerId === options.providerId && provider.modelId === options.modelId
             )
-          : null) || fallbackProviderModel(providers);
+          : null) || getFallbackProviderModel(providers);
 
       runUserCanvasMutation((currentState) => {
         const prev = currentState.canvasDoc;
@@ -2320,7 +2336,7 @@ export function CanvasView({ projectId }: Props) {
 
   const addTextNote = useCallback(
     (position?: { x: number; y: number }, options?: { connectToModelNodeId?: string }) => {
-      const defaultProvider = fallbackProviderModel(providers);
+      const defaultProvider = getFallbackProviderModel(providers);
 
       runUserCanvasMutation((currentState) => {
         const prev = currentState.canvasDoc;
@@ -2381,7 +2397,7 @@ export function CanvasView({ projectId }: Props) {
 
   const addListNode = useCallback(
     (position?: { x: number; y: number }, options?: { connectToTemplateNodeId?: string }) => {
-      const defaultProvider = fallbackProviderModel(providers);
+      const defaultProvider = getFallbackProviderModel(providers);
 
       runUserCanvasMutation((currentState) => {
         const prev = currentState.canvasDoc;
@@ -2443,7 +2459,7 @@ export function CanvasView({ projectId }: Props) {
 
   const addTextTemplateNode = useCallback(
     (position?: { x: number; y: number }, options?: { connectFromListNodeId?: string }) => {
-      const defaultProvider = fallbackProviderModel(providers);
+      const defaultProvider = getFallbackProviderModel(providers);
 
       runUserCanvasMutation((currentState) => {
         const prev = currentState.canvasDoc;
@@ -2992,66 +3008,23 @@ export function CanvasView({ projectId }: Props) {
           }))
         );
 
-        const defaultProvider = fallbackProviderModel(providers);
+        const defaultProvider = getFallbackProviderModel(providers);
         runUserCanvasMutation((currentState) => {
           const prev = currentState.canvasDoc;
-          const baseX = position?.x ?? Math.round(120 + (prev.workflow.nodes.length % 4) * 260);
-          const baseY = position?.y ?? Math.round(120 + Math.floor(prev.workflow.nodes.length / 4) * 170);
-
-          const sourceNodes = uploaded.map(({ file, asset }, index) => {
-            const outputType = outputTypeFromAssetType(asset.type);
-            return {
-              id: uid(),
-              label: normalizeAssetNodeLabel(file.name, index),
-              kind: "asset-source" as const,
-              providerId: defaultProvider.providerId,
-              modelId: defaultProvider.modelId,
-              nodeType: "transform" as const,
-              outputType,
-              prompt: "",
-              settings: { source: "upload" },
-              sourceAssetId: asset.id,
-              sourceAssetMimeType: asset.mimeType,
-              sourceJobId: null,
-              sourceOutputIndex: null,
-              processingState: null,
-              promptSourceNodeId: null,
-              upstreamNodeIds: [],
-              upstreamAssetIds: [],
-              x: Math.round(baseX + index * 34),
-              y: Math.round(baseY + index * 26),
-              displayMode: "preview" as const,
-              size: null,
-            };
-          });
-
-          const sourceNodeIds = sourceNodes.map((node) => node.id);
-          const nextNodes = prev.workflow.nodes.map((node) => {
-            if (node.id !== options?.connectToModelNodeId || node.kind !== "model") {
-              return node;
+          const { canvasDocument: nextCanvasDocument, insertedNodeIds } = insertImportedAssetsIntoCanvasDocument(
+            prev,
+            uploaded.map(({ asset }) => asset),
+            {
+              defaultProvider,
+              position,
+              connectToModelNodeId: options?.connectToModelNodeId,
+              assetLabels: uploaded.map(({ file }) => file.name),
             }
-
-            if (isRunnableTextModel(node.providerId, node.modelId)) {
-              return node;
-            }
-
-            const upstreamNodeIds = [...new Set([...node.upstreamNodeIds, ...sourceNodeIds])];
-            return {
-              ...node,
-              upstreamNodeIds,
-              upstreamAssetIds: buildAssetRefsFromNodes(upstreamNodeIds, [...prev.workflow.nodes, ...sourceNodes]),
-            };
-          });
-
-          const lastSourceNode = sourceNodes[sourceNodes.length - 1];
+          );
+          const lastSourceNodeId = insertedNodeIds[insertedNodeIds.length - 1];
           return {
-            canvasDoc: {
-              ...prev,
-              workflow: {
-                nodes: [...nextNodes, ...sourceNodes],
-              },
-            },
-            selectedNodeIds: lastSourceNode ? [lastSourceNode.id] : [],
+            canvasDoc: nextCanvasDocument,
+            selectedNodeIds: lastSourceNodeId ? [lastSourceNodeId] : [],
             selectedConnection: null,
           };
         });
@@ -3070,72 +3043,30 @@ export function CanvasView({ projectId }: Props) {
     (
       imported: Asset[],
       position?: { x: number; y: number },
-      options?: { connectToModelNodeId?: string }
+      options?: { connectToModelNodeId?: string },
+      assetLabels?: string[]
     ) => {
       if (imported.length === 0) {
         return;
       }
 
-      const defaultProvider = fallbackProviderModel(providers);
+      const defaultProvider = getFallbackProviderModel(providers);
       runUserCanvasMutation((currentState) => {
         const prev = currentState.canvasDoc;
-        const baseX = position?.x ?? Math.round(120 + (prev.workflow.nodes.length % 4) * 260);
-        const baseY = position?.y ?? Math.round(120 + Math.floor(prev.workflow.nodes.length / 4) * 170);
-
-        const sourceNodes = imported.map((asset, index) => {
-          const outputType = outputTypeFromAssetType(asset.type);
-          return {
-            id: uid(),
-            label: getImportedAssetNodeLabel(asset, index),
-            kind: "asset-source" as const,
-            providerId: defaultProvider.providerId,
-            modelId: defaultProvider.modelId,
-            nodeType: "transform" as const,
-            outputType,
-            prompt: "",
-            settings: { source: "upload" },
-            sourceAssetId: asset.id,
-            sourceAssetMimeType: asset.mimeType,
-            sourceJobId: null,
-            sourceOutputIndex: null,
-            processingState: null,
-            promptSourceNodeId: null,
-            upstreamNodeIds: [],
-            upstreamAssetIds: [],
-            x: Math.round(baseX + index * 34),
-            y: Math.round(baseY + index * 26),
-            displayMode: "preview" as const,
-            size: null,
-          };
-        });
-
-        const sourceNodeIds = sourceNodes.map((node) => node.id);
-        const nextNodes = prev.workflow.nodes.map((node) => {
-          if (node.id !== options?.connectToModelNodeId || node.kind !== "model") {
-            return node;
+        const { canvasDocument: nextCanvasDocument, insertedNodeIds } = insertImportedAssetsIntoCanvasDocument(
+          prev,
+          imported,
+          {
+            defaultProvider,
+            position,
+            connectToModelNodeId: options?.connectToModelNodeId,
+            assetLabels,
           }
-
-          if (isRunnableTextModel(node.providerId, node.modelId)) {
-            return node;
-          }
-
-          const upstreamNodeIds = [...new Set([...node.upstreamNodeIds, ...sourceNodeIds])];
-          return {
-            ...node,
-            upstreamNodeIds,
-            upstreamAssetIds: buildAssetRefsFromNodes(upstreamNodeIds, [...prev.workflow.nodes, ...sourceNodes]),
-          };
-        });
-
-        const lastSourceNode = sourceNodes[sourceNodes.length - 1];
+        );
+        const lastSourceNodeId = insertedNodeIds[insertedNodeIds.length - 1];
         return {
-          canvasDoc: {
-            ...prev,
-            workflow: {
-              nodes: [...nextNodes, ...sourceNodes],
-            },
-          },
-          selectedNodeIds: lastSourceNode ? [lastSourceNode.id] : [],
+          canvasDoc: nextCanvasDocument,
+          selectedNodeIds: lastSourceNodeId ? [lastSourceNodeId] : [],
           selectedConnection: null,
         };
       });
@@ -3151,13 +3082,24 @@ export function CanvasView({ projectId }: Props) {
         return;
       }
 
-      const defaultProvider = fallbackProviderModel(providers);
+      const defaultProvider = getFallbackProviderModel(providers);
       runUserCanvasMutation((currentState) => {
         const prev = currentState.canvasDoc;
         const baseX = position?.x ?? Math.round(120 + (prev.workflow.nodes.length % 4) * 260);
         const baseY = position?.y ?? Math.round(120 + Math.floor(prev.workflow.nodes.length / 4) * 170);
 
         const sourceNodes = assets.map((asset, index) => {
+          if (!asset.jobId && asset.origin !== "generated") {
+            return createUploadedAssetSourceNode(asset, index, {
+              defaultProvider,
+              position: {
+                x: baseX + index * 34,
+                y: baseY + index * 26,
+              },
+              label: getAssetPointerNodeLabel(asset, index),
+            });
+          }
+
           const outputType = outputTypeFromAssetType(asset.type);
           const providerId: WorkflowNode["providerId"] =
             asset.job?.providerId === "openai" || asset.job?.providerId === "google-gemini" || asset.job?.providerId === "topaz"
@@ -3174,7 +3116,7 @@ export function CanvasView({ projectId }: Props) {
             outputType,
             prompt: "",
             settings: {
-              source: asset.origin || (asset.jobId ? "generated" : "upload"),
+              source: "generated",
               sourceJobId: asset.jobId || null,
               outputIndex: typeof asset.outputIndex === "number" ? asset.outputIndex : null,
             },
@@ -4299,13 +4241,14 @@ export function CanvasView({ projectId }: Props) {
   const openImportDialog = useCallback(async () => {
     const imported = await importProjectAssets(projectId);
     addImportedAssetsToCanvas(
-      imported,
+      imported.map((item) => item.asset),
       pendingUploadAnchorRef.current
         ? { x: pendingUploadAnchorRef.current.x, y: pendingUploadAnchorRef.current.y }
         : undefined,
       pendingUploadAnchorRef.current?.connectToModelNodeId
         ? { connectToModelNodeId: pendingUploadAnchorRef.current.connectToModelNodeId }
-        : undefined
+        : undefined,
+      imported.map((item) => item.sourceName || "")
     );
     pendingUploadAnchorRef.current = null;
   }, [addImportedAssetsToCanvas, projectId]);

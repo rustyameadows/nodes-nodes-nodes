@@ -1,16 +1,8 @@
-import { isRunnableTopazGigapixelModel, normalizeLegacyTopazModelId } from "@/lib/topaz-gigapixel-settings";
-import {
-  getListNodeSettings,
-  normalizeTextNoteSettings,
-  getTextTemplateNodeSettings,
-} from "@/lib/list-template";
-import {
-  normalizeWorkflowNodeDisplayMode,
-  normalizeWorkflowNodeSize,
-} from "@/lib/canvas-node-presentation";
+import { isRunnableTopazGigapixelModel } from "@/lib/topaz-gigapixel-settings";
 import { normalizeCanvasNode } from "@/lib/canvas-document";
 import type {
   AppEventName,
+  AppEventPayload,
   ImportAssetsToProjectCanvasRequest,
   MenuBarState,
   MenuCommand,
@@ -24,6 +16,7 @@ import {
 import type {
   AssetFilterState,
   CanvasDocument,
+  ImportedAssetResult,
   Job,
   OpenAIImageMode,
   ProviderCredentialKey,
@@ -102,7 +95,8 @@ export async function getJobDebug(projectId: string, jobId: string) {
 
 export async function uploadProjectAsset(projectId: string, file: File) {
   const imported = await importProjectAssets(projectId, [file]);
-  const asset = imported[0];
+  const result = imported[0];
+  const asset = result?.asset;
   if (!asset) {
     throw new Error("No asset was imported.");
   }
@@ -206,7 +200,7 @@ export async function updateAsset(assetId: string, payload: { rating?: number | 
   await window.nodeInterface.updateAsset(assetId, payload);
 }
 
-export async function importProjectAssets(projectId: string, files?: File[]) {
+export async function importProjectAssets(projectId: string, files?: File[]): Promise<ImportedAssetResult[]> {
   if (!files || files.length === 0) {
     return window.nodeInterface.importAssets(projectId);
   }
@@ -269,7 +263,7 @@ export function getPreviewFrameFileUrl(previewFrameId: string, createdAt: string
   return `app-asset://preview/${previewFrameId}?ts=${encodeURIComponent(createdAt)}`;
 }
 
-export function subscribeToAppEvent(eventName: AppEventName, listener: (payload: { event: AppEventName; projectId?: string }) => void) {
+export function subscribeToAppEvent(eventName: AppEventName, listener: (payload: AppEventPayload) => void) {
   return window.nodeInterface.subscribe(eventName, listener);
 }
 

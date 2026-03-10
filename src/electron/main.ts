@@ -717,8 +717,10 @@ function registerIpc() {
     },
     importAssets: async (projectId: string, items?: ImportAssetInput[]) => {
       let imported;
+      let sourceNames: string[] = [];
 
       if (items && items.length > 0) {
+        sourceNames = items.map((item) => item.name);
         imported = await importAssets(
           projectId,
           items.map((item) => ({
@@ -734,11 +736,15 @@ function registerIpc() {
         if (selected.canceled || selected.filePaths.length === 0) {
           return [];
         }
+        sourceNames = selected.filePaths.map((filePath) => path.basename(filePath));
         imported = await importAssetsFromPaths(projectId, selected.filePaths);
       }
 
       broadcastEvent({ event: "assets.changed", projectId });
-      return imported;
+      return imported.map((asset, index) => ({
+        asset,
+        sourceName: sourceNames[index] || null,
+      }));
     },
     importAssetsToProjectCanvas: async (projectId: string, request?: ImportAssetsToProjectCanvasRequest) => {
       const viewportBounds = isUsableWindow(mainWindow) ? mainWindow!.getContentBounds() : null;
@@ -750,7 +756,7 @@ function registerIpc() {
       });
 
       broadcastEvent({ event: "assets.changed", projectId });
-      broadcastEvent({ event: "workspace.changed", projectId });
+      broadcastEvent({ event: "workspace.changed", projectId, reason: "asset-import" });
 
       clearMenuBarState();
 

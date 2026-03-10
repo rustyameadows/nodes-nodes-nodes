@@ -96,6 +96,9 @@
   - centered floating title rails for text, list, model, and template nodes
   - a top-right utility slot for node-specific controls like `Drag me` and `Add column`
   - footer caption/action stacks outside the node bounds so controls do not shift content
+- uploaded image asset nodes behave as first-class uploaded sources:
+  - captions use uploaded-source labeling like `Uploaded Asset`, not fallback provider/model labels
+  - default sizing and locked-aspect resizing use persisted upload width/height metadata when available
 - active node drag uses rail/hotspot affordances instead of visible drag indicators
 - model full mode is a responsive settings box that can collapse from multi-column to one-column as the node width changes
 - list mode is a spreadsheet surface across preview, active, and resized states:
@@ -178,6 +181,8 @@ Controls:
 - App Settings shows per-provider readiness; the Gemini row includes per-project access summary plus a manual `Refresh Access` action
 - Node Library detail keeps the actual playground canvas black and protected while the surrounding rails and wrappers follow the light app surface system
 - browser uploads are replaced by native file dialogs
+- native file dialog imports and mac menu bar imports both create uploaded asset-source nodes through the same shared insertion path
+- when the mac menu bar adds assets to the project that is already open on canvas, the live canvas refreshes in place immediately; the user should not need to leave and re-enter the canvas route
 - asset and preview rendering uses `app-asset://` URLs
 - renderer never sees raw local file paths
 - queue/state updates arrive through preload events and TanStack Query invalidation

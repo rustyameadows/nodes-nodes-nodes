@@ -30,6 +30,7 @@ import {
   resolveImageModelSettings,
   resolveProviderModelSettings,
 } from "@/lib/provider-model-helpers";
+import { getUploadedAssetNodeAspectRatio } from "@/lib/canvas-asset-nodes";
 import styles from "./node-playground-canvas.module.css";
 
 type Props = {
@@ -558,11 +559,13 @@ export function NodePlaygroundCanvas({
         node.kind === "text-template"
           ? buildTextTemplatePreview(node.prompt, connectedListNode ? getListNodeSettings(connectedListNode.settings) : null)
           : null;
+      const uploadedAssetAspectRatio = getUploadedAssetNodeAspectRatio(node) || undefined;
       const presentation = resolveCanvasNodePresentation({
         node,
         activeNodeId,
         fullNodeId: activeFullNodeId,
         nodeId: node.id,
+        aspectRatio: uploadedAssetAspectRatio,
       });
       return {
         ...node,
@@ -570,7 +573,13 @@ export function NodePlaygroundCanvas({
         assetOrigin: node.kind === "asset-source" ? (isGeneratedAssetNode(node) ? "generated" : "uploaded") : null,
         sourceModelNodeId: getSourceModelNodeId(node),
         displayModelName:
-          node.kind === "list" ? "List" : node.kind === "text-template" ? "Template" : displayNameMap[`${node.providerId}:${node.modelId}`] || node.modelId,
+          node.kind === "asset-source"
+            ? null
+            : node.kind === "list"
+              ? "List"
+              : node.kind === "text-template"
+                ? "Template"
+                : displayNameMap[`${node.providerId}:${node.modelId}`] || node.modelId,
         displaySourceLabel:
           node.kind === "asset-source"
             ? isGeneratedAssetNode(node)

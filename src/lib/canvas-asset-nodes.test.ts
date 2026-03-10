@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { defaultCanvasDocument, type Asset, type CanvasDocument, type WorkflowNode } from "@/components/workspace/types";
-import { buildCanvasViewportCenterPosition, insertImportedAssetsIntoCanvasDocument } from "@/lib/canvas-asset-nodes";
+import {
+  buildCanvasViewportCenterPosition,
+  getUploadedAssetNodeAspectRatio,
+  insertImportedAssetsIntoCanvasDocument,
+} from "@/lib/canvas-asset-nodes";
 
 function createAsset(overrides: Partial<Asset>): Asset {
   return {
@@ -102,9 +106,66 @@ test("insertImportedAssetsIntoCanvasDocument adds asset-source nodes and connect
   assert.deepEqual(modelNode.upstreamAssetIds, ["asset-a", "asset-b"]);
   assert.equal(firstAssetNode.label, "Red Fox.png");
   assert.equal(secondAssetNode.label, "Otter.png");
+  assert.deepEqual(firstAssetNode.settings, {
+    source: "upload",
+    assetName: "Red Fox.png",
+    assetWidth: null,
+    assetHeight: null,
+  });
   assert.equal(firstAssetNode.x, 300);
   assert.equal(secondAssetNode.x, 334);
   assert.equal(secondAssetNode.y, 246);
+});
+
+test("insertImportedAssetsIntoCanvasDocument stores uploaded asset metadata for ratio and labeling", () => {
+  const canvasDocument: CanvasDocument = {
+    ...defaultCanvasDocument,
+    workflow: {
+      nodes: [],
+    },
+  };
+
+  const result = insertImportedAssetsIntoCanvasDocument(
+    canvasDocument,
+    [
+      createAsset({
+        id: "asset-landscape",
+        storageRef: "project/fallback-name.png",
+        width: 1600,
+        height: 900,
+      }),
+    ],
+    {
+      defaultProvider: {
+        providerId: "openai",
+        modelId: "gpt-image-1.5",
+      },
+      assetLabels: ["Living Room.png"],
+    }
+  );
+
+  const uploadedNode = result.canvasDocument.workflow.nodes[0];
+  assert.deepEqual(uploadedNode.settings, {
+    source: "upload",
+    assetName: "Living Room.png",
+    assetWidth: 1600,
+    assetHeight: 900,
+  });
+  assert.equal(getUploadedAssetNodeAspectRatio(uploadedNode), 1600 / 900);
+});
+
+test("getUploadedAssetNodeAspectRatio supports legacy uploaded source markers", () => {
+  const ratio = getUploadedAssetNodeAspectRatio({
+    kind: "asset-source",
+    outputType: "image",
+    settings: {
+      source: "uploaded",
+      assetWidth: 800,
+      assetHeight: 1200,
+    },
+  });
+
+  assert.equal(ratio, 800 / 1200);
 });
 
 test("insertImportedAssetsIntoCanvasDocument does not connect text models", () => {

@@ -124,3 +124,8 @@
 - Decision: implement the first copilot/chat surface as a canvas-overlay widget that submits normal text-generation jobs with a first-class `copilot` run origin instead of creating a hidden model node.
 - Rationale: issue `#49` needs a lightweight generate-to-canvas assistant, but a hidden node would blur provenance, duplicate smart-output parsing rules, and make hydration brittle.
 - Consequence: the canvas now has a session-only copilot pill/panel, smart-output descriptors carry stable IDs plus optional generated connections, and the renderer inserts copilot-generated nodes near the viewport center while keeping the existing queue/job pipeline intact.
+
+## 2026-03-09 - Uploaded Asset Nodes Carry Explicit Upload Metadata
+- Decision: treat uploaded canvas asset nodes as first-class uploaded sources with explicit node-local upload metadata instead of deriving their labels and aspect ratios from fallback provider/model fields.
+- Rationale: mac canvas uploads and menu bar imports need one durable insertion path, and uploaded assets should not inherit generated-image labeling or lose their real aspect ratio after reload.
+- Consequence: uploaded asset-source nodes now persist `source: "upload"` plus `assetName`, `assetWidth`, and `assetHeight`, native file dialog imports preserve source names through the desktop bridge, and uploaded image captions/sizing prefer upload metadata over fallback provider/model ids.

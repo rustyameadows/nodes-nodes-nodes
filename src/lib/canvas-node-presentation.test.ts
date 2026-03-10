@@ -108,3 +108,43 @@ test("treats image asset nodes as resizable but aspect-ratio locked", () => {
   assert.equal(doesWorkflowNodeLockAspectRatio({ kind: "asset-source", outputType: "video" }), false);
   assert.equal(getCanvasNodeInteractionPolicy({ kind: "asset-source", outputType: "image" }), "image-asset");
 });
+
+test("uses uploaded landscape image aspect ratio for default asset node sizing", () => {
+  const presentation = resolveCanvasNodePresentation({
+    node: {
+      kind: "asset-source",
+      outputType: "image",
+      displayMode: "preview",
+      size: null,
+    },
+    activeNodeId: null,
+    fullNodeId: null,
+    nodeId: "asset-landscape",
+    aspectRatio: 16 / 9,
+  });
+
+  assert.deepEqual(presentation.size, {
+    width: 260,
+    height: 146,
+  });
+});
+
+test("uses uploaded portrait image aspect ratio for default asset node sizing", () => {
+  const presentation = resolveCanvasNodePresentation({
+    node: {
+      kind: "asset-source",
+      outputType: "image",
+      displayMode: "preview",
+      size: null,
+    },
+    activeNodeId: null,
+    fullNodeId: null,
+    nodeId: "asset-portrait",
+    aspectRatio: 3 / 4,
+  });
+
+  assert.deepEqual(presentation.size, {
+    width: 195,
+    height: 260,
+  });
+});

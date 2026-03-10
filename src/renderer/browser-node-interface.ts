@@ -2,6 +2,7 @@ import {
   defaultCanvasDocument,
   type Asset,
   type CanvasDocument,
+  type ImportedAssetResult,
   type Job,
   type Project,
   type ProviderCredentialKey,
@@ -729,7 +730,7 @@ export function installBrowserNodeInterface() {
     async updateAsset() {
       throw new Error("Browser preview mode does not persist asset curation.");
     },
-    async importAssets(): Promise<Asset[]> {
+    async importAssets(): Promise<ImportedAssetResult[]> {
       return [];
     },
     async importAssetsToProjectCanvas(projectId) {

@@ -23,6 +23,7 @@ import type {
   CanvasSelectionAction,
 } from "@/components/canvas-node-types";
 import { clampWorkflowNodeSize } from "@/lib/canvas-node-presentation";
+import { getUploadedAssetNodeAspectRatio } from "@/lib/canvas-asset-nodes";
 import {
   getCanvasNodeAccentColor,
   getCanvasNodeAccentGlow,
@@ -188,6 +189,11 @@ function getImageFrameAspectRatio(
   nodesById: Record<string, CanvasRenderNode>,
   imageAspectRatios: Record<string, number>
 ) {
+  const uploadedAssetRatio = getUploadedAssetNodeAspectRatio(node);
+  if (uploadedAssetRatio) {
+    return uploadedAssetRatio;
+  }
+
   const measuredRatio = imageAspectRatios[node.id];
   if (measuredRatio) {
     return measuredRatio;
