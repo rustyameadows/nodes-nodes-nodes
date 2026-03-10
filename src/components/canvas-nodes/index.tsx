@@ -429,25 +429,6 @@ function TemplateVariablePillList({
   );
 }
 
-function ImageFooterCaption({
-  node,
-}: {
-  node: CanvasRenderNode;
-}) {
-  const secondaryLabel =
-    (node.assetOrigin === "uploaded" ? node.displaySourceLabel : null) ||
-    node.displayModelName ||
-    node.displaySourceLabel ||
-    (node.assetOrigin === "uploaded" ? "Uploaded image" : `${node.outputType} source`);
-
-  return (
-    <div className={styles.imageFooterCaption}>
-      <span className={styles.imageFooterLabel}>{node.label}</span>
-      <span className={styles.imageFooterBadge}>{secondaryLabel}</span>
-    </div>
-  );
-}
-
 function PreviewModelNode({ node }: { node: CanvasRenderNode }) {
   const secondaryLine = node.promptSourceNodeId
     ? "Prompt note connected"
@@ -999,7 +980,7 @@ export function CanvasNodeContent({
     node.kind === "model"
       ? editor?.selectedModel?.displayName || node.displayModelName || node.modelId
       : node.kind === "asset-source"
-        ? node.displaySourceLabel || node.outputType
+        ? node.displaySourceLabel || node.displayModelName || node.outputType
         : node.kind;
 
   const actionDescriptors = getCanvasNodeActionDescriptors({
@@ -1060,7 +1041,7 @@ export function CanvasNodeContent({
       </button>
     ) : null;
 
-  const footerCaption = isImageAssetNode ? <ImageFooterCaption node={node} /> : null;
+  const footerCaption = null;
 
   const frame = (children?: ReactNode) => (
     <NodeFrame
@@ -1069,7 +1050,6 @@ export function CanvasNodeContent({
       titleLabel={secondaryLabel}
       actionDescriptors={actionDescriptors}
       actionHandlers={actionHandlers}
-      hideTitleRail={isImageAssetNode}
       topUtility={topUtility}
       footerCaption={footerCaption}
       footerAlign={isImageAssetNode ? "start" : "center"}

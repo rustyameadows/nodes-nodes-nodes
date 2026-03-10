@@ -87,7 +87,7 @@
   - template node double-click enters edit mode and then reframes to the expanded editor
   - resized nodes keep their custom size when re-opened
 - active-node behavior by kind:
-  - image asset: the media surface stays visually pure; labels, badges, status, and actions live outside the frame in external chrome
+  - image asset: the media surface stays visually pure; preview shows only the image, and active labels return to the shared top title rail while actions stay outside the frame
   - model: single-select opens the full response-settings layout unless the node is explicitly in `compact`
   - text note: single-select reveals rails but keeps the sticky-note body visually unchanged
   - list: single-select keeps the spreadsheet look and reveals edit affordances in place
@@ -97,7 +97,7 @@
   - a top-right utility slot for node-specific controls like `Drag me` and `Add column`
   - footer caption/action stacks outside the node bounds so controls do not shift content
 - uploaded image asset nodes behave as first-class uploaded sources:
-  - captions use uploaded-source labeling like `Uploaded Asset`, not fallback provider/model labels
+  - active title rails use uploaded-source labeling like `Uploaded Asset`, not fallback provider/model labels
   - default sizing and locked-aspect resizing use persisted upload width/height metadata when available
 - active node drag uses rail/hotspot affordances instead of visible drag indicators
 - model full mode is a responsive settings box that can collapse from multi-column to one-column as the node width changes
