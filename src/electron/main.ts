@@ -1,4 +1,5 @@
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { fork, type ChildProcess } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import { eq } from "drizzle-orm";
@@ -40,8 +41,8 @@ const MENU_COMMAND_CHANNEL = "node-interface:menu-command";
 const MENU_BAR_STATE_CHANNEL = "node-interface:menu-bar-state";
 const MAIN_WINDOW_DEFAULT_WIDTH = 1440;
 const MAIN_WINDOW_DEFAULT_HEIGHT = 960;
-const MENU_BAR_WINDOW_WIDTH = 344;
-const MENU_BAR_WINDOW_HEIGHT = 430;
+const MENU_BAR_WINDOW_WIDTH = 312;
+const MENU_BAR_WINDOW_HEIGHT = 368;
 const MENU_BAR_WINDOW_MARGIN = 8;
 
 let mainWindow: BrowserWindow | null = null;
@@ -94,6 +95,8 @@ function applyAppBranding() {
   process.title = APP_NAME;
 
   if (process.platform === "darwin") {
+    app.setActivationPolicy("regular");
+    app.dock.show();
     app.dock.setIcon(appIcon);
   }
 
@@ -158,6 +161,19 @@ function isUsableWindow(window: BrowserWindow | null) {
 
 function suppressMenuBarBlur(durationMs = 220) {
   ignoreMenuBarBlurUntil = Date.now() + durationMs;
+}
+
+function activateAppProcess() {
+  if (process.platform !== "darwin") {
+    return;
+  }
+
+  app.setActivationPolicy("regular");
+  app.dock?.show();
+  app.show();
+  app.focus({
+    steal: true,
+  });
 }
 
 function getMenuTargetWindow() {
@@ -268,9 +284,8 @@ async function loadRendererRoute(window: BrowserWindow, route: string) {
     return;
   }
 
-  await window.loadFile(path.join(__dirname, "../renderer/index.html"), {
-    hash: normalizedRoute,
-  });
+  const rendererUrl = pathToFileURL(path.join(__dirname, "../renderer/index.html")).toString();
+  await window.loadURL(`${rendererUrl}#${normalizedRoute}`);
 }
 
 async function createMainWindow() {
@@ -401,6 +416,7 @@ async function ensureMenuBarWindow() {
     skipTaskbar: true,
     alwaysOnTop: true,
     hasShadow: true,
+    roundedCorners: false,
     backgroundColor: "#101418",
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
@@ -410,9 +426,7 @@ async function ensureMenuBarWindow() {
   });
   trayWindow = window;
   window.setAlwaysOnTop(true, "pop-up-menu");
-  window.setVisibleOnAllWorkspaces(true, {
-    visibleOnFullScreen: true,
-  });
+  window.setHiddenInMissionControl(true);
 
   window.on("blur", () => {
     if (Date.now() < ignoreMenuBarBlurUntil) {
@@ -502,8 +516,12 @@ async function showAppWindow(target?: ShowAppTarget) {
     command = { type: "app.home" };
   }
 
+  hideMenuBarWindow();
+  const window = await ensureMainWindow(command);
+  activateAppProcess();
+  window.moveTop();
+  window.focus();
   await refreshApplicationMenu();
-  await ensureMainWindow(command);
 }
 
 async function handleAssetProtocol(request: Request) {

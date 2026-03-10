@@ -191,7 +191,10 @@ Copilot run path:
 - `note` hydrates one generated text note.
 - `list`, `template`, and `smart` override provider-native output formatting with app-owned strict structured output plus system instructions.
 - OpenAI still supports its extra provider-specific controls (`verbosity`, `reasoningEffort`, optional note output formats).
-- Gemini deliberately exposes only the shared v1 controls: `textOutputTarget` and `maxOutputTokens`.
+- Gemini resolves settings through model-family profiles:
+  - shared text controls: `textOutputTarget`, `maxOutputTokens`, `temperature`, `topP`, `topK`
+  - Gemini 3 flash-family models add `thinkingLevel`
+  - Gemini 2.5-family models add `thinkingBudget`
 - Worker-side parsing validates those structured responses into generated-node descriptors before they reach the renderer.
 - Generated descriptors now include stable response-local `descriptorId` values plus a `runOrigin` of `canvas-node` or `copilot`.
 - `smart` may also return generated connection descriptors keyed by those descriptor IDs.
@@ -200,6 +203,11 @@ Copilot run path:
 - Pending generated-output placeholders/previews may exist while a job is unresolved, but once the final child nodes are inserted the polling loop no longer mutates them.
 - The canvas document stores `generatedOutputReceiptKeys` so completed outputs are materialized once, deleted generated nodes do not return, and reruns append fresh children instead of replacing older ones.
 - `smart` can now spawn multiple nodes plus optional valid wiring in one pass; explicit `list` and `template` targets may still show deterministic placeholders while queued/running.
+- Gemini image settings are also model-aware:
+  - shared Gemini image controls: `temperature`, `aspectRatio`, `maxOutputTokens`, `topP`, `stopSequences`
+  - `gemini-3-pro-image-preview` also exposes `imageSize`
+  - `gemini-3.1-flash-image-preview` also exposes `outputMode`, `imageSize`, and `thinkingLevel`
+  - OpenAI-style image settings are pruned from Gemini image nodes instead of being carried through as inert payload noise
 - The smart-output prompt builder derives allowed node kinds and payload summaries from the node catalog instead of hardcoded node descriptions.
 
 ## Queue Recovery

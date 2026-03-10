@@ -146,6 +146,13 @@
 - running jobs show queue state in the queue view and on generated output nodes
 - OpenAI image jobs can show persisted preview frames before final completion
 - Gemini image jobs do not stream preview frames in v1
+- Gemini model nodes surface model-aware settings in the same canvas and Node Library editors used by other runnable providers:
+  - shared text controls: `Output Target`, `Max Output Tokens`, `Temperature`, `Top P`, `Top K`
+  - Gemini 3 flash-family models add `Thinking Level`
+  - Gemini 2.5-family models add `Thinking Budget`
+  - Gemini image models add `Temperature`, `Aspect Ratio`, `Output Length`, `Top P`, and `Stop Sequences`
+  - `Nano Banana Pro` also adds `Resolution`
+  - `Nano Banana 2` also adds `Output Format`, `Resolution`, and `Thinking Level`
 - successful image jobs spawn final output nodes once from the completed job output
 - successful OpenAI and Gemini text jobs hydrate generated nodes by output target:
   - `Text Note` -> generated text note

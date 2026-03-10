@@ -136,6 +136,11 @@ The packaged app can be fully configured from Finder without editing repo env fi
 - parse failure still marks the job successful and falls back to one generated `text-note`
 - persist returned text plus parsed generated-node descriptors in `job_attempts.provider_response`
 - do not create asset rows or asset files
+- Gemini text settings are model-aware instead of globally minimal:
+  - shared Gemini text controls: `textOutputTarget`, `maxOutputTokens`, `temperature`, `topP`, `topK`
+  - Gemini 3 flash-family models also expose `thinkingLevel`
+  - Gemini 2.5-family models also expose `thinkingBudget`
+- Gemini intentionally does not expose broader text knobs like `candidateCount`, penalties, `seed`, `stopSequences`, `responseLogprobs`, `logprobs`, `includeThoughts`, or `mediaResolution` in this pass
 
 ## Gemini Image Jobs
 - support prompt-only `generate` and single-image `edit`
@@ -143,6 +148,12 @@ The packaged app can be fully configured from Finder without editing repo env fi
 - accept PNG, JPEG, and WebP inputs
 - produce one final output per run in v1
 - do not stream preview frames in this pass
+- shared Gemini image controls: `temperature`, `aspectRatio`, `maxOutputTokens`, `topP`, `stopSequences`
+- `gemini-2.5-flash-image` exposes only the shared Gemini image controls
+- `gemini-3-pro-image-preview` also exposes `imageSize` (`1K`, `2K`, `4K`)
+- `gemini-3.1-flash-image-preview` also exposes `outputMode` (`Images & Text` vs `Images Only`), `imageSize` (`512`, `1K`, `2K`, `4K`), and `thinkingLevel`
+- Gemini image nodes intentionally do not expose OpenAI-style image knobs like `outputFormat`, `quality`, `size`, `background`, `moderation`, `inputFidelity`, or multi-image output counts
+- Gemini intentionally does not expose people-generation toggles, image `seed`, or tool toggles in this pass
 
 ## Topaz Jobs
 - run as single-image transforms

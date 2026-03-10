@@ -8,10 +8,10 @@ import {
 import {
   GEMINI_IMAGE_INPUT_MIME_TYPES,
   GEMINI_MAX_INPUT_IMAGES,
+  buildGeminiImageGenerateConfig,
   getGeminiImageDefaultSettings,
   getGeminiImageParameterDefinitions,
   isRunnableGeminiImageModel,
-  resolveGeminiImageSettings,
 } from "@/lib/gemini-image-settings";
 import {
   buildGeminiTextRequestConfig,
@@ -207,6 +207,7 @@ function createOpenAiTextCapabilities(modelId: string) {
 }
 
 function createGeminiImageCapabilities(
+  modelId: string,
   billingAvailability: ProviderModelCapabilities["billingAvailability"]
 ) {
   return buildCapabilities({
@@ -225,12 +226,13 @@ function createGeminiImageCapabilities(
     executionModes: ["generate", "edit"],
     acceptedInputMimeTypes: GEMINI_IMAGE_INPUT_MIME_TYPES,
     maxInputImages: GEMINI_MAX_INPUT_IMAGES,
-    parameters: getGeminiImageParameterDefinitions(),
-    defaults: getGeminiImageDefaultSettings(),
+    parameters: getGeminiImageParameterDefinitions(modelId),
+    defaults: getGeminiImageDefaultSettings(modelId),
   });
 }
 
 function createGeminiTextCapabilities(
+  modelId: string,
   billingAvailability: ProviderModelCapabilities["billingAvailability"]
 ) {
   return buildCapabilities({
@@ -247,8 +249,8 @@ function createGeminiTextCapabilities(
     requirements: [buildEnvRequirement("GOOGLE_API_KEY", "Google Gemini API key")],
     promptMode: "required",
     executionModes: ["generate"],
-    parameters: getGeminiTextParameterDefinitions(),
-    defaults: getGeminiTextDefaultSettings(),
+    parameters: getGeminiTextParameterDefinitions(modelId),
+    defaults: getGeminiTextDefaultSettings(modelId),
   });
 }
 
@@ -341,14 +343,14 @@ function buildProviderCatalog(): Record<ProviderId, ProviderModelDescriptor[]> {
     parameters: [],
   });
 
-  const nanoBananaCapabilities = createGeminiImageCapabilities("paid_only");
-  const nanoBananaProCapabilities = createGeminiImageCapabilities("paid_only");
-  const nanoBanana2Capabilities = createGeminiImageCapabilities("paid_only");
-  const gemini31FlashLiteCapabilities = createGeminiTextCapabilities("free_and_paid");
-  const gemini3FlashCapabilities = createGeminiTextCapabilities("free_and_paid");
-  const gemini25ProCapabilities = createGeminiTextCapabilities("free_and_paid");
-  const gemini25FlashCapabilities = createGeminiTextCapabilities("free_and_paid");
-  const gemini25FlashLiteCapabilities = createGeminiTextCapabilities("free_and_paid");
+  const nanoBananaCapabilities = createGeminiImageCapabilities("gemini-2.5-flash-image", "paid_only");
+  const nanoBananaProCapabilities = createGeminiImageCapabilities("gemini-3-pro-image-preview", "paid_only");
+  const nanoBanana2Capabilities = createGeminiImageCapabilities("gemini-3.1-flash-image-preview", "paid_only");
+  const gemini31FlashLiteCapabilities = createGeminiTextCapabilities("gemini-3.1-flash-lite-preview", "free_and_paid");
+  const gemini3FlashCapabilities = createGeminiTextCapabilities("gemini-3-flash-preview", "free_and_paid");
+  const gemini25ProCapabilities = createGeminiTextCapabilities("gemini-2.5-pro", "free_and_paid");
+  const gemini25FlashCapabilities = createGeminiTextCapabilities("gemini-2.5-flash", "free_and_paid");
+  const gemini25FlashLiteCapabilities = createGeminiTextCapabilities("gemini-2.5-flash-lite", "free_and_paid");
 
   return {
     openai: [
@@ -893,7 +895,7 @@ async function submitGeminiText(input: ProviderJobInput): Promise<NormalizedOutp
     throw createProviderError("INVALID_INPUT", "Disconnect image inputs before running Gemini text generation.");
   }
 
-  const resolvedSettings = resolveGeminiTextSettings(input.payload.settings);
+  const resolvedSettings = resolveGeminiTextSettings(input.payload.settings, input.modelId);
   if (resolvedSettings.validationError) {
     throw createProviderError("INVALID_INPUT", resolvedSettings.validationError);
   }
@@ -904,10 +906,7 @@ async function submitGeminiText(input: ProviderJobInput): Promise<NormalizedOutp
     const response = await ai.models.generateContent({
       model: input.modelId,
       contents: prompt,
-      config: {
-        ...requestConfig,
-        ...(resolvedSettings.maxOutputTokens !== null ? { maxOutputTokens: resolvedSettings.maxOutputTokens } : {}),
-      },
+      config: requestConfig,
     });
     const text = extractGoogleGeminiText(response);
 
@@ -982,16 +981,13 @@ async function submitGeminiImage(input: ProviderJobInput): Promise<NormalizedOut
     );
   }
 
-  resolveGeminiImageSettings(input.payload.settings);
-
   try {
     const ai = await getGoogleGeminiClient();
+    const { config } = buildGeminiImageGenerateConfig(input.payload.settings, input.modelId);
     const response = await ai.models.generateContent({
       model: input.modelId,
       contents: buildGoogleGeminiContents(prompt, inputAssets),
-      config: {
-        responseModalities: ["IMAGE"],
-      },
+      config,
     });
     const imageParts = extractGoogleGeminiImageParts(response);
 

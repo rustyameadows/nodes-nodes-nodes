@@ -24,6 +24,7 @@ Support multiple local projects with strict isolation and exactly one open works
 - App home shows a create-project panel, active project cards, and a separate archived-project section when archived projects exist.
 - The native macOS `Project` menu mirrors the in-canvas `Menu` pill for view switching and project switching.
 - `Home` is available from the in-canvas `Menu` pill, app settings, and the native macOS `Project` menu.
+- Menu bar companion actions keep the app in regular macOS foreground-app mode and explicitly reactivate the desktop app before focusing the main project window, so the system menu switches back to Nodes Nodes Nodes immediately after leaving the tray popover.
 - Native project switching preserves the current workspace view when that view is project-scoped.
 
 ## Persisted State

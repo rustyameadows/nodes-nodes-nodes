@@ -66,6 +66,20 @@ type UploadedAssetNodeSettings = {
   assetHeight?: number | null;
 };
 
+type GeminiNodeSettings = {
+  textOutputTarget?: "note" | "list" | "template" | "smart";
+  maxOutputTokens?: number | null;
+  temperature?: number | null;
+  topP?: number | null;
+  topK?: number | null;
+  stopSequences?: string | null;
+  thinkingLevel?: "minimal" | "low" | "medium" | "high";
+  thinkingBudget?: number | null;
+  outputMode?: "images_and_text" | "images_only";
+  aspectRatio?: "auto" | "1:1" | "2:3" | "3:2" | "3:4" | "4:3" | "4:5" | "5:4" | "9:16" | "16:9" | "21:9";
+  imageSize?: "512" | "1K" | "2K" | "4K";
+};
+
 type Job = {
   id: string;
   projectId: string;
@@ -176,6 +190,17 @@ type JobPreviewFrame = {
   - `accessMessage`
   - `lastCheckedAt`
 - for Gemini, those fields describe Google-project access for the saved `GOOGLE_API_KEY`, not a user-selected tier flag
+
+## Provider-Specific Node Settings
+- model node settings still live inside `canvases.canvas_document`
+- Gemini model nodes may now persist:
+  - shared text settings: `textOutputTarget`, `maxOutputTokens`, `temperature`, `topP`, `topK`
+  - Gemini 3 flash-family thinking: `thinkingLevel`
+  - Gemini 2.5-family thinking: `thinkingBudget`
+  - Gemini image settings: `temperature`, `aspectRatio`, `maxOutputTokens`, `topP`, `stopSequences`
+  - Gemini image models that expose them may also persist `imageSize`
+  - `gemini-3.1-flash-image-preview` may also persist `thinkingLevel` and `outputMode`
+- unsupported Gemini keys are pruned when a node switches to a model that does not support them
 
 ## Removed Tables
 - `canvas_nodes`

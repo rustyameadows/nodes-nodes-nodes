@@ -29,4 +29,24 @@ test("registers the Gemini launch catalog with stable model ids", () => {
   assert.equal(byId.get("gemini-3.1-flash-image-preview")?.capabilities.billingAvailability, "paid_only");
   assert.equal(byId.get("gemini-2.5-pro")?.capabilities.billingAvailability, "free_and_paid");
   assert.equal(byId.get("gemini-2.5-flash")?.capabilities.accessStatus, "unknown");
+  assert.deepEqual(
+    byId.get("gemini-3-flash-preview")?.capabilities.parameters.map((parameter) => parameter.key),
+    ["maxOutputTokens", "textOutputTarget", "temperature", "topP", "topK", "thinkingLevel"]
+  );
+  assert.deepEqual(
+    byId.get("gemini-2.5-pro")?.capabilities.parameters.map((parameter) => parameter.key),
+    ["maxOutputTokens", "textOutputTarget", "temperature", "topP", "topK", "thinkingBudget"]
+  );
+  assert.deepEqual(
+    byId.get("gemini-3-pro-image-preview")?.capabilities.parameters.map((parameter) => parameter.key),
+    ["temperature", "aspectRatio", "imageSize", "maxOutputTokens", "topP", "stopSequences"]
+  );
+  assert.deepEqual(
+    byId.get("gemini-2.5-flash-image")?.capabilities.parameters.map((parameter) => parameter.key),
+    ["temperature", "aspectRatio", "maxOutputTokens", "topP", "stopSequences"]
+  );
+  assert.deepEqual(
+    byId.get("gemini-3.1-flash-image-preview")?.capabilities.parameters.map((parameter) => parameter.key),
+    ["outputMode", "temperature", "aspectRatio", "imageSize", "thinkingLevel", "maxOutputTokens", "topP", "stopSequences"]
+  );
 });

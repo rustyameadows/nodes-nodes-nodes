@@ -129,3 +129,8 @@
 - Decision: treat uploaded canvas asset nodes as first-class uploaded sources with explicit node-local upload metadata instead of deriving their labels and aspect ratios from fallback provider/model fields.
 - Rationale: mac canvas uploads and menu bar imports need one durable insertion path, and uploaded assets should not inherit generated-image labeling or lose their real aspect ratio after reload.
 - Consequence: uploaded asset-source nodes now persist `source: "uploaded"` plus `assetName`, `assetWidth`, and `assetHeight`, native file dialog imports preserve source names through the desktop bridge, uploaded image captions/sizing prefer uploaded metadata over fallback provider/model ids, and the renderer still accepts legacy `source: "upload"` nodes for backwards compatibility.
+
+## 2026-03-10 - Gemini Uses Curated Model-Aware Settings
+- Decision: replace the old globally minimal Gemini settings surface with model-aware profiles that expose a curated subset of official Gemini controls.
+- Rationale: Google’s current Gemini API docs and the installed SDK already support meaningful text and image configuration, and the app’s provider-parameter plumbing can render those controls once the registry advertises them honestly.
+- Consequence: Gemini text nodes now expose shared sampling plus family-specific thinking controls, Gemini image nodes expose shared generation controls plus model-specific `imageSize`, `thinkingLevel`, and `outputMode` where supported, the browser preview registry stays aligned with the runtime registry, and broader Gemini knobs remain intentionally omitted until the canvas UX has a clearer need for them.

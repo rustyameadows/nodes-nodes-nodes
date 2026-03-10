@@ -221,7 +221,14 @@ export function MenuBarView() {
             </p>
           </div>
           {isDropMode ? (
-            <Button surface="canvas-overlay" density="compact" variant="ghost" size="sm" onClick={() => void handleDismissDropMode()}>
+            <Button
+              surface="canvas-overlay"
+              density="compact"
+              variant="ghost"
+              size="sm"
+              className={styles.actionButton}
+              onClick={() => void handleDismissDropMode()}
+            >
               Cancel
             </Button>
           ) : null}
@@ -239,12 +246,19 @@ export function MenuBarView() {
                   surface="canvas-overlay"
                   density="compact"
                   variant="primary"
+                  className={styles.actionButton}
                   onClick={() => void handleCreateProjectInApp()}
                   disabled={busyProjectId === "new-project"}
                 >
                   New Project in App
                 </Button>
-                <Button surface="canvas-overlay" density="compact" variant="secondary" onClick={() => void handleOpenApp()}>
+                <Button
+                  surface="canvas-overlay"
+                  density="compact"
+                  variant="secondary"
+                  className={styles.actionButton}
+                  onClick={() => void handleOpenApp()}
+                >
                   Open App
                 </Button>
               </div>
@@ -274,7 +288,7 @@ export function MenuBarView() {
                     </span>
                   </span>
                   {project.workspaceState?.isOpen ? (
-                    <Badge surface="canvas-overlay" density="compact" variant="accent">
+                    <Badge surface="canvas-overlay" density="compact" variant="accent" className={styles.projectBadge}>
                       Open
                     </Badge>
                   ) : null}
@@ -286,7 +300,7 @@ export function MenuBarView() {
 
         {isDropMode && menuBarState.stagedDropFiles.length > 0 ? (
           <div className={styles.helperRow}>
-            <Badge surface="canvas-overlay" density="compact" variant="info">
+            <Badge surface="canvas-overlay" density="compact" variant="info" className={styles.projectBadge}>
               {menuBarState.stagedDropFiles.length} staged
             </Badge>
             <span>
@@ -300,10 +314,22 @@ export function MenuBarView() {
         {errorMessage ? <div className={styles.error}>{errorMessage}</div> : null}
 
         <div className={styles.footer}>
-          <Button surface="canvas-overlay" density="compact" variant="secondary" onClick={() => void handleOpenApp()}>
+          <Button
+            surface="canvas-overlay"
+            density="compact"
+            variant="secondary"
+            className={styles.actionButton}
+            onClick={() => void handleOpenApp()}
+          >
             Open App
           </Button>
-          <Button surface="canvas-overlay" density="compact" variant="ghost" onClick={() => void quitApp()}>
+          <Button
+            surface="canvas-overlay"
+            density="compact"
+            variant="ghost"
+            className={styles.actionButton}
+            onClick={() => void quitApp()}
+          >
             Quit
           </Button>
         </div>

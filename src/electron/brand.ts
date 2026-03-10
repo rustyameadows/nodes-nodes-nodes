@@ -1,6 +1,34 @@
+import path from "node:path";
+import { existsSync } from "node:fs";
 import { nativeImage } from "electron";
 
+function loadBrandedAppIcon() {
+  const candidatePaths = [
+    path.join(process.resourcesPath, "icon.icns"),
+    path.resolve(__dirname, "../../build-resources/icon.png"),
+    path.resolve(process.cwd(), "build-resources/icon.png"),
+  ];
+
+  for (const candidatePath of candidatePaths) {
+    if (!existsSync(candidatePath)) {
+      continue;
+    }
+
+    const image = nativeImage.createFromPath(candidatePath);
+    if (!image.isEmpty()) {
+      return image;
+    }
+  }
+
+  return null;
+}
+
 export function createAppIcon() {
+  const branded = loadBrandedAppIcon();
+  if (branded) {
+    return branded;
+  }
+
   const svg = `
     <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
       <rect width="512" height="512" rx="0" fill="#ff4fa2" />

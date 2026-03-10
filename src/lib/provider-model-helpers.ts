@@ -54,7 +54,7 @@ export function resolveTextModelSettings(
   }
 
   if (isRunnableGeminiTextModel(providerId, modelId)) {
-    return resolveGeminiTextSettings(rawSettings);
+    return resolveGeminiTextSettings(rawSettings, modelId);
   }
 
   return null;
@@ -72,7 +72,7 @@ export function resolveImageModelSettings(
 
   if (isRunnableGeminiImageModel(providerId, modelId)) {
     void executionMode;
-    return resolveGeminiImageSettings(rawSettings);
+    return resolveGeminiImageSettings(rawSettings, modelId);
   }
 
   return null;
@@ -106,13 +106,13 @@ export function getProviderModelDefaultSettings(providerId: string | null | unde
     return getOpenAiImageDefaultSettings(modelId);
   }
   if (isRunnableGeminiImageModel(providerId, modelId)) {
-    return getGeminiImageDefaultSettings();
+    return getGeminiImageDefaultSettings(modelId);
   }
   if (isRunnableOpenAiTextModel(providerId, modelId)) {
     return getOpenAiTextDefaultSettings(modelId);
   }
   if (isRunnableGeminiTextModel(providerId, modelId)) {
-    return getGeminiTextDefaultSettings();
+    return getGeminiTextDefaultSettings(modelId);
   }
   if (isRunnableTopazGigapixelModel(providerId, modelId)) {
     return getTopazGigapixelDefaultSettings(modelId);
@@ -129,13 +129,13 @@ export function getProviderModelParameterDefinitions(
     return getOpenAiImageParameterDefinitions(modelId);
   }
   if (isRunnableGeminiImageModel(providerId, modelId)) {
-    return getGeminiImageParameterDefinitions();
+    return getGeminiImageParameterDefinitions(modelId);
   }
   if (isRunnableOpenAiTextModel(providerId, modelId)) {
     return getOpenAiTextParameterDefinitions(modelId);
   }
   if (isRunnableGeminiTextModel(providerId, modelId)) {
-    return getGeminiTextParameterDefinitions();
+    return getGeminiTextParameterDefinitions(modelId);
   }
   if (isRunnableTopazGigapixelModel(providerId, modelId)) {
     return getTopazGigapixelParameterDefinitions(modelId);

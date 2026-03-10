@@ -10,6 +10,7 @@
   min-width: 320px;
   max-width: 360px;
   gap: var(--ds-space-4);
+  border-radius: 0;
 }
 
 .header {
@@ -47,7 +48,7 @@
 .projectButton {
   width: 100%;
   border: 1px solid var(--ds-border-subtle);
-  border-radius: var(--ds-radius-lg);
+  border-radius: 0;
   background: color-mix(in srgb, var(--ds-surface-raised) 92%, transparent);
   color: var(--ds-text-primary);
   padding: 11px 12px;
@@ -116,6 +117,14 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--ds-space-2);
+}
+
+.actionButton {
+  border-radius: 0;
+}
+
+.projectBadge {
+  border-radius: 0;
 }
 
 .emptyActions {
