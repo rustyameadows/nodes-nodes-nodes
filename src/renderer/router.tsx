@@ -1,8 +1,9 @@
-import { Navigate, Outlet, createHashHistory, createRootRoute, createRoute, createRouter } from "@tanstack/react-router";
+import { Navigate, Outlet, createHashHistory, createRootRoute, createRoute, createRouter, useLocation } from "@tanstack/react-router";
 import { AssetDetailView } from "@/components/workspace/views/asset-detail-view";
 import { AppSettingsView } from "@/components/workspace/views/app-settings-view";
 import { AssetsView } from "@/components/workspace/views/assets-view";
 import { CanvasView } from "@/components/workspace/views/canvas-view";
+import { MenuBarView } from "@/components/workspace/views/menu-bar-view";
 import { NodeLibraryDetailView } from "@/components/workspace/views/node-library-detail-view";
 import { NodeLibraryView } from "@/components/workspace/views/node-library-view";
 import { RootRouter } from "@/components/workspace/root-router";
@@ -11,9 +12,11 @@ import { QueueView } from "@/components/workspace/views/queue-view";
 import { NativeMenuBridge } from "@/renderer/native-menu-bridge";
 
 function RootLayout() {
+  const location = useLocation();
+  const isMenuBarRoute = location.pathname === "/menu-bar";
   return (
     <>
-      <NativeMenuBridge />
+      {isMenuBarRoute ? null : <NativeMenuBridge />}
       <Outlet />
     </>
   );
@@ -48,6 +51,12 @@ const nodeLibraryDetailRoute = createRoute({
     const { nodeId } = nodeLibraryDetailRoute.useParams();
     return <NodeLibraryDetailView nodeId={nodeId} />;
   },
+});
+
+const menuBarRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/menu-bar",
+  component: MenuBarView,
 });
 
 const projectCanvasRoute = createRoute({
@@ -109,6 +118,7 @@ const routeTree = rootRoute.addChildren([
   appSettingsRoute,
   nodeLibraryRoute,
   nodeLibraryDetailRoute,
+  menuBarRoute,
   projectCanvasRoute,
   projectAssetsRoute,
   projectAssetDetailRoute,

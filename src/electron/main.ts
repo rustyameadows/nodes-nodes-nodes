@@ -2,10 +2,19 @@ import path from "node:path";
 import { fork, type ChildProcess } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import { eq } from "drizzle-orm";
-import { app, BrowserWindow, dialog, ipcMain, Menu, protocol, type MenuItemConstructorOptions } from "electron";
-import type { AppEventPayload, CreateJobRequest, ImportAssetInput, MenuCommand, MenuContext } from "@/lib/ipc-contract";
+import { app, BrowserWindow, dialog, ipcMain, Menu, protocol, screen, Tray, type MenuItemConstructorOptions } from "electron";
+import type {
+  AppEventPayload,
+  CreateJobRequest,
+  ImportAssetInput,
+  ImportAssetsToProjectCanvasRequest,
+  MenuBarState,
+  MenuCommand,
+  MenuContext,
+  ShowAppTarget,
+} from "@/lib/ipc-contract";
 import type { AssetFilterState } from "@/components/workspace/types";
-import { createAppIcon } from "@/electron/brand";
+import { createAppIcon, createMenuBarIcon } from "@/electron/brand";
 import { buildNativeMenuTemplate, type NativeMenuItemDescriptor } from "@/electron/native-menu";
 import { APP_ID, APP_NAME, APP_USER_DATA_DIRNAME } from "@/lib/runtime/app-meta";
 import { getDb } from "@/lib/db/client";
@@ -13,6 +22,7 @@ import { jobPreviewFrames } from "@/lib/db/schema";
 import { readAssetContent } from "@/lib/storage/local-storage";
 import { getAsset, importAssets, importAssetsFromPaths, listAssets, readAssetFile, updateAsset } from "@/lib/services/assets";
 import { createJob, getJobDebug, listJobs } from "@/lib/services/jobs";
+import { importAssetsToProjectCanvas } from "@/lib/services/project-canvas-assets";
 import { createProject, deleteProject, listProjects, openProject, updateProject } from "@/lib/services/projects";
 import {
   clearProviderCredential,
@@ -27,11 +37,23 @@ import { getWorkspaceSnapshot, saveWorkspaceSnapshot } from "@/lib/services/work
 const APP_EVENT_CHANNEL = "node-interface:event";
 const APP_INVOKE_CHANNEL = "node-interface:invoke";
 const MENU_COMMAND_CHANNEL = "node-interface:menu-command";
+const MENU_BAR_STATE_CHANNEL = "node-interface:menu-bar-state";
+const MAIN_WINDOW_DEFAULT_WIDTH = 1440;
+const MAIN_WINDOW_DEFAULT_HEIGHT = 960;
+const MENU_BAR_WINDOW_WIDTH = 344;
+const MENU_BAR_WINDOW_HEIGHT = 430;
+const MENU_BAR_WINDOW_MARGIN = 8;
 
 let mainWindow: BrowserWindow | null = null;
+let trayWindow: BrowserWindow | null = null;
+let menuBarTray: Tray | null = null;
 let workerProcess: ChildProcess | null = null;
 let isQuitting = false;
+let ignoreMenuBarBlurUntil = 0;
+let menuBarTrayUsesTemplateIcon = false;
+const MENU_BAR_TITLE = "Nodes";
 const menuContextByWebContentsId = new Map<number, MenuContext>();
+const pendingMenuCommandsByWebContentsId = new Map<number, MenuCommand[]>();
 const defaultMenuContext: MenuContext = {
   projectId: null,
   view: null,
@@ -41,6 +63,10 @@ const defaultMenuContext: MenuContext = {
   canDuplicateSelected: false,
   canUndo: false,
   canRedo: false,
+};
+const menuBarInternalState = {
+  mode: "default" as MenuBarState["mode"],
+  stagedDropFilePaths: [] as string[],
 };
 
 function configureStableUserDataPath() {
@@ -90,13 +116,53 @@ function broadcastEvent(payload: AppEventPayload) {
   }
 }
 
+function serializeMenuBarState(): MenuBarState {
+  return {
+    mode: menuBarInternalState.mode,
+    stagedDropFiles: menuBarInternalState.stagedDropFilePaths.map((filePath) => ({
+      name: path.basename(filePath),
+    })),
+  };
+}
+
+function broadcastMenuBarState() {
+  const payload = serializeMenuBarState();
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (window.isDestroyed() || window.webContents.isDestroyed()) {
+      continue;
+    }
+
+    window.webContents.send(MENU_BAR_STATE_CHANNEL, payload);
+  }
+}
+
+function setMenuBarState(next: Partial<typeof menuBarInternalState>) {
+  if (next.mode) {
+    menuBarInternalState.mode = next.mode;
+  }
+  if (next.stagedDropFilePaths) {
+    menuBarInternalState.stagedDropFilePaths = [...next.stagedDropFilePaths];
+  }
+  broadcastMenuBarState();
+}
+
+function clearMenuBarState() {
+  menuBarInternalState.mode = "default";
+  menuBarInternalState.stagedDropFilePaths = [];
+  broadcastMenuBarState();
+}
+
 function isUsableWindow(window: BrowserWindow | null) {
   return Boolean(window && !window.isDestroyed() && !window.webContents.isDestroyed());
 }
 
+function suppressMenuBarBlur(durationMs = 220) {
+  ignoreMenuBarBlurUntil = Date.now() + durationMs;
+}
+
 function getMenuTargetWindow() {
   const focusedWindow = BrowserWindow.getFocusedWindow();
-  if (isUsableWindow(focusedWindow)) {
+  if (isUsableWindow(focusedWindow) && focusedWindow !== trayWindow) {
     return focusedWindow;
   }
 
@@ -104,7 +170,25 @@ function getMenuTargetWindow() {
     return mainWindow;
   }
 
-  return BrowserWindow.getAllWindows().find((window) => isUsableWindow(window)) || null;
+  return BrowserWindow.getAllWindows().find((window) => isUsableWindow(window) && window !== trayWindow) || null;
+}
+
+function queuePendingMenuCommand(window: BrowserWindow, command: MenuCommand) {
+  const existing = pendingMenuCommandsByWebContentsId.get(window.webContents.id) || [];
+  existing.push(command);
+  pendingMenuCommandsByWebContentsId.set(window.webContents.id, existing);
+}
+
+function flushPendingMenuCommandsForWindow(window: BrowserWindow) {
+  const pending = pendingMenuCommandsByWebContentsId.get(window.webContents.id) || [];
+  if (pending.length === 0) {
+    return;
+  }
+
+  pendingMenuCommandsByWebContentsId.delete(window.webContents.id);
+  for (const command of pending) {
+    emitMenuCommand(command, window);
+  }
 }
 
 function emitMenuCommand(command: MenuCommand, window = getMenuTargetWindow()) {
@@ -176,12 +260,25 @@ async function refreshApplicationMenu() {
   }
 }
 
-async function createWindow() {
+async function loadRendererRoute(window: BrowserWindow, route: string) {
+  const normalizedRoute = route.startsWith("/") ? route : `/${route}`;
+
+  if (process.env.NODE_ENV === "development") {
+    await window.loadURL(`${process.env.ELECTRON_RENDERER_URL || "http://localhost:5173"}#${normalizedRoute}`);
+    return;
+  }
+
+  await window.loadFile(path.join(__dirname, "../renderer/index.html"), {
+    hash: normalizedRoute,
+  });
+}
+
+async function createMainWindow() {
   const appIcon = createAppIcon();
   const window = new BrowserWindow({
     title: APP_NAME,
-    width: 1440,
-    height: 960,
+    width: MAIN_WINDOW_DEFAULT_WIDTH,
+    height: MAIN_WINDOW_DEFAULT_HEIGHT,
     minWidth: 1100,
     minHeight: 720,
     backgroundColor: "#060606",
@@ -201,6 +298,7 @@ async function createWindow() {
 
   window.on("closed", () => {
     menuContextByWebContentsId.delete(webContentsId);
+    pendingMenuCommandsByWebContentsId.delete(webContentsId);
     if (mainWindow === window) {
       mainWindow = null;
     }
@@ -243,15 +341,169 @@ async function createWindow() {
     });
   }
 
+  await loadRendererRoute(window, "/");
   if (process.env.NODE_ENV === "development") {
-    await window.loadURL(process.env.ELECTRON_RENDERER_URL || "http://localhost:5173");
     window.webContents.openDevTools({ mode: "detach" });
-    await refreshApplicationMenu();
-    return;
+  }
+  await refreshApplicationMenu();
+  return window;
+}
+
+function getMenuBarWindowBounds(window: BrowserWindow) {
+  const trayBounds = menuBarTray?.getBounds();
+  const currentBounds = window.getBounds();
+
+  if (!trayBounds) {
+    return currentBounds;
   }
 
-  await window.loadFile(path.join(__dirname, "../renderer/index.html"));
+  const display = screen.getDisplayMatching(trayBounds);
+  const workArea = display.workArea;
+  const x = Math.round(
+    Math.min(
+      Math.max(trayBounds.x + trayBounds.width / 2 - currentBounds.width / 2, workArea.x + MENU_BAR_WINDOW_MARGIN),
+      workArea.x + workArea.width - currentBounds.width - MENU_BAR_WINDOW_MARGIN
+    )
+  );
+  const unclampedY = Math.round(trayBounds.y + trayBounds.height + MENU_BAR_WINDOW_MARGIN);
+  const y = Math.min(
+    Math.max(unclampedY, workArea.y + MENU_BAR_WINDOW_MARGIN),
+    workArea.y + workArea.height - currentBounds.height - MENU_BAR_WINDOW_MARGIN
+  );
+
+  return {
+    x,
+    y,
+    width: currentBounds.width,
+    height: currentBounds.height,
+  };
+}
+
+async function ensureMenuBarWindow() {
+  if (isUsableWindow(trayWindow)) {
+    return trayWindow!;
+  }
+
+  const window = new BrowserWindow({
+    width: MENU_BAR_WINDOW_WIDTH,
+    height: MENU_BAR_WINDOW_HEIGHT,
+    minWidth: MENU_BAR_WINDOW_WIDTH,
+    minHeight: MENU_BAR_WINDOW_HEIGHT,
+    maxWidth: MENU_BAR_WINDOW_WIDTH,
+    maxHeight: MENU_BAR_WINDOW_HEIGHT,
+    show: false,
+    frame: false,
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    movable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    hasShadow: true,
+    backgroundColor: "#101418",
+    webPreferences: {
+      preload: path.join(__dirname, "preload.cjs"),
+      contextIsolation: true,
+      sandbox: false,
+    },
+  });
+  trayWindow = window;
+  window.setAlwaysOnTop(true, "pop-up-menu");
+  window.setVisibleOnAllWorkspaces(true, {
+    visibleOnFullScreen: true,
+  });
+
+  window.on("blur", () => {
+    if (Date.now() < ignoreMenuBarBlurUntil) {
+      return;
+    }
+
+    if (menuBarInternalState.mode === "default") {
+      window.hide();
+    }
+  });
+
+  window.on("close", (event) => {
+    if (isQuitting) {
+      return;
+    }
+    event.preventDefault();
+    window.hide();
+  });
+
+  window.webContents.on("before-input-event", (_event, input) => {
+    if (input.type === "keyDown" && input.key === "Escape") {
+      clearMenuBarState();
+      window.hide();
+    }
+  });
+
+  window.webContents.on("did-finish-load", () => {
+    broadcastMenuBarState();
+  });
+
+  await loadRendererRoute(window, "/menu-bar");
+  return window;
+}
+
+async function showMenuBarWindow() {
+  const window = await ensureMenuBarWindow();
+  suppressMenuBarBlur();
+  window.setBounds(getMenuBarWindowBounds(window), false);
+  if (!window.isVisible()) {
+    window.show();
+  }
+  window.moveTop();
+  window.focus();
+  return window;
+}
+
+function hideMenuBarWindow() {
+  if (!isUsableWindow(trayWindow)) {
+    return;
+  }
+  trayWindow!.hide();
+}
+
+async function ensureMainWindow(command?: MenuCommand) {
+  const hadUsableMainWindow = isUsableWindow(mainWindow);
+  const existingWindow = hadUsableMainWindow ? mainWindow! : await createMainWindow();
+
+  if (command) {
+    if (!hadUsableMainWindow || existingWindow.webContents.isLoadingMainFrame()) {
+      queuePendingMenuCommand(existingWindow, command);
+    } else {
+      emitMenuCommand(command, existingWindow);
+    }
+  }
+
+  if (existingWindow.isMinimized()) {
+    existingWindow.restore();
+  }
+  existingWindow.show();
+  existingWindow.focus();
+  return existingWindow;
+}
+
+async function showAppWindow(target?: ShowAppTarget) {
+  let command: MenuCommand | undefined;
+
+  if (target?.projectId) {
+    await openProject(target.projectId);
+    broadcastEvent({ event: "projects.changed", projectId: target.projectId });
+    broadcastEvent({ event: "workspace.changed", projectId: target.projectId });
+    command = {
+      type: "project.open",
+      projectId: target.projectId,
+      view: target.view && target.view !== "home" ? target.view : "canvas",
+    };
+  } else if (target?.view === "home") {
+    command = { type: "app.home" };
+  }
+
   await refreshApplicationMenu();
+  await ensureMainWindow(command);
 }
 
 async function handleAssetProtocol(request: Request) {
@@ -318,6 +570,96 @@ async function startWorker() {
       void startWorker();
     }
   });
+}
+
+async function setupMenuBarTray() {
+  if (process.platform !== "darwin" || menuBarTray) {
+    return;
+  }
+
+  menuBarTray = new Tray(createMenuBarIcon());
+  menuBarTrayUsesTemplateIcon = true;
+  menuBarTray.setToolTip(APP_NAME);
+  menuBarTray.setTitle(MENU_BAR_TITLE);
+  menuBarTray.setIgnoreDoubleClickEvents(true);
+
+  menuBarTray.on("click", () => {
+    if (isUsableWindow(trayWindow) && trayWindow!.isVisible() && menuBarInternalState.mode === "default") {
+      hideMenuBarWindow();
+      return;
+    }
+
+    void showMenuBarWindow().catch((error) => {
+      console.error("Failed to show menu bar window", error);
+    });
+  });
+
+  menuBarTray.on("drag-enter", () => {
+    setMenuBarState({
+      mode: "drop",
+      stagedDropFilePaths: [],
+    });
+    void showMenuBarWindow().catch((error) => {
+      console.error("Failed to open menu bar drop mode", error);
+    });
+  });
+
+  menuBarTray.on("drop-files", (_event, filePaths: string[]) => {
+    setMenuBarState({
+      mode: "drop",
+      stagedDropFilePaths: filePaths,
+    });
+    void showMenuBarWindow().catch((error) => {
+      console.error("Failed to stage tray drop files", error);
+    });
+  });
+
+  menuBarTray.on("drag-end", () => {
+    if (menuBarInternalState.mode === "drop" && menuBarInternalState.stagedDropFilePaths.length === 0) {
+      broadcastMenuBarState();
+    }
+  });
+}
+
+function getMenuBarDebugState() {
+  return {
+    hasTray: Boolean(menuBarTray),
+    trayBounds: menuBarTray ? menuBarTray.getBounds() : null,
+    trayIconIsTemplate: menuBarTray ? menuBarTrayUsesTemplateIcon : null,
+    trayTitle: menuBarTray ? MENU_BAR_TITLE : null,
+    trayWindowVisible: isUsableWindow(trayWindow) ? trayWindow!.isVisible() : false,
+    trayWindowUrl: isUsableWindow(trayWindow) ? trayWindow!.webContents.getURL() : null,
+    menuBarState: serializeMenuBarState(),
+    windowCount: BrowserWindow.getAllWindows().filter((window) => !window.isDestroyed()).length,
+  };
+}
+
+function registerElectronTestHooks() {
+  (
+    globalThis as typeof globalThis & {
+      __NND_ELECTRON_TEST__?: {
+        getMenuBarDebugState: typeof getMenuBarDebugState;
+        showMenuBarWindow: typeof showMenuBarWindow;
+        hideMenuBarWindow: typeof hideMenuBarWindow;
+        setMenuBarState: (mode: MenuBarState["mode"], stagedDropFilePaths?: string[]) => void;
+      };
+    }
+  ).__NND_ELECTRON_TEST__ = {
+    getMenuBarDebugState,
+    showMenuBarWindow,
+    hideMenuBarWindow,
+    setMenuBarState: (mode, stagedDropFilePaths = []) => {
+      if (mode === "default") {
+        clearMenuBarState();
+        return;
+      }
+
+      setMenuBarState({
+        mode,
+        stagedDropFilePaths,
+      });
+    },
+  };
 }
 
 function registerIpc() {
@@ -398,6 +740,35 @@ function registerIpc() {
       broadcastEvent({ event: "assets.changed", projectId });
       return imported;
     },
+    importAssetsToProjectCanvas: async (projectId: string, request?: ImportAssetsToProjectCanvasRequest) => {
+      const viewportBounds = isUsableWindow(mainWindow) ? mainWindow!.getContentBounds() : null;
+      const { importedAssets, insertedNodeIds } = await importAssetsToProjectCanvas(projectId, {
+        ...request,
+        stagedDropFilePaths: menuBarInternalState.stagedDropFilePaths,
+        viewportWidth: viewportBounds?.width,
+        viewportHeight: viewportBounds?.height,
+      });
+
+      broadcastEvent({ event: "assets.changed", projectId });
+      broadcastEvent({ event: "workspace.changed", projectId });
+
+      clearMenuBarState();
+
+      if (request?.redirectToCanvas !== false && insertedNodeIds.length > 0) {
+        await showAppWindow({
+          projectId,
+          view: "canvas",
+        });
+        hideMenuBarWindow();
+      }
+
+      return {
+        projectId,
+        importedAssetIds: importedAssets.map((asset) => asset.id),
+        insertedNodeIds,
+        redirectedToCanvas: request?.redirectToCanvas !== false && insertedNodeIds.length > 0,
+      };
+    },
     listJobs: async (projectId: string) => listJobs(projectId),
     createJob: async (projectId: string, payload: CreateJobRequest) => {
       const job = await createJob(projectId, payload);
@@ -419,13 +790,27 @@ function registerIpc() {
       await refreshProviderAccess(providerId);
       broadcastEvent({ event: "providers.changed" });
     },
-    setMenuContext: async (context: MenuContext, webContentsId?: number) => {
+    showApp: async (target?: ShowAppTarget) => {
+      await showAppWindow(target);
+    },
+    quitApp: async () => {
+      app.quit();
+    },
+    getMenuBarState: async () => serializeMenuBarState(),
+    dismissMenuBarDropState: async () => {
+      clearMenuBarState();
+      hideMenuBarWindow();
+    },
+    setMenuContext: async (context: MenuContext, webContentsId?: number, targetWindow?: BrowserWindow | null) => {
       if (!webContentsId) {
         return;
       }
 
       menuContextByWebContentsId.set(webContentsId, context);
       await refreshApplicationMenu();
+      if (targetWindow) {
+        flushPendingMenuCommandsForWindow(targetWindow);
+      }
     },
   } as const;
 
@@ -436,7 +821,7 @@ function registerIpc() {
     }
 
     if (method === "setMenuContext") {
-      return handlers.setMenuContext(args[0] as MenuContext, event.sender.id);
+      return handlers.setMenuContext(args[0] as MenuContext, event.sender.id, BrowserWindow.fromWebContents(event.sender));
     }
 
     return handler(...(args as never[]));
@@ -448,15 +833,17 @@ configureStableUserDataPath();
 app.whenReady().then(async () => {
   ensureAppEnvironment();
   applyAppBranding();
+  registerElectronTestHooks();
   await syncProviderModels({ refreshAccess: true });
   protocol.handle("app-asset", handleAssetProtocol);
   registerIpc();
   await startWorker();
-  await createWindow();
+  await createMainWindow();
+  await setupMenuBarTray();
 
   app.on("activate", async () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      await createWindow();
+    if (!isUsableWindow(mainWindow)) {
+      await createMainWindow();
     }
   });
 });

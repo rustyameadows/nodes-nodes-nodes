@@ -22,6 +22,22 @@ type RuntimeController = {
   getNativeMenuLabels?: () => Promise<string[]>;
   getNativeMenuItemState?: (itemId: string) => Promise<{ enabled: boolean; accelerator?: string }>;
   triggerNativeMenuItem?: (itemId: string) => Promise<void>;
+  getMenuBarDebugState?: () => Promise<{
+    hasTray: boolean;
+    trayBounds: { x: number; y: number; width: number; height: number } | null;
+    trayIconIsTemplate: boolean | null;
+    trayWindowVisible: boolean;
+    trayWindowUrl: string | null;
+    menuBarState: {
+      mode: "default" | "drop";
+      stagedDropFiles: Array<{ name: string }>;
+    };
+    windowCount: number;
+  }>;
+  showMenuBarWindow?: () => Promise<void>;
+  hideMenuBarWindow?: () => Promise<void>;
+  setMenuBarState?: (mode: "default" | "drop", stagedDropFilePaths?: string[]) => Promise<void>;
+  getWindowByHash?: (hashFragment: string) => Promise<Page>;
   close: () => Promise<void>;
 };
 
@@ -425,6 +441,95 @@ async function launchUnpackagedRuntime(launchTarget: string, appDataRoot: string
         ),
         15_000
       ),
+    getMenuBarDebugState: async () =>
+      withTimeout(
+        "electron.menuBarDebugState",
+        electronApp.evaluate(() => {
+          const hooks = (
+            globalThis as typeof globalThis & {
+              __NND_ELECTRON_TEST__?: {
+                getMenuBarDebugState: () => unknown;
+              };
+            }
+          ).__NND_ELECTRON_TEST__;
+          if (!hooks) {
+            throw new Error("Electron test hooks are unavailable.");
+          }
+          return hooks.getMenuBarDebugState();
+        }),
+        15_000
+      ),
+    showMenuBarWindow: async () =>
+      withTimeout(
+        "electron.showMenuBarWindow",
+        electronApp.evaluate(async () => {
+          const hooks = (
+            globalThis as typeof globalThis & {
+              __NND_ELECTRON_TEST__?: {
+                showMenuBarWindow: () => Promise<unknown>;
+              };
+            }
+          ).__NND_ELECTRON_TEST__;
+          if (!hooks) {
+            throw new Error("Electron test hooks are unavailable.");
+          }
+          await hooks.showMenuBarWindow();
+        }),
+        15_000
+      ),
+    hideMenuBarWindow: async () =>
+      withTimeout(
+        "electron.hideMenuBarWindow",
+        electronApp.evaluate(() => {
+          const hooks = (
+            globalThis as typeof globalThis & {
+              __NND_ELECTRON_TEST__?: {
+                hideMenuBarWindow: () => void;
+              };
+            }
+          ).__NND_ELECTRON_TEST__;
+          if (!hooks) {
+            throw new Error("Electron test hooks are unavailable.");
+          }
+          hooks.hideMenuBarWindow();
+        }),
+        15_000
+      ),
+    setMenuBarState: async (mode: "default" | "drop", stagedDropFilePaths?: string[]) =>
+      withTimeout(
+        `electron.setMenuBarState.${mode}`,
+        electronApp.evaluate(
+          ({ mode: nextMode, stagedDropFilePaths: nextPaths }) => {
+            const hooks = (
+              globalThis as typeof globalThis & {
+                __NND_ELECTRON_TEST__?: {
+                  setMenuBarState: (mode: "default" | "drop", stagedDropFilePaths?: string[]) => void;
+                };
+              }
+            ).__NND_ELECTRON_TEST__;
+            if (!hooks) {
+              throw new Error("Electron test hooks are unavailable.");
+            }
+            hooks.setMenuBarState(nextMode, nextPaths);
+          },
+          {
+            mode,
+            stagedDropFilePaths: stagedDropFilePaths || [],
+          }
+        ),
+        15_000
+      ),
+    getWindowByHash: async (hashFragment: string) => {
+      for (let attempt = 0; attempt < 60; attempt += 1) {
+        const candidate = electronApp.windows().find((page) => page.url().includes(hashFragment));
+        if (candidate) {
+          return candidate;
+        }
+        await sleep(250);
+      }
+
+      throw new Error(`Timed out waiting for Electron window with hash fragment: ${hashFragment}`);
+    },
     close: async () => {
       await electronApp.close();
     },
@@ -664,6 +769,55 @@ async function main() {
     });
     assert.ok(projectId, "Expected a project id in the canvas route.");
     console.log("Active project:", projectId);
+
+    if (process.platform === "darwin" && runtime.getMenuBarDebugState && runtime.showMenuBarWindow && runtime.getWindowByHash) {
+      const menuBarDebugState = await runtime.getMenuBarDebugState();
+      assert.equal(menuBarDebugState.hasTray, true, "Expected macOS tray to be initialized.");
+      assert.equal(menuBarDebugState.trayIconIsTemplate, true, "Expected tray icon to use a template image.");
+
+      await runtime.showMenuBarWindow();
+      const trayPage = await runtime.getWindowByHash("#/menu-bar");
+      await withTimeout(
+        "menu bar projects heading",
+        trayPage.getByRole("heading", { name: "Projects" }).waitFor({ state: "visible", timeout: 15_000 })
+      );
+      await withTimeout(
+        "menu bar project metadata",
+        trayPage.getByText("Currently open").waitFor({ state: "visible", timeout: 15_000 })
+      );
+
+      if (runtime.setMenuBarState) {
+        await runtime.setMenuBarState("drop", ["/tmp/menu-bar-smoke-a.png", "/tmp/menu-bar-smoke-b.png"]);
+        await runtime.showMenuBarWindow();
+        const dropModeDebugState = await runtime.getMenuBarDebugState();
+        assert.equal(dropModeDebugState?.menuBarState.mode, "drop", "Expected menu bar state to enter drop mode.");
+        await withTimeout(
+          "menu bar drop heading",
+          trayPage.waitForFunction(() => document.body.textContent?.includes("Add files to a project"), undefined, {
+            timeout: 15_000,
+          })
+        );
+        await withTimeout(
+          "menu bar staged badge",
+          trayPage.waitForFunction(() => document.body.textContent?.includes("2 staged"), undefined, {
+            timeout: 15_000,
+          })
+        );
+        await withTimeout(
+          "menu bar add-to-project row",
+          trayPage.waitForFunction(() => document.body.textContent?.includes("Add to "), undefined, {
+            timeout: 15_000,
+          })
+        );
+        await runtime.setMenuBarState("default");
+      }
+
+      if (runtime.hideMenuBarWindow) {
+        await runtime.hideMenuBarWindow();
+      }
+      await window.bringToFront();
+      console.log("macOS menu bar popover verified");
+    }
 
     if (runtime.triggerNativeMenuItem) {
       await runtime.triggerNativeMenuItem("canvas.add.model");
@@ -1143,12 +1297,28 @@ async function main() {
     await blurActiveElement(window);
     const nodeCountBeforeAddMenuInsert = (await getCanvasNodes(window, projectId)).length;
     await window.keyboard.press("a");
+    const addTextNoteButton = window.getByRole("button", { name: "Add Text Note" });
     await withTimeout(
       "canvas insert menu before add note",
-      window.getByRole("button", { name: "Add Text Note" }).waitFor({ state: "visible", timeout: 15_000 })
+      addTextNoteButton.waitFor({ state: "visible", timeout: 15_000 })
     );
-    await window.getByRole("button", { name: "Add Text Note" }).click();
-    await window.waitForTimeout(900);
+    await addTextNoteButton.evaluate((button: HTMLButtonElement) => button.click());
+    await withTimeout(
+      "add node via insert menu",
+      window.waitForFunction(
+        async ({ activeProjectId, expectedCount }) => {
+          const snapshot = await window.nodeInterface.getWorkspaceSnapshot(activeProjectId);
+          const nodes = (((snapshot.canvas?.canvasDocument as { workflow?: { nodes?: unknown[] } } | null)?.workflow?.nodes ||
+            []) as unknown[]);
+          return nodes.length === expectedCount;
+        },
+        {
+          activeProjectId: projectId,
+          expectedCount: nodeCountBeforeAddMenuInsert + 1,
+        },
+        { timeout: 15_000 }
+      )
+    );
     const addedNodes = await getCanvasNodes(window, projectId);
     assert.equal(
       addedNodes.length,

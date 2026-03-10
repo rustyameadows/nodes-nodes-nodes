@@ -11,6 +11,7 @@ import {
 import type {
   AppEventName,
   AppEventPayload,
+  MenuBarState,
   NodeInterface,
   WorkspaceSnapshotResponse,
 } from "@/lib/ipc-contract";
@@ -129,6 +130,11 @@ function broadcast(event: AppEventName, projectId?: string) {
     })
   );
 }
+
+const defaultMenuBarState: MenuBarState = {
+  mode: "default",
+  stagedDropFiles: [],
+};
 
 function updateProjectInStore(projectId: string, updater: (project: StoredProject) => StoredProject) {
   const store = readStore();
@@ -726,6 +732,10 @@ export function installBrowserNodeInterface() {
     async importAssets(): Promise<Asset[]> {
       return [];
     },
+    async importAssetsToProjectCanvas(projectId) {
+      void projectId;
+      throw new Error("Browser preview mode does not support menu bar canvas imports.");
+    },
     async listJobs(): Promise<Job[]> {
       return [];
     },
@@ -765,6 +775,12 @@ export function installBrowserNodeInterface() {
     async refreshProviderAccess() {
       broadcast("providers.changed");
     },
+    async showApp() {},
+    async quitApp() {},
+    async getMenuBarState() {
+      return defaultMenuBarState;
+    },
+    async dismissMenuBarDropState() {},
     async setMenuContext() {},
     subscribe(eventName, listener) {
       const handler = (event: Event) => {
@@ -780,6 +796,9 @@ export function installBrowserNodeInterface() {
       };
     },
     subscribeMenuCommand() {
+      return () => {};
+    },
+    subscribeMenuBarState() {
       return () => {};
     },
   };

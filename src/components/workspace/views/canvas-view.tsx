@@ -22,12 +22,6 @@ import type {
 import { WorkspaceShell } from "@/components/workspace/workspace-shell";
 import { isModelParameterVisible } from "@/lib/model-parameters";
 import {
-  getOpenAiImageDefaultSettings,
-  getOpenAiImageParameterDefinitions,
-  OPENAI_IMAGE_INPUT_MIME_TYPES,
-  OPENAI_MAX_INPUT_IMAGES,
-} from "@/lib/openai-image-settings";
-import {
   buildGeneratedNodePosition,
   createGeneratedModelNode,
   getGeneratedDescriptorDefaultLabel,
@@ -93,7 +87,15 @@ import {
 } from "@/lib/list-template";
 import { getOpenAiTextOutputTargetLabel, readOpenAiTextOutputTarget } from "@/lib/text-output-targets";
 import {
+  buildAssetRefsFromNodes,
+  getAssetPointerNodeLabel,
+  getImportedAssetNodeLabel,
+  normalizeAssetNodeLabel,
+  outputTypeFromAssetType,
+} from "@/lib/canvas-asset-nodes";
+import {
   buildProviderDebugRequest,
+  getFallbackProviderModel,
   isRunnableTextModel,
   resolveImageModelSettings,
   resolveProviderModelSettings,
@@ -250,40 +252,11 @@ function nodeTypeFromOutput(outputType: WorkflowNode["outputType"]): WorkflowNod
   return "image-gen";
 }
 
-function outputTypeFromAssetType(type: Asset["type"]): WorkflowNode["outputType"] {
-  if (type === "video") {
-    return "video";
-  }
-  if (type === "text") {
-    return "text";
-  }
-  return "image";
-}
-
 function nextCanvasNodePosition(nodeCount: number, position?: { x: number; y: number }) {
   return {
     x: Math.round(position?.x ?? (120 + (nodeCount % 4) * 260)),
     y: Math.round(position?.y ?? (120 + Math.floor(nodeCount / 4) * 160)),
   };
-}
-
-function buildAssetRefsFromNodes(upstreamNodeIds: string[], nodes: WorkflowNode[]) {
-  const nodeMap = nodes.reduce<Record<string, WorkflowNode>>((acc, node) => {
-    acc[node.id] = node;
-    return acc;
-  }, {});
-
-  const refs = upstreamNodeIds
-    .map((nodeId) => {
-      const sourceNode = nodeMap[nodeId];
-      if (!sourceNode) {
-        return null;
-      }
-      return sourceNode.sourceAssetId || `node:${nodeId}`;
-    })
-    .filter((value): value is string => Boolean(value));
-
-  return [...new Set(refs)];
 }
 
 function applyCanvasNodeConnection(
@@ -417,79 +390,8 @@ function buildCopilotGeneratedNodePosition(anchor: { x: number; y: number }, vis
   };
 }
 
-function fallbackProviderModel(providers: ProviderModel[]): ProviderModel {
-  const preferred =
-    providers.find((provider) => provider.providerId === "openai" && provider.modelId === "gpt-image-1.5") ||
-    providers.find((provider) => provider.capabilities.runnable) ||
-    providers[0];
-  if (preferred) {
-    return preferred;
-  }
-
-  return {
-    providerId: "openai" as const,
-    modelId: "gpt-image-1.5",
-    displayName: "GPT Image 1.5",
-    capabilities: {
-      text: false,
-      image: true,
-      video: false,
-      runnable: false,
-      availability: "ready" as const,
-      billingAvailability: "free_and_paid" as const,
-      accessStatus: "blocked" as const,
-      accessReason: "missing_key" as const,
-      accessMessage: "Save OPENAI_API_KEY in Settings or set it in .env.local and restart the app.",
-      lastCheckedAt: null,
-      requiresApiKeyEnv: "OPENAI_API_KEY",
-      apiKeyConfigured: false,
-      requirements: [
-        {
-          kind: "env" as const,
-          key: "OPENAI_API_KEY",
-          configured: false,
-          label: "OpenAI API key",
-        },
-      ],
-      promptMode: "required" as const,
-      executionModes: ["generate", "edit"],
-      acceptedInputMimeTypes: OPENAI_IMAGE_INPUT_MIME_TYPES,
-      maxInputImages: OPENAI_MAX_INPUT_IMAGES,
-      parameters: getOpenAiImageParameterDefinitions("gpt-image-1.5"),
-      defaults: getOpenAiImageDefaultSettings("gpt-image-1.5"),
-    },
-  };
-}
-
-function normalizeAssetNodeLabel(fileName: string, index: number) {
-  const trimmed = fileName.trim();
-  if (!trimmed) {
-    return `Asset ${index + 1}`;
-  }
-  return trimmed.length <= 28 ? trimmed : `${trimmed.slice(0, 26)}...`;
-}
-
-function getAssetPointerNodeLabel(asset: Asset, index: number) {
-  if (asset.origin === "generated") {
-    const variant =
-      typeof asset.outputIndex === "number" ? ` ${asset.outputIndex + 1}` : index > 0 ? ` ${index + 1}` : "";
-    return `Generated${variant}`;
-  }
-
-  const fileName = asset.storageRef.split("/").at(-1) || "";
-  if (fileName.trim()) {
-    return normalizeAssetNodeLabel(fileName, index);
-  }
-  return `Upload ${index + 1}`;
-}
-
 function getPreviewFrameUrl(projectId: string, jobId: string, previewFrame: PreviewFrameSummary) {
   return getPreviewFrameFileUrl(previewFrame.id, previewFrame.createdAt);
-}
-
-function getImportedAssetNodeLabel(asset: Asset, index: number) {
-  const fileName = asset.storageRef.split("/").at(-1) || "";
-  return normalizeAssetNodeLabel(fileName, index);
 }
 
 function getNodeSourceJobId(node: WorkflowNode | null | undefined) {
@@ -2648,10 +2550,11 @@ export function CanvasView({ projectId }: Props) {
   const handleInsertCatalogEntry = useCallback(
     (
       entryId: "model" | "text-note" | "list" | "text-template" | "asset-uploaded" | "asset-generated",
+      menuState: CanvasInsertMenuState | null,
       position: { x: number; y: number },
       options?: { providerId?: WorkflowNode["providerId"]; modelId?: string }
     ) => {
-      if (!insertMenu) {
+      if (!menuState) {
         return;
       }
 
@@ -2666,8 +2569,8 @@ export function CanvasView({ projectId }: Props) {
       if (entryId === "text-note") {
         addTextNote(
           position,
-          insertMenu.mode === "model-input" && insertMenu.connectToNodeId
-            ? { connectToModelNodeId: insertMenu.connectToNodeId }
+          menuState.mode === "model-input" && menuState.connectToNodeId
+            ? { connectToModelNodeId: menuState.connectToNodeId }
             : undefined
         );
         return;
@@ -2676,8 +2579,8 @@ export function CanvasView({ projectId }: Props) {
       if (entryId === "list") {
         addListNode(
           position,
-          insertMenu.mode === "template-input" && insertMenu.connectToNodeId
-            ? { connectToTemplateNodeId: insertMenu.connectToNodeId }
+          menuState.mode === "template-input" && menuState.connectToNodeId
+            ? { connectToTemplateNodeId: menuState.connectToNodeId }
             : undefined
         );
         return;
@@ -2694,7 +2597,7 @@ export function CanvasView({ projectId }: Props) {
           origin: "uploaded",
           worldX: position.x,
           worldY: position.y,
-          connectToModelNodeId: insertMenu.mode === "model-input" ? insertMenu.connectToNodeId : undefined,
+          connectToModelNodeId: menuState.mode === "model-input" ? menuState.connectToNodeId : undefined,
         });
         return;
       }
@@ -2704,10 +2607,10 @@ export function CanvasView({ projectId }: Props) {
         origin: "generated",
         worldX: position.x,
         worldY: position.y,
-        connectToModelNodeId: insertMenu.mode === "model-input" ? insertMenu.connectToNodeId : undefined,
+        connectToModelNodeId: menuState.mode === "model-input" ? menuState.connectToNodeId : undefined,
       });
     },
-    [addListNode, addModelNode, addTextNote, addTextTemplateNode, insertMenu]
+    [addListNode, addModelNode, addTextNote, addTextTemplateNode]
   );
 
   const updateNode = useCallback(
@@ -4908,6 +4811,9 @@ export function CanvasView({ projectId }: Props) {
               left: insertMenu.clientX,
               top: insertMenu.clientY,
             }}
+            onPointerDownCapture={(event) => {
+              event.stopPropagation();
+            }}
           >
             <div className={styles.insertMenuColumns}>
               <div className={styles.insertMenuPrimaryColumn}>
@@ -4933,10 +4839,15 @@ export function CanvasView({ projectId }: Props) {
                             type="button"
                             className={styles.insertMenuAction}
                             onClick={() =>
-                              handleInsertCatalogEntry("model", { x: insertMenu.worldX, y: insertMenu.worldY }, {
-                                providerId: defaultModelCatalogVariant.providerId,
-                                modelId: defaultModelCatalogVariant.modelId,
-                              })
+                              handleInsertCatalogEntry(
+                                "model",
+                                insertMenu,
+                                { x: insertMenu.worldX, y: insertMenu.worldY },
+                                {
+                                  providerId: defaultModelCatalogVariant.providerId,
+                                  modelId: defaultModelCatalogVariant.modelId,
+                                }
+                              )
                             }
                           >
                             Add Model Node
@@ -4961,10 +4872,14 @@ export function CanvasView({ projectId }: Props) {
                       key={entry.id}
                       type="button"
                       onClick={() =>
-                        handleInsertCatalogEntry(entry.id, {
-                          x: insertMenu.worldX,
-                          y: insertMenu.worldY,
-                        })
+                        handleInsertCatalogEntry(
+                          entry.id,
+                          insertMenu,
+                          {
+                            x: insertMenu.worldX,
+                            y: insertMenu.worldY,
+                          }
+                        )
                       }
                     >
                       {entry.id === "asset-uploaded"
@@ -5009,6 +4924,7 @@ export function CanvasView({ projectId }: Props) {
                             onClick={() =>
                               handleInsertCatalogEntry(
                                 "model",
+                                insertMenu,
                                 { x: insertMenu.worldX, y: insertMenu.worldY },
                                 { providerId: variant.providerId, modelId: variant.modelId }
                               )

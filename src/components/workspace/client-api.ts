@@ -8,7 +8,15 @@ import {
   normalizeWorkflowNodeDisplayMode,
   normalizeWorkflowNodeSize,
 } from "@/lib/canvas-node-presentation";
-import type { AppEventName, MenuCommand, MenuContext } from "@/lib/ipc-contract";
+import { normalizeCanvasNode } from "@/lib/canvas-document";
+import type {
+  AppEventName,
+  ImportAssetsToProjectCanvasRequest,
+  MenuBarState,
+  MenuCommand,
+  MenuContext,
+  ShowAppTarget,
+} from "@/lib/ipc-contract";
 import {
   isRunnableTextModel,
   resolveImageModelSettings,
@@ -214,6 +222,45 @@ export async function importProjectAssets(projectId: string, files?: File[]) {
   return window.nodeInterface.importAssets(projectId, items);
 }
 
+export async function importAssetsToProjectCanvas(
+  projectId: string,
+  request?: ImportAssetsToProjectCanvasRequest & { files?: File[] }
+) {
+  const nextRequest: ImportAssetsToProjectCanvasRequest | undefined = request
+    ? {
+        ...request,
+      }
+    : undefined;
+
+  if (request?.files && request.files.length > 0) {
+    nextRequest!.items = await Promise.all(
+      request.files.map(async (file) => ({
+        name: file.name,
+        mimeType: file.type || "application/octet-stream",
+        content: await file.arrayBuffer(),
+      }))
+    );
+  }
+
+  return window.nodeInterface.importAssetsToProjectCanvas(projectId, nextRequest);
+}
+
+export async function showApp(target?: ShowAppTarget) {
+  await window.nodeInterface.showApp(target);
+}
+
+export async function quitApp() {
+  await window.nodeInterface.quitApp();
+}
+
+export async function getMenuBarState() {
+  return window.nodeInterface.getMenuBarState();
+}
+
+export async function dismissMenuBarDropState() {
+  await window.nodeInterface.dismissMenuBarDropState();
+}
+
 export function getAssetFileUrl(assetId: string) {
   return `app-asset://asset/${assetId}`;
 }
@@ -228,6 +275,10 @@ export function subscribeToAppEvent(eventName: AppEventName, listener: (payload:
 
 export function subscribeToMenuCommand(listener: (command: MenuCommand) => void) {
   return window.nodeInterface.subscribeMenuCommand(listener);
+}
+
+export function subscribeToMenuBarState(listener: (state: MenuBarState) => void) {
+  return window.nodeInterface.subscribeMenuBarState(listener);
 }
 
 export function summarizeQueue(jobs: Job[]) {
@@ -260,89 +311,5 @@ export function uid() {
 }
 
 export function normalizeNode(raw: Record<string, unknown>, index: number): WorkflowNode {
-  const upstreamAssetIds = Array.isArray(raw.upstreamAssetIds)
-    ? raw.upstreamAssetIds.map((item) => String(item))
-    : [];
-  const upstreamNodeIdsFromAssets = upstreamAssetIds
-    .filter((item) => item.startsWith("node:"))
-    .map((item) => item.slice("node:".length))
-    .filter(Boolean);
-  const upstreamNodeIds = Array.isArray(raw.upstreamNodeIds)
-    ? raw.upstreamNodeIds.map((item) => String(item))
-    : upstreamNodeIdsFromAssets;
-
-  const inferredKind =
-    raw.kind === "model" ||
-    raw.kind === "asset-source" ||
-    raw.kind === "text-note" ||
-    raw.kind === "list" ||
-    raw.kind === "text-template"
-      ? (raw.kind as WorkflowNode["kind"])
-      : raw.sourceAssetId
-        ? "asset-source"
-        : "model";
-  const baseSettings =
-    raw.settings && typeof raw.settings === "object"
-      ? ({ ...(raw.settings as Record<string, unknown>) } as Record<string, unknown>)
-      : {};
-  delete baseSettings.openaiImageMode;
-
-  const normalizedSettings =
-    inferredKind === "list"
-      ? getListNodeSettings(baseSettings)
-      : inferredKind === "text-template"
-        ? getTextTemplateNodeSettings(baseSettings)
-        : inferredKind === "text-note"
-          ? normalizeTextNoteSettings(baseSettings)
-          : baseSettings;
-
-  return {
-    id: String(raw.id || uid()),
-    label: String(raw.label || `Node ${index + 1}`),
-    providerId: (raw.providerId as ProviderId) || "openai",
-    modelId: normalizeLegacyTopazModelId(String(raw.modelId || "gpt-image-1.5")) || "gpt-image-1.5",
-    kind: inferredKind,
-    nodeType:
-      ((raw.nodeType as WorkflowNode["nodeType"]) ||
-        (inferredKind === "text-note"
-          ? "text-note"
-          : inferredKind === "list"
-            ? "list"
-            : inferredKind === "text-template"
-              ? "text-template"
-              : "image-gen")),
-    outputType:
-      (raw.outputType as WorkflowNode["outputType"]) ||
-      (inferredKind === "list" || inferredKind === "text-template" || inferredKind === "text-note" ? "text" : "image"),
-    prompt: String(raw.prompt || ""),
-    sourceAssetId: raw.sourceAssetId ? String(raw.sourceAssetId) : null,
-    sourceAssetMimeType: raw.sourceAssetMimeType ? String(raw.sourceAssetMimeType) : null,
-    sourceJobId: raw.sourceJobId
-      ? String(raw.sourceJobId)
-      : raw.settings &&
-          typeof raw.settings === "object" &&
-          (raw.settings as Record<string, unknown>).sourceJobId
-        ? String((raw.settings as Record<string, unknown>).sourceJobId)
-        : null,
-    sourceOutputIndex:
-      typeof raw.sourceOutputIndex === "number"
-        ? raw.sourceOutputIndex
-        : raw.settings &&
-            typeof raw.settings === "object" &&
-            typeof (raw.settings as Record<string, unknown>).outputIndex === "number"
-          ? Number((raw.settings as Record<string, unknown>).outputIndex)
-          : null,
-    processingState:
-      raw.processingState === "queued" || raw.processingState === "running" || raw.processingState === "failed"
-        ? raw.processingState
-        : null,
-    promptSourceNodeId: raw.promptSourceNodeId ? String(raw.promptSourceNodeId) : null,
-    upstreamNodeIds,
-    upstreamAssetIds,
-    settings: normalizedSettings,
-    x: typeof raw.x === "number" ? raw.x : 120 + (index % 4) * 260,
-    y: typeof raw.y === "number" ? raw.y : 120 + Math.floor(index / 4) * 160,
-    displayMode: normalizeWorkflowNodeDisplayMode(raw.displayMode),
-    size: normalizeWorkflowNodeSize(raw.size),
-  };
+  return normalizeCanvasNode(raw, index);
 }

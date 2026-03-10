@@ -1,9 +1,10 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { AppEventName, AppEventPayload, MenuCommand, NodeInterface } from "@/lib/ipc-contract";
+import type { AppEventName, AppEventPayload, MenuBarState, MenuCommand, NodeInterface } from "@/lib/ipc-contract";
 
 const APP_EVENT_CHANNEL = "node-interface:event";
 const APP_INVOKE_CHANNEL = "node-interface:invoke";
 const MENU_COMMAND_CHANNEL = "node-interface:menu-command";
+const MENU_BAR_STATE_CHANNEL = "node-interface:menu-bar-state";
 
 function invoke<T>(method: string, ...args: unknown[]) {
   return ipcRenderer.invoke(APP_INVOKE_CHANNEL, method, ...args) as Promise<T>;
@@ -21,6 +22,7 @@ const nodeInterface: NodeInterface = {
   getAsset: (assetId) => invoke("getAsset", assetId),
   updateAsset: (assetId, payload) => invoke("updateAsset", assetId, payload),
   importAssets: (projectId, items) => invoke("importAssets", projectId, items),
+  importAssetsToProjectCanvas: (projectId, request) => invoke("importAssetsToProjectCanvas", projectId, request),
   listJobs: (projectId) => invoke("listJobs", projectId),
   createJob: (projectId, payload) => invoke("createJob", projectId, payload),
   getJobDebug: (projectId, jobId) => invoke("getJobDebug", projectId, jobId),
@@ -29,6 +31,10 @@ const nodeInterface: NodeInterface = {
   saveProviderCredential: (key, value) => invoke("saveProviderCredential", key, value),
   clearProviderCredential: (key) => invoke("clearProviderCredential", key),
   refreshProviderAccess: (providerId) => invoke("refreshProviderAccess", providerId),
+  showApp: (target) => invoke("showApp", target),
+  quitApp: () => invoke("quitApp"),
+  getMenuBarState: () => invoke("getMenuBarState"),
+  dismissMenuBarDropState: () => invoke("dismissMenuBarDropState"),
   setMenuContext: (context) => invoke("setMenuContext", context),
   subscribe: (eventName: AppEventName, listener: (payload: AppEventPayload) => void) => {
     const handler = (_event: unknown, payload: AppEventPayload) => {
@@ -50,6 +56,16 @@ const nodeInterface: NodeInterface = {
     ipcRenderer.on(MENU_COMMAND_CHANNEL, handler);
     return () => {
       ipcRenderer.removeListener(MENU_COMMAND_CHANNEL, handler);
+    };
+  },
+  subscribeMenuBarState: (listener: (state: MenuBarState) => void) => {
+    const handler = (_event: unknown, payload: MenuBarState) => {
+      listener(payload);
+    };
+
+    ipcRenderer.on(MENU_BAR_STATE_CHANNEL, handler);
+    return () => {
+      ipcRenderer.removeListener(MENU_BAR_STATE_CHANNEL, handler);
     };
   },
 };

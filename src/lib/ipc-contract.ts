@@ -36,7 +36,7 @@ export type MenuCommand =
   | { type: "app.home" }
   | { type: "app.node-library" }
   | { type: "project.new" }
-  | { type: "project.open"; projectId: string }
+  | { type: "project.open"; projectId: string; view?: WorkspaceView }
   | { type: "app.settings" }
   | { type: "project.settings" }
   | { type: "view.open"; view: WorkspaceView }
@@ -59,6 +59,31 @@ export type MenuContext = {
   canDuplicateSelected: boolean;
   canUndo: boolean;
   canRedo: boolean;
+};
+
+export type MenuBarState = {
+  mode: "default" | "drop";
+  stagedDropFiles: Array<{
+    name: string;
+  }>;
+};
+
+export type ImportAssetsToProjectCanvasRequest = {
+  items?: ImportAssetInput[];
+  useStagedDropFiles?: boolean;
+  redirectToCanvas?: boolean;
+};
+
+export type ImportAssetsToProjectCanvasResponse = {
+  projectId: string;
+  importedAssetIds: string[];
+  insertedNodeIds: string[];
+  redirectedToCanvas: boolean;
+};
+
+export type ShowAppTarget = {
+  projectId?: string | null;
+  view?: WorkspaceView | "home" | null;
 };
 
 export type WorkspaceSnapshotResponse = {
@@ -122,6 +147,10 @@ export type NodeInterface = {
   getAsset: (assetId: string) => Promise<Asset>;
   updateAsset: (assetId: string, payload: { rating?: number | null; flagged?: boolean; tags?: string[] }) => Promise<Asset>;
   importAssets: (projectId: string, items?: ImportAssetInput[]) => Promise<Asset[]>;
+  importAssetsToProjectCanvas: (
+    projectId: string,
+    request?: ImportAssetsToProjectCanvasRequest
+  ) => Promise<ImportAssetsToProjectCanvasResponse>;
   listJobs: (projectId: string) => Promise<Job[]>;
   createJob: (projectId: string, payload: CreateJobRequest) => Promise<Job>;
   getJobDebug: (projectId: string, jobId: string) => Promise<JobDebugResponse>;
@@ -130,7 +159,12 @@ export type NodeInterface = {
   saveProviderCredential: (key: ProviderCredentialKey, value: string) => Promise<void>;
   clearProviderCredential: (key: ProviderCredentialKey) => Promise<void>;
   refreshProviderAccess: (providerId?: ProviderId) => Promise<void>;
+  showApp: (target?: ShowAppTarget) => Promise<void>;
+  quitApp: () => Promise<void>;
+  getMenuBarState: () => Promise<MenuBarState>;
+  dismissMenuBarDropState: () => Promise<void>;
   setMenuContext: (context: MenuContext) => Promise<void>;
   subscribe: (event: AppEventName, listener: (payload: AppEventPayload) => void) => () => void;
   subscribeMenuCommand: (listener: (command: MenuCommand) => void) => () => void;
+  subscribeMenuBarState: (listener: (state: MenuBarState) => void) => () => void;
 };

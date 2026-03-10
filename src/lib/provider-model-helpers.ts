@@ -1,3 +1,4 @@
+import type { ProviderModel } from "@/components/workspace/types";
 import type { ProviderExecutionMode } from "@/lib/types";
 import {
   buildGeminiImageDebugRequest,
@@ -199,4 +200,48 @@ export function buildProviderDebugRequest(input: {
   }
 
   return null;
+}
+
+export function getFallbackProviderModel(providers: ProviderModel[]): ProviderModel {
+  const preferred =
+    providers.find((provider) => provider.providerId === "openai" && provider.modelId === "gpt-image-1.5") ||
+    providers.find((provider) => provider.capabilities.runnable) ||
+    providers[0];
+  if (preferred) {
+    return preferred;
+  }
+
+  return {
+    providerId: "openai" as const,
+    modelId: "gpt-image-1.5",
+    displayName: "GPT Image 1.5",
+    capabilities: {
+      text: false,
+      image: true,
+      video: false,
+      runnable: false,
+      availability: "ready" as const,
+      billingAvailability: "free_and_paid" as const,
+      accessStatus: "blocked" as const,
+      accessReason: "missing_key" as const,
+      accessMessage: "Save OPENAI_API_KEY in Settings or set it in .env.local and restart the app.",
+      lastCheckedAt: null,
+      requiresApiKeyEnv: "OPENAI_API_KEY",
+      apiKeyConfigured: false,
+      requirements: [
+        {
+          kind: "env" as const,
+          key: "OPENAI_API_KEY",
+          configured: false,
+          label: "OpenAI API key",
+        },
+      ],
+      promptMode: "required" as const,
+      executionModes: ["generate", "edit"],
+      acceptedInputMimeTypes: OPENAI_IMAGE_INPUT_MIME_TYPES,
+      maxInputImages: OPENAI_MAX_INPUT_IMAGES,
+      parameters: getOpenAiImageParameterDefinitions("gpt-image-1.5"),
+      defaults: getOpenAiImageDefaultSettings("gpt-image-1.5"),
+    },
+  };
 }

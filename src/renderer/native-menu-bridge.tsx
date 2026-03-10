@@ -103,9 +103,9 @@ export function NativeMenuBridge() {
   }, [router]);
 
   const handleOpenProject = useCallback(
-    async (projectId: string) => {
+    async (projectId: string, view?: WorkspaceView) => {
       await openProject(projectId);
-      router.push(buildWorkspaceRoute(projectId, resolveCurrentView()));
+      router.push(buildWorkspaceRoute(projectId, view || resolveCurrentView()));
     },
     [resolveCurrentView, router]
   );
@@ -164,7 +164,7 @@ export function NativeMenuBridge() {
       }
 
       if (command.type === "project.open") {
-        void handleOpenProject(command.projectId).catch((error) => {
+        void handleOpenProject(command.projectId, command.view).catch((error) => {
           console.error("Failed to open project from native menu", error);
         });
         return;
