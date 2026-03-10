@@ -1,48 +1,41 @@
 .root {
   min-height: 100vh;
-  background:
-    radial-gradient(circle at top, color-mix(in srgb, var(--ds-accent-primary) 18%, transparent) 0%, transparent 58%),
-    var(--ds-surface-base);
-  padding: 10px;
+  background: #101418;
+  padding: 0;
 }
 
 .panel {
-  min-width: 320px;
-  max-width: 360px;
-  gap: var(--ds-space-4);
-  border-radius: 0;
+  min-width: 0;
+  max-width: none;
+  min-height: 100vh;
+  gap: 8px;
+  border-radius: 0 !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  background: #101418 !important;
+  padding: 6px !important;
 }
 
-.header {
+.inlineHeader {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--ds-space-3);
+  gap: var(--ds-space-2);
 }
 
-.headerCopy {
-  display: flex;
-  flex-direction: column;
-  gap: var(--ds-space-1);
-}
-
-.title {
-  margin: 0;
-  color: var(--ds-text-primary);
-  font-family: var(--ds-font-family-display);
-  font-size: 1.05rem;
-}
-
-.subtitle {
-  margin: 0;
+.inlineHelper {
   color: var(--ds-text-secondary);
-  font-size: var(--ds-font-size-xs);
+  font-size: 0.7rem;
+  line-height: 1.35;
 }
 
 .projectList {
   display: flex;
   flex-direction: column;
-  gap: var(--ds-space-2);
+  gap: 4px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .projectButton {
@@ -51,7 +44,7 @@
   border-radius: 0;
   background: color-mix(in srgb, var(--ds-surface-raised) 92%, transparent);
   color: var(--ds-text-primary);
-  padding: 11px 12px;
+  padding: 8px 10px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -91,7 +84,7 @@
 }
 
 .projectName {
-  font-size: 0.92rem;
+  font-size: 0.88rem;
   font-weight: 700;
   color: var(--ds-text-primary);
   white-space: nowrap;
@@ -101,7 +94,7 @@
 
 .projectMeta {
   color: var(--ds-text-muted);
-  font-size: 0.72rem;
+  font-size: 0.68rem;
 }
 
 .helperRow {
@@ -116,15 +109,19 @@
 .footer {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--ds-space-2);
+  gap: 4px;
 }
 
 .actionButton {
-  border-radius: 0;
+  border-radius: 0 !important;
+  min-height: 30px;
 }
 
 .projectBadge {
-  border-radius: 0;
+  border-radius: 0 !important;
+  min-height: 22px;
+  padding-inline: 8px;
+  font-size: 0.66rem;
 }
 
 .emptyActions {

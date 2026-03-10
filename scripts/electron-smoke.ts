@@ -559,6 +559,7 @@ async function main() {
   const nodeLibraryModelScreenshotPath = path.join(appDataRoot, "node-library-model-detail.png");
   const nodeLibraryListScreenshotPath = path.join(appDataRoot, "node-library-list-detail.png");
   const nodeLibraryTemplateScreenshotPath = path.join(appDataRoot, "node-library-template-detail.png");
+  const menuBarScreenshotPath = path.join(appDataRoot, "menu-bar-smoke.png");
   const assetsScreenshotPath = path.join(appDataRoot, "assets-smoke.png");
   const queueScreenshotPath = path.join(appDataRoot, "queue-smoke.png");
   const projectSettingsScreenshotPath = path.join(appDataRoot, "project-settings-smoke.png");
@@ -777,12 +778,15 @@ async function main() {
 
       await runtime.showMenuBarWindow();
       const trayPage = await runtime.getWindowByHash("#/menu-bar");
-      await withTimeout(
-        "menu bar projects heading",
-        trayPage.getByRole("heading", { name: "Projects" }).waitFor({ state: "visible", timeout: 15_000 })
+      console.log("Menu bar page URL:", trayPage.url());
+      console.log(
+        "Menu bar page text:",
+        await trayPage.evaluate(() => document.body?.innerText?.slice(0, 400) || "")
       );
+      await trayPage.screenshot({ path: menuBarScreenshotPath });
+      console.log("Menu bar screenshot:", menuBarScreenshotPath);
       await withTimeout(
-        "menu bar project metadata",
+        "menu bar current project row",
         trayPage.getByText("Currently open").waitFor({ state: "visible", timeout: 15_000 })
       );
 

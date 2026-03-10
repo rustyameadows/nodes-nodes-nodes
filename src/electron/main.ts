@@ -41,8 +41,9 @@ const MENU_COMMAND_CHANNEL = "node-interface:menu-command";
 const MENU_BAR_STATE_CHANNEL = "node-interface:menu-bar-state";
 const MAIN_WINDOW_DEFAULT_WIDTH = 1440;
 const MAIN_WINDOW_DEFAULT_HEIGHT = 960;
-const MENU_BAR_WINDOW_WIDTH = 312;
-const MENU_BAR_WINDOW_HEIGHT = 368;
+const MENU_BAR_WINDOW_WIDTH = 292;
+const MENU_BAR_WINDOW_MIN_HEIGHT = 164;
+const MENU_BAR_WINDOW_MAX_HEIGHT = 320;
 const MENU_BAR_WINDOW_MARGIN = 8;
 
 let mainWindow: BrowserWindow | null = null;
@@ -394,6 +395,14 @@ function getMenuBarWindowBounds(window: BrowserWindow) {
   };
 }
 
+async function getMenuBarWindowHeight() {
+  const projects = await listProjects();
+  const projectRows = Math.max(projects.length, 1);
+  const modeExtra = menuBarInternalState.mode === "drop" ? 28 : 0;
+  const computedHeight = 56 + modeExtra + projectRows * 72 + 46;
+  return Math.max(MENU_BAR_WINDOW_MIN_HEIGHT, Math.min(MENU_BAR_WINDOW_MAX_HEIGHT, computedHeight));
+}
+
 async function ensureMenuBarWindow() {
   if (isUsableWindow(trayWindow)) {
     return trayWindow!;
@@ -401,11 +410,11 @@ async function ensureMenuBarWindow() {
 
   const window = new BrowserWindow({
     width: MENU_BAR_WINDOW_WIDTH,
-    height: MENU_BAR_WINDOW_HEIGHT,
+    height: MENU_BAR_WINDOW_MIN_HEIGHT,
     minWidth: MENU_BAR_WINDOW_WIDTH,
-    minHeight: MENU_BAR_WINDOW_HEIGHT,
+    minHeight: MENU_BAR_WINDOW_MIN_HEIGHT,
     maxWidth: MENU_BAR_WINDOW_WIDTH,
-    maxHeight: MENU_BAR_WINDOW_HEIGHT,
+    maxHeight: MENU_BAR_WINDOW_MAX_HEIGHT,
     show: false,
     frame: false,
     resizable: false,
@@ -463,6 +472,10 @@ async function ensureMenuBarWindow() {
 
 async function showMenuBarWindow() {
   const window = await ensureMenuBarWindow();
+  if (!window.webContents.getURL().includes("#/menu-bar")) {
+    await loadRendererRoute(window, "/menu-bar");
+  }
+  window.setSize(MENU_BAR_WINDOW_WIDTH, await getMenuBarWindowHeight(), false);
   suppressMenuBarBlur();
   window.setBounds(getMenuBarWindowBounds(window), false);
   if (!window.isVisible()) {

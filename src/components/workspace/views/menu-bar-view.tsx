@@ -209,18 +209,11 @@ export function MenuBarView() {
   return (
     <main className={styles.root}>
       <Panel surface="canvas-overlay" density="compact" className={styles.panel}>
-        <div className={styles.header}>
-          <div className={styles.headerCopy}>
-            <h1 className={styles.title}>{isDropMode ? "Add files to a project" : "Projects"}</h1>
-            <p className={styles.subtitle}>
-              {isDropMode
-                ? hasStagedTrayDrop
-                  ? "Choose a project to finish the tray drop."
-                  : "Drop files on a project row. Hold Shift to add without opening the app."
-                : "Open a project directly on its canvas."}
-            </p>
-          </div>
-          {isDropMode ? (
+        {isDropMode ? (
+          <div className={styles.inlineHeader}>
+            <span className={styles.inlineHelper}>
+              {hasStagedTrayDrop ? "Choose a project for the staged files." : "Drop files on a project row."}
+            </span>
             <Button
               surface="canvas-overlay"
               density="compact"
@@ -231,8 +224,8 @@ export function MenuBarView() {
             >
               Cancel
             </Button>
-          ) : null}
-        </div>
+          </div>
+        ) : null}
 
         {projects.length === 0 ? (
           <EmptyState
