@@ -3,7 +3,7 @@
 ## Stack
 - Shell: Electron main + preload + worker.
 - Renderer: Vite + React + TanStack Router + TanStack Query.
-- Inline list sheet engine: TanStack Table (headless, canvas-only).
+- Inline list sheet engine: custom canvas spreadsheet surface.
 - Persistence: SQLite via Drizzle and `better-sqlite3`.
 - Queue: durable SQLite-backed job polling in a dedicated worker process.
 - Asset storage: local filesystem under the Electron app-data root.
@@ -17,11 +17,11 @@
 - The design system has two surface contexts:
   - `app` for non-canvas routes and desktop shell views
   - `canvas-overlay` for floating chrome above the canvas
-- The design system intentionally does **not** own the main canvas node or connection renderers.
+- The design system also has a sibling canvas-node layer under `src/styles/design-system/nodes/` and `src/components/canvas-nodes/`.
+- The canvas-node layer reuses shared foundations but owns its own recipes so node cards do not inherit the light app-shell treatment.
 - Protected areas:
-  - `CanvasNodeContent` inline node surfaces
   - graph connection visuals in `InfiniteCanvas`
-  - Node Library playground canvas internals
+  - the black canvas background treatment
 - Allowed design-system ownership around protected areas:
   - workspace menu shell
   - queue pill
@@ -118,7 +118,7 @@ TanStack Query owns persisted app data in the renderer and is invalidated from t
 - `/nodes/$nodeId` is a design/debug detail page with:
   - left-rail node metadata and settings summary
   - a reusable searchable provider+model selector for model nodes
-  - an ephemeral interactive playground framed by the app design system while the inner playground canvas remains protected
+  - an ephemeral interactive playground framed by the app design system while the inner playground canvas keeps the same node renderer path as the real project canvas
 - The playground intentionally reuses the real canvas node renderers and editing surfaces instead of a separate mock UI.
 
 ## Canvas Interaction Model
@@ -128,13 +128,12 @@ TanStack Query owns persisted app data in the renderer and is invalidated from t
   - the insert picker builds visible node rows from the node catalog
   - `Add Model Node` expands into provider-grouped model variants from the provider catalog
   - native macOS `Canvas` add menus use the same catalog/provider source
-- Canvas overlays use the `canvas-overlay` design-system surface, but the node bodies themselves keep their existing semantic node rendering.
-- `CanvasView` derives node presentation from persisted node-local metadata (`displayMode`, `size`) plus transient active-node state (`activeFullNodeId`).
-- `CanvasNodeContent` renders mode-aware inline node surfaces for model, text note, list, template, and asset nodes.
+- Canvas overlays use the `canvas-overlay` surface, while node cards use the dedicated canvas-node system.
+- `CanvasView` and `NodePlaygroundCanvas` derive node presentation from persisted node-local metadata (`displayMode`, `size`) plus transient active-node state through `resolveCanvasNodePresentation`.
+- `CanvasNodeContent` in `src/components/canvas-nodes/` renders shared rails plus mode-aware node bodies for model, text note, list, template, and asset nodes.
 - `InfiniteCanvas` renders live drag previews, resize handles, phantom previews, quick mode transitions, and the edge-mounted run launcher, but committed node movement is written back once per drag through `onCommitNodePositions`.
 - Multi-node drag uses the current selection as a batch and preserves relative spacing across the moved nodes.
-- Full/resized nodes switch drag to a header/chrome handle so clicking into inline controls does not collapse the editor or start dragging.
-- Asset/image nodes are the exception to chrome-only drag so resized media cards can still be repositioned directly from the preview surface.
+- Active node cards switch drag to floating rail/hotspot affordances so inline controls stay editable without causing content shift.
 - Primary inline editor routing is resolved by node type:
   - model -> `prompt`
   - text note -> `note`
@@ -143,9 +142,8 @@ TanStack Query owns persisted app data in the renderer and is invalidated from t
   - uploaded asset source -> `asset-details`
   - generated asset / generated model-spawned nodes -> `source-call`
 - Phantom output previews are renderer-only derived state. They appear only for the active node, never persist to the canvas document, and never participate in selection/history.
-- Template/list compatibility and merge preview are computed in `CanvasView` from the existing template preview engine and rendered inline inside the template node.
-- Full/resized list nodes render through a dedicated inline sheet component backed by TanStack Table, while preview and compact states stay on lightweight custom card renderers.
-- Full template mode suppresses external phantom row cards and relies on the inline side-rail merge preview instead.
+- Template/list compatibility is still computed in `CanvasView` from the existing template preview engine, but the template node keeps merge emphasis light and leaves row-output emphasis to phantom/generated previews.
+- List nodes render through a shared inline spreadsheet surface with column resizing and a draft-entry row; preview, active, and resized states all reuse the same visual language.
 
 ## Canvas History Model
 - Undo/redo is renderer-local and scoped to the active canvas document.

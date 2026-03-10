@@ -109,3 +109,8 @@
 - Decision: introduce a lightweight token/CSS-variable/component design system with two surface contexts: light `app` surfaces for non-canvas views and dark `canvas-overlay` chrome above the canvas.
 - Rationale: issue `#59` needs a coherent desktop shell without flattening the specialized node/canvas rendering language or repainting the protected black canvas.
 - Consequence: app home, Node Library wrappers, settings, assets, queue, shell menu, queue pill, insert picker, bottom-bar popovers, and selection action strip now share one tokenized system, while main canvas nodes/connections and the Node Library playground canvas internals stay visually and structurally protected.
+
+## 2026-03-09 - Canvas Nodes Move Into A Dedicated Node Design System
+- Decision: extend the design-system work into the canvas with a dedicated node-card layer instead of leaving node renderers permanently outside the system.
+- Rationale: issue `#62` needs the five core node families to share durable rails, actions, resizing, and spreadsheet/editor patterns without repainting the semantic canvas palette or turning node work into ad hoc per-issue CSS.
+- Consequence: canvas nodes now use shared node tokens plus shared node chrome/action primitives, model expansion becomes selection-driven, template edit mode stays explicit, image double-click zooms the viewport instead of changing mode, and the Node Library playground stays on the same renderer path as the real project canvas.

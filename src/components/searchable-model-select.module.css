@@ -1,8 +1,8 @@
 .root {
-  position: relative;
   display: flex;
   flex-direction: column;
   gap: var(--ds-space-2);
+  min-width: 0;
 }
 
 .trigger {
@@ -36,15 +36,18 @@
   color: var(--ds-text-muted);
 }
 
+.overlay {
+  min-width: 0;
+}
+
 .panel {
-  position: absolute;
-  top: calc(100% + var(--ds-space-2));
-  left: 0;
-  right: 0;
-  z-index: var(--ds-z-popover);
   display: flex;
   flex-direction: column;
   gap: var(--ds-space-3);
+  width: 100%;
+  min-width: 0;
+  max-height: inherit;
+  overflow: hidden;
 }
 
 .searchInput {
@@ -52,8 +55,10 @@
 }
 
 .groups {
-  max-height: 320px;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: auto;
+  overscroll-behavior: contain;
   display: flex;
   flex-direction: column;
   gap: var(--ds-space-4);
@@ -100,6 +105,11 @@
     linear-gradient(135deg, var(--ds-state-accent-bg) 0%, var(--ds-state-info-bg) 100%),
     var(--ds-surface-panel-muted);
   transform: translateY(-1px);
+}
+
+.optionKeyboardActive:not(:disabled) {
+  border-color: var(--ds-border-contrast);
+  box-shadow: var(--ds-focus-ring);
 }
 
 .optionDisabled {

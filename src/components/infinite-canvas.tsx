@@ -23,9 +23,15 @@ import type {
   CanvasSelectionAction,
 } from "@/components/canvas-node-types";
 import { clampWorkflowNodeSize } from "@/lib/canvas-node-presentation";
+import {
+  getCanvasNodeAccentColor,
+  getCanvasNodeAccentGlow,
+  getCanvasNodeBorderLayers,
+} from "@/lib/canvas-node-design-system";
 import { isRunnableOpenAiImageModel, parseImageSize } from "@/lib/openai-image-settings";
 import { isRunnableTopazGigapixelModel } from "@/lib/topaz-gigapixel-settings";
 import styles from "./infinite-canvas.module.css";
+import nodeStyles from "@/components/canvas-nodes/canvas-node.module.css";
 
 type CanvasViewport = {
   x: number;
@@ -104,45 +110,12 @@ const LINE_DELTA_PX = 16;
 const WHEEL_ZOOM_SENSITIVITY = 0.00125;
 const GESTURE_ZOOM_SENSITIVITY = 0.00165;
 const PINCH_ZOOM_EXPONENT = 1.18;
-const CITRUS_COLOR = "#d8ff3e";
-const CITRUS_GLOW = "rgba(216, 255, 62, 0.52)";
-
 function semanticColor(type: CanvasAccentType) {
-  if (type === "citrus") {
-    return CITRUS_COLOR;
-  }
-  if (type === "neutral") {
-    return "rgba(255, 255, 255, 0.9)";
-  }
-  if (type === "text") {
-    return "#ff4dc4";
-  }
-  if (type === "function") {
-    return "#9b4dff";
-  }
-  if (type === "video") {
-    return "#ff8d34";
-  }
-  return "#3ea4ff";
+  return getCanvasNodeAccentColor(type);
 }
 
 function semanticGlow(type: CanvasAccentType) {
-  if (type === "citrus") {
-    return CITRUS_GLOW;
-  }
-  if (type === "neutral") {
-    return "rgba(255, 255, 255, 0.26)";
-  }
-  if (type === "text") {
-    return "rgba(255, 77, 196, 0.5)";
-  }
-  if (type === "function") {
-    return "rgba(155, 77, 255, 0.48)";
-  }
-  if (type === "video") {
-    return "rgba(255, 141, 52, 0.46)";
-  }
-  return "rgba(62, 164, 255, 0.48)";
+  return getCanvasNodeAccentGlow(type);
 }
 
 function clamp(value: number, min: number, max: number) {
@@ -296,11 +269,6 @@ function getInputAccentGradient(inputSemanticTypes: CanvasAccentType[] | undefin
   return `linear-gradient(to bottom, ${stops})`;
 }
 
-function mixColor(colorA: string, colorB: string, ratioA = 50) {
-  const ratioB = 100 - ratioA;
-  return `color-mix(in srgb, ${colorA} ${ratioA}%, ${colorB} ${ratioB}%)`;
-}
-
 function getBorderGradient(leftAccentTypes: CanvasAccentType[], rightAccentType: CanvasAccentType) {
   const orderedTypes = [...leftAccentTypes, rightAccentType].filter((type, index, allTypes) => {
     if (index === 0) {
@@ -369,33 +337,6 @@ function getBorderGradient(leftAccentTypes: CanvasAccentType[], rightAccentType:
   });
 
   return `linear-gradient(90deg, ${stops.join(", ")})`;
-}
-
-function getModelBorderLayers(leftAccentTypes: CanvasAccentType[], rightAccentType: CanvasAccentType) {
-  const uniqueLeftTypes = leftAccentTypes.filter((type, index) => leftAccentTypes.indexOf(type) === index);
-  const normalizedLeftTypes: CanvasAccentType[] = uniqueLeftTypes.length > 0 ? uniqueLeftTypes : ["neutral"];
-  const topLeft = semanticColor(normalizedLeftTypes[0]);
-  const bottomLeft = semanticColor(normalizedLeftTypes[Math.min(1, normalizedLeftTypes.length - 1)]);
-  const right = semanticColor(rightAccentType);
-  const neutral = semanticColor("neutral");
-  const rightSide = rightAccentType === "neutral" ? neutral : right;
-
-  if (normalizedLeftTypes.length > 1) {
-    return {
-      top: `linear-gradient(90deg, ${topLeft} 0%, ${topLeft} 42%, ${mixColor(topLeft, rightSide, 58)} 50%, ${rightSide} 58%, ${rightSide} 100%)`,
-      bottom: `linear-gradient(90deg, ${bottomLeft} 0%, ${bottomLeft} 42%, ${mixColor(bottomLeft, rightSide, 58)} 50%, ${rightSide} 58%, ${rightSide} 100%)`,
-      left: `linear-gradient(180deg, ${topLeft} 0%, ${topLeft} 42%, ${mixColor(topLeft, bottomLeft, 52)} 50%, ${bottomLeft} 58%, ${bottomLeft} 100%)`,
-      right: `linear-gradient(180deg, ${rightSide} 0%, ${rightSide} 100%)`,
-    };
-  }
-
-  const left = topLeft;
-  return {
-    top: `linear-gradient(90deg, ${left} 0%, ${left} 42%, ${mixColor(left, rightSide, 58)} 50%, ${rightSide} 58%, ${rightSide} 100%)`,
-    bottom: `linear-gradient(90deg, ${left} 0%, ${left} 42%, ${mixColor(left, rightSide, 58)} 50%, ${rightSide} 58%, ${rightSide} 100%)`,
-    left: `linear-gradient(180deg, ${left} 0%, ${left} 100%)`,
-    right: `linear-gradient(180deg, ${rightSide} 0%, ${rightSide} 100%)`,
-  };
 }
 
 function getSelectionHaloColors(
@@ -1184,8 +1125,7 @@ export function InfiniteCanvas({
       }
 
       const target = event.target as HTMLElement | null;
-      const requiresDragHandle =
-        (node.renderMode === "full" || node.renderMode === "resized") && node.kind !== "asset-source";
+      const requiresDragHandle = node.presentation.useRailDragHandle;
       const hasDragHandle = Boolean(target?.closest("[data-node-drag-handle='true']"));
       if (requiresDragHandle && !hasDragHandle) {
         if (!(selectedNodeIds.length === 1 && selectedNodeIds[0] === node.id)) {
@@ -1524,31 +1464,40 @@ export function InfiniteCanvas({
           const semanticOutputType = getNodeOutputSemanticType(node);
           const outputAccentType = getNodeOutputAccentType(node);
           const outputColor = semanticColor(outputAccentType);
-          const hasConnectedOutput = isModelNode
+          const hasConnectedOutput = isModelNode || isFunctionNode
             ? edges.some((edge) => edge.sourceNodeId === node.id)
             : false;
           const modelRightAccentType: CanvasAccentType = hasConnectedOutput ? "citrus" : "neutral";
           const functionRightAccentType: CanvasAccentType = hasConnectedOutput ? "function" : "neutral";
+          const primaryBorderInputTypes = (
+            node.inputSemanticTypes && node.inputSemanticTypes.length > 0
+              ? node.inputSemanticTypes
+              : ["neutral"]
+          ) as CanvasAccentType[];
           const imageFrameAspectRatio = shouldRenderImageFrame
             ? getImageFrameAspectRatio(node, nodesById, imageAspectRatios)
             : 1;
           const generatedBorderGradient = getBorderGradient(["citrus"], semanticOutputType);
-          const modelBorderLayers = getModelBorderLayers(
-            (node.inputSemanticTypes && node.inputSemanticTypes.length > 0
-              ? node.inputSemanticTypes
-              : ["neutral"]) as CanvasAccentType[],
+          const modelBorderLayers = getCanvasNodeBorderLayers(
+            primaryBorderInputTypes,
             isFunctionNode ? functionRightAccentType : modelRightAccentType
           );
-          const textNoteBorderLayers = getModelBorderLayers(
+          const textNoteBorderLayers = getCanvasNodeBorderLayers(
             (node.inputSemanticTypes && node.inputSemanticTypes.length > 0
               ? node.inputSemanticTypes
               : ["text"]) as CanvasAccentType[],
+            "text",
+            "text"
+          );
+          const semanticFrameBorderLayers = getCanvasNodeBorderLayers(
+            (node.inputSemanticTypes && node.inputSemanticTypes.length > 0
+              ? node.inputSemanticTypes
+              : ["text"]) as CanvasAccentType[],
+            "text",
             "text"
           );
           const selectionHaloColors = getSelectionHaloColors(
-            (node.inputSemanticTypes && node.inputSemanticTypes.length > 0
-              ? (node.inputSemanticTypes as CanvasAccentType[])
-              : ["neutral"]),
+            primaryBorderInputTypes,
             isModelNode ? modelRightAccentType : isFunctionNode ? functionRightAccentType : outputAccentType,
             node.kind,
             node.assetOrigin
@@ -1568,6 +1517,10 @@ export function InfiniteCanvas({
             "--text-note-border-right": textNoteBorderLayers.right,
             "--text-note-border-bottom": textNoteBorderLayers.bottom,
             "--text-note-border-left": textNoteBorderLayers.left,
+            "--node-frame-border-top": semanticFrameBorderLayers.top,
+            "--node-frame-border-right": semanticFrameBorderLayers.right,
+            "--node-frame-border-bottom": semanticFrameBorderLayers.bottom,
+            "--node-frame-border-left": semanticFrameBorderLayers.left,
             "--node-glow-left-top": selectionHaloColors.leftTop,
             "--node-glow-left-bottom": selectionHaloColors.leftBottom,
             "--node-glow-right": selectionHaloColors.right,
@@ -1578,7 +1531,7 @@ export function InfiniteCanvas({
             "--port-glow":
               node.inputSemanticTypes && node.inputSemanticTypes.length > 0
                 ? semanticGlow(node.inputSemanticTypes[0])
-                : "rgba(255, 255, 255, 0.34)",
+                : "color-mix(in srgb, var(--node-accent-neutral) 38%, transparent)",
           } as CSSProperties;
           const outputPortStyle = {
             "--port-fill": outputColor,
@@ -1593,7 +1546,8 @@ export function InfiniteCanvas({
               }}
               role="button"
               tabIndex={0}
-              className={`${styles.node} ${isSelected ? styles.nodeSelected : ""} ${shouldRenderImageFrame ? styles.nodeWithImage : ""} ${isGeneratedAsset ? styles.nodeGeneratedAsset : ""} ${isUploadedAsset ? styles.nodeUploadedAsset : ""} ${isTextNote ? styles.nodeTextNote : ""} ${isGeneratedTextNote ? styles.nodeGeneratedTextNote : ""} ${isListNode ? styles.nodeList : ""} ${isTextTemplateNode ? styles.nodeTextTemplate : ""} ${isModelNode || isFunctionNode ? styles.nodeModel : ""} ${activeConnectionNodeIds.has(node.id) ? styles.nodePortActive : ""} ${showsProcessingShell ? styles.nodeGeneratedProcessing : ""} ${node.renderMode === "compact" ? styles.nodeCompactMode : ""} ${node.renderMode === "full" ? styles.nodeFullMode : ""} ${node.renderMode === "resized" ? styles.nodeResizedMode : ""}`}
+              data-rail-drag={node.presentation.useRailDragHandle ? "true" : "false"}
+              className={`${styles.node} ${isSelected ? styles.nodeSelected : ""} ${shouldRenderImageFrame ? nodeStyles.nodeWithImage : ""} ${isGeneratedAsset ? nodeStyles.nodeGeneratedAsset : ""} ${isUploadedAsset ? nodeStyles.nodeUploadedAsset : ""} ${isTextNote ? nodeStyles.nodeTextNote : ""} ${isTextNote && !isGeneratedTextNote ? nodeStyles.nodeSemanticFrame : ""} ${isGeneratedTextNote ? nodeStyles.nodeGeneratedTextNote : ""} ${isListNode ? nodeStyles.nodeList : ""} ${isListNode ? nodeStyles.nodeSemanticFrame : ""} ${isTextTemplateNode ? nodeStyles.nodeTextTemplate : ""} ${isModelNode || isFunctionNode ? nodeStyles.nodeModel : ""} ${activeConnectionNodeIds.has(node.id) ? styles.nodePortActive : ""} ${showsProcessingShell ? nodeStyles.nodeGeneratedProcessing : ""} ${node.renderMode === "compact" ? nodeStyles.nodeCompactMode : ""} ${node.renderMode === "full" ? nodeStyles.nodeFullMode : ""} ${node.renderMode === "resized" ? nodeStyles.nodeResizedMode : ""}`}
               style={nodeStyle}
               onClick={(event) => {
                 event.stopPropagation();
@@ -1643,10 +1597,10 @@ export function InfiniteCanvas({
               ) : null}
 
               {shouldRenderImageFrame ? (
-                <div className={styles.assetNodeLayout}>
+                <div className={nodeStyles.assetNodeLayout}>
                   <div
-                    className={`${styles.sourcePreviewFrame} ${isGeneratedAsset ? styles.sourcePreviewFrameGenerated : ""} ${isUploadedAsset ? styles.sourcePreviewFrameUploaded : ""} ${showsProcessingShell ? styles.sourcePreviewFrameProcessing : ""} ${
-                      !hasImageSource ? styles.sourcePreviewFramePlaceholder : ""
+                    className={`${nodeStyles.sourcePreviewFrame} ${isGeneratedAsset ? nodeStyles.sourcePreviewFrameGenerated : ""} ${isUploadedAsset ? nodeStyles.sourcePreviewFrameUploaded : ""} ${showsProcessingShell ? nodeStyles.sourcePreviewFrameProcessing : ""} ${
+                      !hasImageSource ? nodeStyles.sourcePreviewFramePlaceholder : ""
                     }`}
                     style={{
                       aspectRatio: String(imageFrameAspectRatio),
@@ -1654,7 +1608,7 @@ export function InfiniteCanvas({
                   >
                     {hasImageSource ? (
                       <img
-                        className={styles.sourcePreviewImage}
+                        className={nodeStyles.sourcePreviewImage}
                         src={imageSourceUrl || undefined}
                         alt={`${node.label} source`}
                         draggable={false}
@@ -1681,29 +1635,29 @@ export function InfiniteCanvas({
                         }}
                       />
                     ) : (
-                      <div className={styles.imagePlaceholderSurface} />
+                      <div className={nodeStyles.imagePlaceholderSurface} />
                     )}
                     {showProcessingState ? (
-                      <div className={styles.imageNodeStatus}>
-                        <span className={styles.statusBubble} data-state={node.processingState || undefined}>
+                      <div className={nodeStyles.imageNodeStatus}>
+                        <span className={nodeStyles.statusBubble} data-state={node.processingState || undefined}>
                           {node.processingState}
                         </span>
                       </div>
                     ) : null}
                   </div>
-                  <div className={styles.inlineNodeContentWrap}>{renderNodeContent(node)}</div>
+                  {renderNodeContent(node)}
                 </div>
               ) : (
-                <div className={styles.inlineNodeContentWrap}>{renderNodeContent(node)}</div>
+                renderNodeContent(node)
               )}
 
               {hasNonImageSource ? (
-                <div className={styles.sourceBadge}>{`${node.outputType.toUpperCase()} source`}</div>
+                <div className={nodeStyles.sourceBadge}>{`${node.outputType.toUpperCase()} source`}</div>
               ) : null}
-              {node.canResize && (node.renderMode === "full" || node.renderMode === "resized") ? (
+              {node.canResize && node.presentation.isExpanded && node.renderMode !== "compact" ? (
                 <button
                   type="button"
-                  className={styles.resizeHandle}
+                  className={nodeStyles.resizeHandle}
                   onPointerDown={(event) => onResizeHandlePointerDown(node, event)}
                   onClick={(event) => event.stopPropagation()}
                   aria-label={`Resize ${node.label}`}

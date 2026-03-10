@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   canResizeWorkflowNode,
   doesWorkflowNodeLockAspectRatio,
+  getCanvasNodeInteractionPolicy,
   resolveCanvasNodePresentation,
 } from "./canvas-node-presentation";
 
@@ -21,8 +22,11 @@ test("promotes the active full node into transient full mode without changing pe
 
   assert.equal(presentation.persistedMode, "preview");
   assert.equal(presentation.renderMode, "full");
-  assert.equal(presentation.canResize, false);
-  assert.deepEqual(presentation.size, { width: 980, height: 336 });
+  assert.equal(presentation.canResize, true);
+  assert.equal(presentation.interactionPolicy, "model");
+  assert.equal(presentation.isExpanded, true);
+  assert.equal(presentation.showTitleRail, true);
+  assert.deepEqual(presentation.size, { width: 980, height: 420 });
 });
 
 test("keeps compact nodes compact when full mode is not active", () => {
@@ -40,7 +44,41 @@ test("keeps compact nodes compact when full mode is not active", () => {
 
   assert.equal(presentation.persistedMode, "compact");
   assert.equal(presentation.renderMode, "compact");
+  assert.equal(presentation.showTitleRail, true);
   assert.deepEqual(presentation.size, { width: 148, height: 42 });
+});
+
+test("keeps templates in preview on single selection and only enters full mode when editing", () => {
+  const selectedPreview = resolveCanvasNodePresentation({
+    node: {
+      kind: "text-template",
+      outputType: "text",
+      displayMode: "preview",
+      size: null,
+    },
+    activeNodeId: "template-1",
+    fullNodeId: null,
+    nodeId: "template-1",
+  });
+
+  assert.equal(selectedPreview.renderMode, "preview");
+  assert.equal(selectedPreview.isExpanded, true);
+  assert.equal(selectedPreview.isEditing, false);
+
+  const editingPresentation = resolveCanvasNodePresentation({
+    node: {
+      kind: "text-template",
+      outputType: "text",
+      displayMode: "preview",
+      size: null,
+    },
+    activeNodeId: "template-1",
+    fullNodeId: "template-1",
+    nodeId: "template-1",
+  });
+
+  assert.equal(editingPresentation.renderMode, "full");
+  assert.equal(editingPresentation.isEditing, true);
 });
 
 test("clamps resized list nodes to their minimum inline spreadsheet size", () => {
@@ -68,4 +106,5 @@ test("treats image asset nodes as resizable but aspect-ratio locked", () => {
   assert.equal(canResizeWorkflowNode({ kind: "asset-source" }), true);
   assert.equal(doesWorkflowNodeLockAspectRatio({ kind: "asset-source", outputType: "image" }), true);
   assert.equal(doesWorkflowNodeLockAspectRatio({ kind: "asset-source", outputType: "video" }), false);
+  assert.equal(getCanvasNodeInteractionPolicy({ kind: "asset-source", outputType: "image" }), "image-asset");
 });

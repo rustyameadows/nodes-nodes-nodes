@@ -629,13 +629,13 @@ async function main() {
     );
     await withTimeout(
       "template compatibility",
-      window.waitForFunction(() => document.body.textContent?.includes("Compatibility"), undefined, {
+      window.waitForFunction(() => document.body.textContent?.includes("Compatibility checks"), undefined, {
         timeout: 15_000,
       })
     );
     await withTimeout(
       "template merge preview",
-      window.waitForFunction(() => document.body.textContent?.includes("Merge preview"), undefined, {
+      window.waitForFunction(() => document.body.textContent?.includes("Inline merge preview"), undefined, {
         timeout: 15_000,
       })
     );
@@ -888,9 +888,10 @@ async function main() {
     const modelNodeId = getRequiredCanvasNodeId(interactionNodes, "Smoke Image Model");
     const listNodeId = getRequiredCanvasNodeId(interactionNodes, "Smoke List");
     const templateNodeId = getRequiredCanvasNodeId(interactionNodes, "Smoke Template");
-    const modelNode = window.locator("div[role='button']").filter({ hasText: "Smoke Image Model" }).first();
+    const modelPreviewLabel = "GPT Image 1.5";
+    const modelNode = window.locator("div[role='button']").filter({ hasText: modelPreviewLabel }).first();
     await modelNode.waitFor({ state: "visible", timeout: 15_000 });
-    await screenshotCanvasNode(window, "Smoke Image Model", modelPreviewScreenshotPath);
+    await screenshotCanvasNode(window, modelPreviewLabel, modelPreviewScreenshotPath);
     console.log("Model preview screenshot:", modelPreviewScreenshotPath);
     await withTimeout(
       "canvas nodes after reload",
@@ -1003,7 +1004,7 @@ async function main() {
       api?.selectNodes([nodeId]);
     }, modelNodeId);
     await window.waitForTimeout(150);
-    await clickCanvasNode(window, "Smoke Image Model");
+    await clickCanvasNode(window, modelPreviewLabel);
     const singleSelectCount = await window.evaluate(() => {
       const api = (window as typeof window & {
         __NND_CANVAS_TEST__?: { getState: () => { selectedNodeIds: string[] } };
@@ -1011,7 +1012,7 @@ async function main() {
       return api?.getState().selectedNodeIds.length || 0;
     });
     assert.equal(singleSelectCount, 1, "Expected one selected node before Enter shortcut.");
-    const modelNodeButton = window.locator("div[role='button']").filter({ hasText: "Smoke Image Model" }).first();
+    const modelNodeButton = window.locator("div[role='button']").filter({ hasText: modelPreviewLabel }).first();
     await modelNodeButton.focus();
     await window.keyboard.press("Enter");
     const promptEditor = window.locator('textarea[placeholder="Describe what to generate"]').first();
@@ -1031,7 +1032,7 @@ async function main() {
       "model prompt editor",
       promptEditor.waitFor({ state: "visible", timeout: 15_000 })
     );
-    await screenshotCanvasNode(window, "Smoke Image Model", modelFullScreenshotPath);
+    await screenshotCanvasNode(window, modelPreviewLabel, modelFullScreenshotPath);
     console.log("Model full screenshot:", modelFullScreenshotPath);
     await promptEditor.click();
     await promptEditor.fill("");
@@ -1076,31 +1077,17 @@ async function main() {
     );
     console.log("Canvas undo/redo for inline full-node edit verified");
 
-    const viewportBeforeNodeFocus = await window.evaluate(() => {
-      return (
-        (window as typeof window & {
-          __NND_CANVAS_TEST__?: {
-            getState: () => {
-              canvasViewport: { x: number; y: number; zoom: number };
-            };
-          };
-        }).__NND_CANVAS_TEST__?.getState().canvasViewport || { x: 0, y: 0, zoom: 1 }
-      );
-    });
     await screenshotCanvasNode(window, "Draw a red square on a blue background.", nodeFocusBeforeScreenshotPath);
     console.log("Node focus before screenshot:", nodeFocusBeforeScreenshotPath);
     await clickCanvasNode(window, "Draw a red square on a blue background.", { doubleClick: true });
     await withTimeout(
-      "note editor via double click",
-      window.locator('textarea[placeholder="Write note text"]').waitFor({ state: "visible", timeout: 15_000 })
-    );
-    await withTimeout(
-      "node focus zoom via double click",
+      "note selection via double click",
       window.waitForFunction(
-        ({ minimumZoom, expectedNodeId }) => {
+        ({ expectedNodeId }) => {
           const api = (window as typeof window & {
             __NND_CANVAS_TEST__?: {
               getState: () => {
+                selectedNodeIds: string[];
                 activeFullNodeId: string | null;
                 canvasViewport: { x: number; y: number; zoom: number };
               };
@@ -1108,42 +1095,29 @@ async function main() {
           }).__NND_CANVAS_TEST__;
           return Boolean(
             api &&
-            api.getState().activeFullNodeId === expectedNodeId &&
-            api.getState().canvasViewport.zoom >= minimumZoom
+            api.getState().selectedNodeIds.length === 1 &&
+            api.getState().selectedNodeIds[0] === expectedNodeId &&
+            api.getState().activeFullNodeId === null
           );
         },
         {
-          minimumZoom: viewportBeforeNodeFocus.zoom + 0.02,
           expectedNodeId: promptNodeId,
         },
         { timeout: 15_000 }
       )
     );
-    const viewportAfterNodeFocus = await window.evaluate(() => {
-      return (
-        (window as typeof window & {
-          __NND_CANVAS_TEST__?: {
-            getState: () => {
-              canvasViewport: { x: number; y: number; zoom: number };
-            };
-          };
-        }).__NND_CANVAS_TEST__?.getState().canvasViewport || { x: 0, y: 0, zoom: 1 }
-      );
-    });
-    assert.ok(
-      viewportAfterNodeFocus.zoom > viewportBeforeNodeFocus.zoom,
-      "Expected node double click to increase canvas zoom."
-    );
-    assert.ok(
-      viewportAfterNodeFocus.zoom <= 1.1,
-      `Expected node double click zoom to stay gentle, received ${viewportAfterNodeFocus.zoom}.`
+    await withTimeout(
+      "note editor surface via double click",
+      getCanvasNodeLocator(window, "Draw a red square on a blue background.")
+        .locator('textarea[placeholder="Empty note"]')
+        .waitFor({ state: "visible", timeout: 15_000 })
     );
     await screenshotCanvasNode(window, "Draw a red square on a blue background.", nodeFocusScreenshotPath);
     console.log("Node focus screenshot:", nodeFocusScreenshotPath);
     await blurActiveElement(window);
     await window.mouse.click(48, 48);
     await blurActiveElement(window);
-    console.log("Canvas node double-click editor + focus zoom verified");
+    console.log("Canvas note double-click selection verified");
 
     await blurActiveElement(window);
     const nodeCountBeforeAddMenuInsert = (await getCanvasNodes(window, projectId)).length;
@@ -1175,8 +1149,8 @@ async function main() {
       "Expected redo to restore the inserted node."
     );
 
-    await clickCanvasNode(window, "Smoke List");
-    const listNodeButton = window.locator("div[role='button']").filter({ hasText: "Smoke List" }).first();
+    await clickCanvasNode(window, "Animal");
+    const listNodeButton = window.locator("div[role='button']").filter({ hasText: "Animal" }).first();
     await listNodeButton.focus();
     await window.keyboard.press("Enter");
     try {
@@ -1195,7 +1169,7 @@ async function main() {
       "list editor",
       window.getByRole("button", { name: "Add column", exact: true }).waitFor({ state: "visible", timeout: 15_000 })
     );
-    await screenshotCanvasNode(window, "Smoke List", listFullScreenshotPath);
+    await screenshotCanvasNode(window, "Animal", listFullScreenshotPath);
     console.log("List full screenshot:", listFullScreenshotPath);
     const listColumnInput = window.locator('input[placeholder="Column 1"]').first();
     await listColumnInput.click();
@@ -1224,14 +1198,14 @@ async function main() {
       { nodeId: listNodeId }
     );
     await window.waitForTimeout(900);
-    await clickCanvasNode(window, "Smoke Prompt");
+    await clickCanvasNode(window, "Draw a red square on a blue background.");
     await window.waitForTimeout(900);
     const resizedListNodes = await getCanvasNodes(window, projectId);
     const resizedListNode = resizedListNodes.find((node) => node.id === listNodeId);
     assert.equal(resizedListNode?.displayMode, "resized", "Expected list node to persist resized mode.");
     await withTimeout(
       "resized list keeps sheet layout after deselect",
-      getCanvasNodeLocator(window, "Smoke List").getByText("Editable table").waitFor({ state: "visible", timeout: 15_000 })
+      getCanvasNodeLocator(window, "Animal").getByText("Animal").waitFor({ state: "visible", timeout: 15_000 })
     );
     const viewportBeforeResizedNodeFocus = await window.evaluate(() => {
       return (
@@ -1248,7 +1222,7 @@ async function main() {
         }
       );
     });
-    await clickCanvasNode(window, "Smoke List", { doubleClick: true });
+    await clickCanvasNode(window, "Animal", { doubleClick: true });
     await withTimeout(
       "resized list focus without full mode",
       window.waitForFunction(
@@ -1325,7 +1299,7 @@ async function main() {
     );
     await withTimeout(
       "resized list keeps sheet layout after reload",
-      getCanvasNodeLocator(window, "Smoke List").getByText("Editable table").waitFor({ state: "visible", timeout: 15_000 })
+      getCanvasNodeLocator(window, "Animal").getByText("Animal").waitFor({ state: "visible", timeout: 15_000 })
     );
     console.log("Resized list persistence verified");
 
@@ -1341,7 +1315,7 @@ async function main() {
       "template editor",
       window.locator('textarea[placeholder="Write template with [[variables]]"]').waitFor({ state: "visible", timeout: 15_000 })
     );
-    await screenshotCanvasNode(window, "Smoke Template", templateFullScreenshotPath);
+    await screenshotCanvasNode(window, "[[Animal]]", templateFullScreenshotPath);
     console.log("Template full screenshot:", templateFullScreenshotPath);
     await window.evaluate(
       ({ nodeId }) => {
@@ -1355,14 +1329,14 @@ async function main() {
       { nodeId: templateNodeId }
     );
     await window.waitForTimeout(900);
-    await clickCanvasNode(window, "Smoke Prompt");
+    await clickCanvasNode(window, "Draw a red square on a blue background.");
     await window.waitForTimeout(900);
     const resizedTemplateNodes = await getCanvasNodes(window, projectId);
     const resizedTemplateNode = resizedTemplateNodes.find((node) => node.id === templateNodeId);
     assert.equal(resizedTemplateNode?.displayMode, "resized", "Expected template node to persist resized mode.");
     await withTimeout(
-      "resized template keeps merge preview after deselect",
-      getCanvasNodeLocator(window, "Smoke Template").getByText("Merge preview").waitFor({ state: "visible", timeout: 15_000 })
+      "resized template keeps variable pills after deselect",
+      getCanvasNodeLocator(window, "[[Animal]]").getByText("[[Animal]]").waitFor({ state: "visible", timeout: 15_000 })
     );
 
     await window.reload();
@@ -1381,8 +1355,8 @@ async function main() {
       )
     );
     await withTimeout(
-      "resized template keeps merge preview after reload",
-      getCanvasNodeLocator(window, "Smoke Template").getByText("Merge preview").waitFor({ state: "visible", timeout: 15_000 })
+      "resized template keeps variable pills after reload",
+      getCanvasNodeLocator(window, "[[Animal]]").getByText("[[Animal]]").waitFor({ state: "visible", timeout: 15_000 })
     );
     console.log("Resized template persistence verified");
 

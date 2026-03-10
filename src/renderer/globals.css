@@ -1,4 +1,5 @@
 @import "../styles/design-system/variables.css";
+@import "../styles/design-system/nodes/variables.css";
 
 * {
   box-sizing: border-box;

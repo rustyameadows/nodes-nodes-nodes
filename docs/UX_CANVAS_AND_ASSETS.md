@@ -20,12 +20,17 @@
 - Use a two-surface system:
   - light app chrome for home, library, settings, queue, assets, and detail views
   - dark overlay chrome for floating controls above the black canvas
-- Preserve the black canvas and the semantic node color language inside protected node renderers.
+- Preserve the black canvas and the semantic node/connection color language.
+- Node cards now use a dedicated canvas-node system that shares foundations with the app design system without inheriting the light-shell look.
 - Preserve semantic canvas colors:
   - pink for text
   - blue for image assets
   - orange for video
   - citrus for generated output flow
+- Node borders stay neutral until the node is wired into the graph.
+- Once wired, borders advertise semantics:
+  - input-side accents appear on the left edge from connected upstream semantics
+  - node/output accents appear on the right edge from downstream/output meaning
 - Functional parity matters more than exact shell/layout parity.
 
 ## Canvas
@@ -71,44 +76,40 @@
 - node presentation states:
   - `preview` is the default persisted state
   - `compact` is a persisted pill/tiny-node state
-  - `full` is transient and applies only to the active single-selected node
-  - `resized` is a persisted custom size for text notes, lists, templates, and asset nodes
+  - `full` is transient and primarily used for model response settings plus template edit mode
+  - `resized` is a persisted custom size for text notes, lists, templates, model nodes, and asset nodes
 - mode changes animate quickly on shell size/content transitions, but those transitions shut off while dragging, resizing, or panning
 - inline full-mode entry points:
-  - `Enter` opens the selected node's inline full editor
-  - node double-click on a `preview` or `compact` node opens the same inline full editor and gently animates the viewport to that node
-  - node double-click on a `resized` node keeps it resized and only animates the viewport focus
-- primary editor mapping:
-  - model -> `Prompt`
-  - text note -> `Note`
-  - list -> `List`
-  - text template -> `Template`
-  - uploaded asset source -> `Details`
-  - generated asset / generated model-spawned nodes -> `Source`
-- full/resized nodes use a header/chrome drag handle so text areas, table cells, and inline controls stay editable without dragging the node
-- asset/image nodes are the exception to chrome-only drag: dragging directly on the media surface still moves the node, while quick-action controls stop propagation
-- model preview stays close to the original small model card
-- model full mode follows the issue `#44` direction: one wide horizontal shell with inputs on the left, prompt/editor in the middle, model settings next, and output/run controls aligned toward the output edge
-- list full/resized mode is an inline sheet:
+  - `Enter` activates the selected node's primary mode
+  - image node double-click zooms the viewport to the node without changing node mode
+  - template node double-click enters edit mode
+  - resized nodes keep their custom size when re-opened
+- active-node behavior by kind:
+  - image asset: single-select reveals title/action rails only; the media surface stays visually stable
+  - model: single-select opens the full response-settings layout unless the node is explicitly in `compact`
+  - text note: single-select reveals rails but keeps the sticky-note body visually unchanged
+  - list: single-select keeps the spreadsheet look and reveals edit affordances in place
+  - template: single-select stays in preview; `Edit` or double-click enters the larger editor
+- active nodes use floating title and action rails rendered outside the node bounds so controls do not shift content
+- active node drag uses rail/hotspot affordances instead of visible drag indicators
+- model full mode is a responsive settings box that can collapse from multi-column to one-column as the node width changes
+- list mode is a spreadsheet surface across preview, active, and resized states:
   - editable header row
   - editable cell grid
   - row number rail
-  - add row / add column actions in node chrome
-  - remove-row action column
-  - remove-column controls in the header
-- template full mode includes:
-  - textarea editing
-  - detected placeholder chips
-  - connected-list column chips that insert `[[Column Name]]`
-  - inline compatibility warnings
-  - live merge preview rows
-- template full mode uses a two-zone layout with the editor on the left and compatibility/merge preview in a contained side rail
+  - draft entry row at the end while active
+  - floating add-column action
+  - resizable column dividers
+- template mode includes:
+  - text-note-like preview styling when not editing
+  - inline variable pills as the primary preview differentiator
+  - a larger edit mode with variable insert buttons and compact compatibility status
 - active-node phantom previews:
   - appear only when exactly one source node is active
   - show likely downstream outputs without persisting real nodes
   - use dotted/low-opacity output connections
   - pin the run launcher near the source output edge
-- active template nodes suppress external phantom row cards while they are in `full` mode and rely on the inline merge preview instead
+- active template nodes suppress external phantom row cards while they are in edit mode
 - multi-selection compare/download actions live in a floating selection strip near the current selection instead of the old bottom bar
 - the selection strip, queue pill, insert picker, asset picker, and bottom-bar popovers may be restyled as overlay chrome without changing node or connection rendering
 - canvas keyboard shortcuts when focus is not inside an input, textarea, select, or contenteditable surface:
@@ -137,7 +138,7 @@
 - pending generated-output placeholders/previews may appear while a job is queued, running, or failed, but they are separate from the final spawned child nodes
 - rerunning a model node appends a fresh set of generated child nodes instead of replacing older ones
 - deleting a generated child node keeps it deleted; completed outputs do not respawn automatically on later reloads or job polls
-- template/list pairs show live inline merge preview before generation; those previews do not create real output nodes until run
+- template/list pairs still compute live compatibility before generation, but the main visual emphasis for potential output rows stays in the phantom/generated preview layer rather than an oversized template side rail
 
 ## Asset Viewer
 - Grid view

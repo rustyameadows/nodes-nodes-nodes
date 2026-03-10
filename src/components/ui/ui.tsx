@@ -2,13 +2,21 @@
 
 import {
   forwardRef,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
   type ButtonHTMLAttributes,
+  type CSSProperties,
   type HTMLAttributes,
   type InputHTMLAttributes,
   type ReactNode,
+  type Ref,
   type SelectHTMLAttributes,
   type TextareaHTMLAttributes,
 } from "react";
+import { createPortal } from "react-dom";
+import { computeAnchoredOverlayPosition, type AnchoredOverlayPlacement } from "@/lib/anchored-overlay";
 import {
   buildUiDataAttributes,
   normalizeUiDensity,
@@ -37,6 +45,19 @@ type BaseProps = {
   density?: UiDensity;
   className?: string;
 };
+
+function assignRef<T>(ref: Ref<T> | undefined, value: T) {
+  if (!ref) {
+    return;
+  }
+
+  if (typeof ref === "function") {
+    ref(value);
+    return;
+  }
+
+  ref.current = value;
+}
 
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> &
   BaseProps & {
@@ -304,3 +325,186 @@ export function ModalSurface({ surface, density, className, ...props }: SurfaceS
     />
   );
 }
+
+type AnchoredOverlayProps = HTMLAttributes<HTMLDivElement> &
+  BaseProps & {
+    open: boolean;
+    anchorEl: HTMLElement | null;
+    onRequestClose?: () => void;
+    preferredPlacement?: AnchoredOverlayPlacement;
+    offset?: number;
+    viewportPadding?: number;
+    minHeight?: number;
+    width?: number;
+    minWidth?: number;
+    maxWidth?: number;
+    matchAnchorWidth?: boolean;
+    closeOnEscape?: boolean;
+    closeOnInteractOutside?: boolean;
+  };
+
+export const AnchoredOverlay = forwardRef<HTMLDivElement, AnchoredOverlayProps>(function AnchoredOverlay(
+  {
+    open,
+    anchorEl,
+    onRequestClose,
+    preferredPlacement = "bottom-start",
+    offset = 10,
+    viewportPadding = 14,
+    minHeight = 180,
+    width,
+    minWidth,
+    maxWidth,
+    matchAnchorWidth = false,
+    closeOnEscape = true,
+    closeOnInteractOutside = true,
+    surface,
+    density,
+    className,
+    style,
+    children,
+    ...props
+  },
+  ref
+) {
+  const overlayRef = useRef<HTMLDivElement | null>(null);
+  const [positionStyle, setPositionStyle] = useState<CSSProperties | null>(null);
+
+  useLayoutEffect(() => {
+    if (!open || !anchorEl) {
+      setPositionStyle(null);
+      return;
+    }
+
+    const updatePosition = () => {
+      if (!anchorEl.isConnected) {
+        setPositionStyle(null);
+        onRequestClose?.();
+        return;
+      }
+
+      const rect = anchorEl.getBoundingClientRect();
+      const nextPosition = computeAnchoredOverlayPosition({
+        anchorRect: {
+          top: rect.top,
+          left: rect.left,
+          bottom: rect.bottom,
+          width: rect.width,
+        },
+        viewport: {
+          width: window.innerWidth,
+          height: window.innerHeight,
+        },
+        preferredPlacement,
+        offset,
+        viewportPadding,
+        minHeight,
+        width,
+        minWidth,
+        maxWidth,
+        matchAnchorWidth,
+      });
+
+      setPositionStyle({
+        left: nextPosition.left,
+        width: nextPosition.width,
+        maxHeight: nextPosition.maxHeight,
+        ...(nextPosition.top !== undefined ? { top: nextPosition.top } : {}),
+        ...(nextPosition.bottom !== undefined ? { bottom: nextPosition.bottom } : {}),
+      });
+    };
+
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    const resizeObserver =
+      typeof ResizeObserver !== "undefined"
+        ? new ResizeObserver(() => {
+            updatePosition();
+          })
+        : null;
+    resizeObserver?.observe(anchorEl);
+
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+      resizeObserver?.disconnect();
+    };
+  }, [
+    anchorEl,
+    matchAnchorWidth,
+    maxWidth,
+    minHeight,
+    minWidth,
+    offset,
+    onRequestClose,
+    open,
+    preferredPlacement,
+    viewportPadding,
+    width,
+  ]);
+
+  useEffect(() => {
+    if (!open || !closeOnInteractOutside) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) {
+        return;
+      }
+
+      if (overlayRef.current?.contains(target) || anchorEl?.contains(target)) {
+        return;
+      }
+
+      onRequestClose?.();
+    };
+
+    window.addEventListener("pointerdown", handlePointerDown, true);
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown, true);
+    };
+  }, [anchorEl, closeOnInteractOutside, onRequestClose, open]);
+
+  useEffect(() => {
+    if (!open || !closeOnEscape) {
+      return;
+    }
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onRequestClose?.();
+      }
+    };
+
+    window.addEventListener("keydown", handleEscape);
+    return () => {
+      window.removeEventListener("keydown", handleEscape);
+    };
+  }, [closeOnEscape, onRequestClose, open]);
+
+  if (!open || !anchorEl || !positionStyle) {
+    return null;
+  }
+
+  return createPortal(
+    <div
+      {...props}
+      {...buildUiDataAttributes(normalizeUiSurface(surface), normalizeUiDensity(density))}
+      ref={(node) => {
+        overlayRef.current = node;
+        assignRef(ref, node);
+      }}
+      className={cx(styles.anchoredOverlay, className)}
+      style={{
+        ...positionStyle,
+        ...style,
+      }}
+    >
+      {children}
+    </div>,
+    document.body
+  );
+});

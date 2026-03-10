@@ -10,7 +10,7 @@ import {
 import { useHotkey } from "@tanstack/react-hotkeys";
 import { useRouter } from "@/renderer/navigation";
 import { InfiniteCanvas } from "@/components/infinite-canvas";
-import { CanvasNodeContent, type ActiveCanvasNodeEditorState } from "@/components/canvas-node-content";
+import { CanvasNodeContent, type ActiveCanvasNodeEditorState } from "@/components/canvas-nodes";
 import type {
   CanvasConnection,
   CanvasInsertRequest,
@@ -1105,6 +1105,7 @@ export function CanvasView({ projectId }: Props) {
 
         return {
           ...node,
+          presentation,
           renderMode: presentation.renderMode,
           canResize: presentation.canResize,
           lockAspectRatio: presentation.lockAspectRatio,
@@ -1150,6 +1151,7 @@ export function CanvasView({ projectId }: Props) {
       if (!sourceJobId || typeof sourceOutputIndex !== "number") {
         return {
           ...node,
+          presentation,
           renderMode: presentation.renderMode,
           canResize: presentation.canResize,
           lockAspectRatio: presentation.lockAspectRatio,
@@ -1166,6 +1168,7 @@ export function CanvasView({ projectId }: Props) {
       const previewFrame = latestPreviewFrameByJobOutputKey.get(`${sourceJobId}:${sourceOutputIndex}`);
       return {
         ...node,
+        presentation,
         renderMode: presentation.renderMode,
         canResize: presentation.canResize,
         lockAspectRatio: presentation.lockAspectRatio,
@@ -2562,7 +2565,24 @@ export function CanvasView({ projectId }: Props) {
       setTrackedSelectedConnection(null);
       setInsertMenu(null);
       setAssetPicker(null);
-      setActiveFullNodeId(nodeId);
+      setActiveFullNodeId(node.kind === "text-template" ? nodeId : null);
+    },
+    [commitPendingCoalescedHistory, nodesById, setTrackedSelectedConnection, setTrackedSelectedNodeIds]
+  );
+
+  const enterNodeEditMode = useCallback(
+    (nodeId: string) => {
+      const node = nodesById[nodeId];
+      if (!node) {
+        return;
+      }
+
+      commitPendingCoalescedHistory();
+      setTrackedSelectedNodeIds([nodeId]);
+      setTrackedSelectedConnection(null);
+      setInsertMenu(null);
+      setAssetPicker(null);
+      setActiveFullNodeId(node.kind === "text-template" ? nodeId : null);
     },
     [commitPendingCoalescedHistory, nodesById, setTrackedSelectedConnection, setTrackedSelectedNodeIds]
   );
@@ -2599,15 +2619,24 @@ export function CanvasView({ projectId }: Props) {
         return;
       }
 
+      if (node.kind === "asset-source" && node.outputType === "image") {
+        focusNodeViewport(nodeId);
+        return;
+      }
+
+      if (node.kind === "text-template") {
+        enterNodeEditMode(nodeId);
+        return;
+      }
+
       if (node.displayMode === "resized") {
         focusNodeViewport(nodeId);
         return;
       }
 
       openPrimaryEditorForNode(nodeId);
-      setPendingViewportFocusNodeId(nodeId);
     },
-    [focusNodeViewport, nodesById, openPrimaryEditorForNode]
+    [enterNodeEditMode, focusNodeViewport, nodesById, openPrimaryEditorForNode]
   );
 
   const updateSelectedModelParameter = useCallback(
@@ -3858,10 +3887,12 @@ export function CanvasView({ projectId }: Props) {
     [selectedListSettings, updateSelectedListSettings]
   );
 
-  const addSelectedListRow = useCallback(() => {
+  const addSelectedListRow = useCallback((initialValues?: Record<string, string>) => {
     if (!selectedListSettings) {
-      return;
+      return null;
     }
+
+    const rowId = uid();
 
     updateSelectedListSettings(
       {
@@ -3869,9 +3900,9 @@ export function CanvasView({ projectId }: Props) {
         rows: [
           ...selectedListSettings.rows,
           {
-            id: uid(),
+            id: rowId,
             values: selectedListSettings.columns.reduce<Record<string, string>>((acc, column) => {
-              acc[column.id] = "";
+              acc[column.id] = String(initialValues?.[column.id] ?? "");
               return acc;
             }, {}),
           },
@@ -3881,6 +3912,7 @@ export function CanvasView({ projectId }: Props) {
         historyMode: "immediate",
       }
     );
+    return rowId;
   }, [selectedListSettings, updateSelectedListSettings]);
 
   const removeSelectedListRow = useCallback(
@@ -4076,6 +4108,7 @@ export function CanvasView({ projectId }: Props) {
 
   const handleNodeSizeCommit = useCallback(
     (nodeId: string, size: WorkflowNodeSize) => {
+      const node = nodesById[nodeId];
       updateNode(
         nodeId,
         {
@@ -4087,11 +4120,11 @@ export function CanvasView({ projectId }: Props) {
         }
       );
 
-      if (activeFullNodeIdRef.current === nodeId) {
+      if (activeFullNodeIdRef.current === nodeId && node?.kind !== "text-template") {
         setActiveFullNodeId(null);
       }
     },
-    [updateNode]
+    [nodesById, updateNode]
   );
 
   const activeEditor = useMemo<ActiveCanvasNodeEditorState | null>(() => {
@@ -4138,7 +4171,20 @@ export function CanvasView({ projectId }: Props) {
       <CanvasNodeContent
         node={node}
         activeEditor={activeEditor}
+        pickerDismissKey={`${selectedNodeIds.join(",")}|${canvasDoc.canvasViewport.x.toFixed(2)}:${canvasDoc.canvasViewport.y.toFixed(2)}:${canvasDoc.canvasViewport.zoom.toFixed(3)}|${node.presentation.renderMode}|${node.resolvedSize.width}x${node.resolvedSize.height}`}
         onSetDisplayMode={(mode) => handleNodeDisplayModeChange(node.id, mode)}
+        onEnterEditMode={() => enterNodeEditMode(node.id)}
+        onExitEditMode={() => {
+          if (activeFullNodeIdRef.current === node.id) {
+            setActiveFullNodeId(null);
+          }
+        }}
+        onRunNode={() => {
+          const currentNode = nodesById[node.id];
+          if (currentNode) {
+            runNode(currentNode).catch(console.error);
+          }
+        }}
         onLabelChange={handleSelectedNodeLabelChange}
         onPromptChange={handleSelectedNodePromptChange}
         onModelVariantChange={handleSelectedNodeModelVariantChange}
@@ -4160,17 +4206,22 @@ export function CanvasView({ projectId }: Props) {
       activeEditor,
       addSelectedListColumn,
       addSelectedListRow,
+      canvasDoc.canvasViewport,
       commitPendingCoalescedHistory,
       downloadAssets,
+      enterNodeEditMode,
       handleClearSelectedInputs,
       handleNodeDisplayModeChange,
       handleSelectedNodeLabelChange,
       handleSelectedNodePromptChange,
       handleSelectedNodeModelVariantChange,
+      nodesById,
       openAssetViewer,
       openQueueInspect,
       removeSelectedListColumn,
       removeSelectedListRow,
+      runNode,
+      selectedNodeIds,
       updateSelectedListCell,
       updateSelectedListColumnLabel,
       updateSelectedModelParameter,

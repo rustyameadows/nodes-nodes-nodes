@@ -1,7 +1,7 @@
 # Design System
 
 ## Goal
-Unify the non-canvas desktop app around one reusable UI system without disturbing the protected canvas node and connection renderers.
+Unify the desktop app around shared foundations while letting the canvas keep its own visual language.
 
 ## Surface Model
 - `app`
@@ -9,12 +9,15 @@ Unify the non-canvas desktop app around one reusable UI system without disturbin
   - uses warm white surfaces with citrus/aqua accent echoes from the canvas palette
 - `canvas-overlay`
   - dark floating chrome for the workspace menu, queue pill, insert picker, bottom tray popovers, asset picker modal, and selection action strip
-  - keeps the overlay language aligned with the black canvas without restyling the node surfaces themselves
+  - keeps the overlay language aligned with the black canvas
+- `canvas-node`
+  - a sibling token/recipe layer for node cards on the black canvas
+  - reuses spacing, radius, motion, typography, and focus foundations from the main design system
+  - does not inherit the light app-shell surface language
 
 Protected areas:
-- main project canvas nodes
 - main project canvas connections
-- Node Library playground canvas internals
+- the black canvas background treatment itself
 
 Allowed wrapper changes around protected areas:
 - page framing
@@ -23,6 +26,11 @@ Allowed wrapper changes around protected areas:
 - insert/context menus
 - compare/download selection strip
 - Node Library detail rails and canvas frame
+
+Canvas node renderers are now part of the system:
+- shared node tokens live under `src/styles/design-system/nodes/`
+- shared node chrome lives under `src/components/canvas-nodes/`
+- the Node Library playground intentionally reuses the same node renderer path as the project canvas
 
 ## Token Layers
 Source files live under `src/styles/design-system/`.
@@ -49,6 +57,8 @@ Source files live under `src/styles/design-system/`.
 - panel padding and radius
 - popover and modal radius
 - shell/menu/queue radii
+- node rails, badges, checkerboard, hotspot sizes, and canvas accent recipes
+- canvas-node border recipes keep the preserved semantic palette, with left-edge accents driven by connected input semantics and right-edge accents driven by node/output semantics
 
 Rule:
 - CSS Modules and component styles consume semantic/component variables.
@@ -84,6 +94,20 @@ Usage rules:
 - route CSS should handle layout and page-specific composition, not reinvent control chrome
 - overlay shells should use `canvas-overlay` data attributes when they render outside the normal tree
 
+## Canvas Node System
+Shared node primitives:
+- `NodeFrame`
+- `NodeTitleRail`
+- `NodeActionRail`
+- `NodeExternalBadge`
+- `NodeResizeHotspot`
+
+Usage rules:
+- keep the semantic canvas palette stable; node-system work should normalize reuse, not repaint node types
+- node rails and badges must render outside the node bounds so controls do not shift canvas content
+- active/edit behavior is derived in `src/lib/canvas-node-presentation.ts`, not redefined ad hoc in each node renderer
+- node action buttons should come from shared action descriptors in `src/lib/canvas-node-actions.ts`
+
 ## Motion and Accessibility
 - micro feedback: `140ms`
 - UI transitions: `180ms`
@@ -100,6 +124,7 @@ Usage rules:
 ## UI PR Checklist
 - Uses semantic/component vars instead of raw colors in migrated UI files
 - Uses shared primitives for route-level controls and panels where applicable
-- Keeps protected canvas node/connection renderers untouched
+- Keeps the black canvas background and semantic connection/node palette intact
+- Routes node-card changes through the shared canvas-node system instead of one-off per-node CSS
 - Preserves keyboard/accessibility behavior
 - Verifies light app surfaces and dark canvas overlays both still read clearly

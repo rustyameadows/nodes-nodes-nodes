@@ -36,9 +36,10 @@ test("tokenVar and token variable registry expose stable CSS variable names", ()
 
 test("guardrail scope matcher only targets migrated design-system files", () => {
   assert.equal(isDesignSystemGuardrailFile("src/components/ui/ui.module.css"), true);
+  assert.equal(isDesignSystemGuardrailFile("src/components/canvas-nodes/canvas-node.module.css"), true);
   assert.equal(isDesignSystemGuardrailFile("src/components/workspace/views/app-home-view.module.css"), true);
   assert.equal(isDesignSystemGuardrailFile("src/styles/design-system/variables.css"), false);
-  assert.equal(isDesignSystemGuardrailFile("src/components/canvas-node-content.tsx"), false);
+  assert.equal(isDesignSystemGuardrailFile("src/components/infinite-canvas.module.css"), false);
 });
 
 test("forbidden color literal detection ignores ds vars but catches raw colors", () => {

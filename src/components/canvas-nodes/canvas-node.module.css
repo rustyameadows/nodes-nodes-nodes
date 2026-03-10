@@ -1,0 +1,844 @@
+.nodeModel {
+  width: auto;
+  min-width: 172px;
+  max-width: 248px;
+  min-height: 48px;
+  padding: 9px 18px 9px 14px;
+  border-color: transparent;
+  background-image:
+    linear-gradient(var(--node-surface-paper-raised), var(--node-surface-paper-raised)),
+    var(--model-border-top, linear-gradient(90deg, var(--node-accent-neutral), var(--node-accent-neutral))),
+    var(--model-border-right, linear-gradient(180deg, var(--node-accent-neutral), var(--node-accent-neutral))),
+    var(--model-border-bottom, linear-gradient(90deg, var(--node-accent-neutral), var(--node-accent-neutral))),
+    var(--model-border-left, linear-gradient(180deg, var(--node-accent-neutral), var(--node-accent-neutral)));
+  background-repeat: no-repeat;
+  background-position:
+    center,
+    top,
+    right,
+    bottom,
+    left;
+  background-size:
+    auto,
+    100% var(--canvas-node-border-width),
+    var(--canvas-node-border-width) 100%,
+    100% var(--canvas-node-border-width),
+    var(--canvas-node-border-width) 100%;
+  background-origin:
+    padding-box,
+    border-box,
+    border-box,
+    border-box,
+    border-box;
+  background-clip:
+    padding-box,
+    border-box,
+    border-box,
+    border-box,
+    border-box;
+}
+
+.nodeWithImage {
+  padding: 0;
+  background: transparent;
+  border: var(--canvas-node-border-width) solid var(--node-accent-neutral);
+  box-shadow: var(--node-shadow-card);
+}
+
+.nodeGeneratedAsset {
+  border-color: transparent;
+  background:
+    linear-gradient(var(--node-surface-paper-raised), var(--node-surface-paper-raised)) padding-box,
+    var(--node-border-gradient, linear-gradient(90deg, var(--node-accent-citrus), var(--node-accent-image))) border-box;
+}
+
+.nodeUploadedAsset {
+  border-color: var(--node-output-accent, var(--node-accent-image));
+}
+
+.nodeGeneratedProcessing {
+  border-color: transparent;
+  background:
+    linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--node-surface-paper-raised) 14%, transparent),
+        color-mix(in srgb, var(--node-surface-paper-raised) 2%, transparent) 24%,
+        color-mix(in srgb, var(--node-surface-paper-raised) 8%, transparent)
+      )
+      padding-box,
+    linear-gradient(
+        90deg,
+        var(--node-accent-citrus) 0%,
+        var(--node-accent-citrus) 22%,
+        color-mix(in srgb, var(--node-accent-citrus) 64%, var(--node-output-accent, var(--node-accent-image)) 36%) 52%,
+        var(--node-output-accent, var(--node-accent-image)) 100%
+      )
+      border-box;
+  box-shadow:
+    0 0 20px color-mix(in srgb, var(--node-accent-citrus) 38%, transparent),
+    0 12px 18px color-mix(in srgb, var(--node-surface-ink) 20%, transparent);
+}
+
+.nodeTextNote {
+  width: 244px;
+  min-height: 152px;
+  display: flex;
+  flex-direction: column;
+  justify-content: stretch;
+  padding: 12px 14px;
+  box-shadow: var(--node-shadow-card);
+  border-color: var(--node-accent-text);
+}
+
+.nodeGeneratedTextNote {
+  border-color: transparent;
+  background-image:
+    linear-gradient(var(--node-surface-paper-raised), var(--node-surface-paper-raised)),
+    var(--text-note-border-top, linear-gradient(90deg, var(--node-accent-text), var(--node-accent-text))),
+    var(--text-note-border-right, linear-gradient(180deg, var(--node-accent-text), var(--node-accent-text))),
+    var(--text-note-border-bottom, linear-gradient(90deg, var(--node-accent-text), var(--node-accent-text))),
+    var(--text-note-border-left, linear-gradient(180deg, var(--node-accent-text), var(--node-accent-text)));
+  background-repeat: no-repeat;
+  background-position:
+    center,
+    top,
+    right,
+    bottom,
+    left;
+  background-size:
+    auto,
+    100% var(--canvas-node-border-width),
+    var(--canvas-node-border-width) 100%,
+    100% var(--canvas-node-border-width),
+    var(--canvas-node-border-width) 100%;
+  background-origin:
+    padding-box,
+    border-box,
+    border-box,
+    border-box,
+    border-box;
+  background-clip:
+    padding-box,
+    border-box,
+    border-box,
+    border-box,
+    border-box;
+}
+
+.nodeSemanticFrame {
+  border-color: transparent;
+  background-image:
+    linear-gradient(var(--node-surface-paper-raised), var(--node-surface-paper-raised)),
+    var(--node-frame-border-top, linear-gradient(90deg, var(--node-accent-text), var(--node-accent-text))),
+    var(--node-frame-border-right, linear-gradient(180deg, var(--node-accent-text), var(--node-accent-text))),
+    var(--node-frame-border-bottom, linear-gradient(90deg, var(--node-accent-text), var(--node-accent-text))),
+    var(--node-frame-border-left, linear-gradient(180deg, var(--node-accent-text), var(--node-accent-text)));
+  background-repeat: no-repeat;
+  background-position:
+    center,
+    top,
+    right,
+    bottom,
+    left;
+  background-size:
+    auto,
+    100% var(--canvas-node-border-width),
+    var(--canvas-node-border-width) 100%,
+    100% var(--canvas-node-border-width),
+    var(--canvas-node-border-width) 100%;
+  background-origin:
+    padding-box,
+    border-box,
+    border-box,
+    border-box,
+    border-box;
+  background-clip:
+    padding-box,
+    border-box,
+    border-box,
+    border-box,
+    border-box;
+}
+
+.nodeList,
+.nodeTextTemplate {
+  width: 320px;
+  min-height: 214px;
+  border-color: var(--node-accent-text);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--node-shadow-card);
+}
+
+.nodeTextTemplate {
+  width: 264px;
+  min-height: 182px;
+}
+
+.nodeCompactMode {
+  min-height: 42px;
+  padding: 8px 12px;
+}
+
+.nodeFullMode,
+.nodeResizedMode {
+  padding: 0;
+  cursor: default;
+  z-index: 9;
+}
+
+.nodeWithImage.nodeFullMode,
+.nodeWithImage.nodeResizedMode {
+  cursor: default;
+}
+
+.nodeFullMode.nodeModel,
+.nodeResizedMode.nodeModel {
+  max-width: none;
+}
+
+.assetNodeLayout {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  background: var(--node-surface-paper-raised);
+  transition:
+    width var(--ds-motion-micro) var(--ds-ease-standard),
+    height var(--ds-motion-micro) var(--ds-ease-standard);
+}
+
+.sourcePreviewFrame {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+  border: 0;
+  background:
+    linear-gradient(45deg, var(--node-checker-dark) 25%, transparent 25%) -12px 0 / 24px 24px,
+    linear-gradient(-45deg, var(--node-checker-dark) 25%, transparent 25%) -12px 12px / 24px 24px,
+    linear-gradient(45deg, transparent 75%, var(--node-checker-dark) 75%) -12px 0 / 24px 24px,
+    linear-gradient(-45deg, transparent 75%, var(--node-checker-dark) 75%) -12px 12px / 24px 24px,
+    var(--node-checker-light);
+  cursor: inherit;
+}
+
+.sourcePreviewFrameGenerated,
+.sourcePreviewFrameUploaded,
+.sourcePreviewFrameProcessing {
+  background:
+    linear-gradient(45deg, var(--node-checker-dark) 25%, transparent 25%) -12px 0 / 24px 24px,
+    linear-gradient(-45deg, var(--node-checker-dark) 25%, transparent 25%) -12px 12px / 24px 24px,
+    linear-gradient(45deg, transparent 75%, var(--node-checker-dark) 75%) -12px 0 / 24px 24px,
+    linear-gradient(-45deg, transparent 75%, var(--node-checker-dark) 75%) -12px 12px / 24px 24px,
+    var(--node-checker-light);
+}
+
+.sourcePreviewFramePlaceholder {
+  background: var(--node-accent-citrus);
+}
+
+.sourcePreviewImage {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  object-position: center;
+  background: transparent;
+}
+
+.imagePlaceholderSurface {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--node-surface-paper-raised) 18%, transparent), color-mix(in srgb, var(--node-surface-paper-raised) 4%, transparent)),
+    var(--node-accent-citrus);
+}
+
+.imageNodeStatus {
+  position: absolute;
+  top: var(--ds-space-2);
+  right: var(--ds-space-2);
+  z-index: 2;
+}
+
+.statusBubble {
+  padding: 2px 7px;
+  font-size: var(--ds-font-size-xs);
+  flex-shrink: 0;
+  border: 1px solid var(--node-border-strong);
+  color: var(--node-surface-ink);
+  background: color-mix(in srgb, var(--node-surface-paper-raised) 82%, transparent);
+}
+
+.statusBubble[data-state="queued"] {
+  border-color: color-mix(in srgb, var(--node-accent-citrus) 72%, transparent);
+  background: color-mix(in srgb, var(--node-accent-citrus) 18%, var(--node-surface-paper-raised));
+}
+
+.statusBubble[data-state="running"] {
+  border-color: color-mix(in srgb, var(--node-accent-image) 64%, transparent);
+  background: color-mix(in srgb, var(--node-accent-image) 14%, var(--node-surface-paper-raised));
+}
+
+.statusBubble[data-state="failed"] {
+  border-color: var(--ds-state-danger-border);
+  background: var(--ds-state-danger-bg);
+  color: var(--ds-state-danger-fg);
+}
+
+.sourceBadge {
+  position: absolute;
+  left: var(--ds-space-3);
+  bottom: var(--ds-space-3);
+  border: 1px solid var(--node-border-strong);
+  background: color-mix(in srgb, var(--node-surface-paper-raised) 84%, transparent);
+  color: var(--node-surface-ink-soft);
+  font-size: var(--ds-font-size-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 4px 7px;
+}
+
+.resizeHandle {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: var(--node-hotspot-size);
+  height: var(--node-hotspot-size);
+  border: 0;
+  background: transparent;
+  cursor: nwse-resize;
+  z-index: 3;
+  opacity: 0;
+}
+
+.resizeHandle:hover,
+.resizeHandle:focus-visible {
+  opacity: 1;
+  box-shadow: inset -1px -1px 0 var(--node-hotspot-hover);
+}
+
+.nodeChrome {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.nodeViewport {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  pointer-events: none;
+}
+
+.nodeViewport > * {
+  pointer-events: auto;
+}
+
+.titleRail {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(-1 * var(--node-rail-offset));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--node-title-gap);
+  pointer-events: auto;
+  cursor: crosshair;
+}
+
+.titleRailCopy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  max-width: calc(100% - 48px);
+}
+
+.titleLabel,
+.titleInput {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--node-surface-paper-raised);
+  font-size: var(--ds-font-size-sm);
+  font-weight: 700;
+  line-height: 1.1;
+  text-shadow: 0 1px 3px color-mix(in srgb, var(--node-surface-ink) 60%, transparent);
+  outline: none;
+}
+
+.titleMeta {
+  min-width: 0;
+  color: color-mix(in srgb, var(--node-surface-paper-raised) 78%, transparent);
+  font-size: var(--ds-font-size-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dragRail {
+  width: 42px;
+  height: 18px;
+  border-radius: var(--ds-radius-round);
+  border: 1px solid color-mix(in srgb, var(--node-surface-paper-raised) 24%, transparent);
+  background: color-mix(in srgb, var(--node-surface-paper-raised) 8%, transparent);
+  box-shadow: var(--node-shadow-rail);
+}
+
+.actionRail {
+  position: absolute;
+  left: 50%;
+  bottom: calc(-1 * var(--node-action-offset));
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-2);
+  transform: translateX(-50%);
+  pointer-events: auto;
+  z-index: 2;
+}
+
+.actionButton,
+.subtleButton,
+.templateVariableButton,
+.listFloatingAction,
+.listColumnRemove,
+.listRowRemove {
+  border: 1px solid var(--node-border-soft);
+  background: color-mix(in srgb, var(--node-surface-paper-raised) 94%, transparent);
+  color: var(--node-surface-ink);
+  font: inherit;
+  box-shadow: var(--node-shadow-rail);
+}
+
+.actionButton,
+.subtleButton,
+.templateVariableButton,
+.listFloatingAction {
+  padding: 7px 11px;
+  font-size: var(--ds-font-size-xs);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.actionButtonAccent {
+  border-color: color-mix(in srgb, var(--node-accent-citrus) 44%, transparent);
+  background: color-mix(in srgb, var(--node-accent-citrus) 78%, var(--node-surface-paper-raised));
+  color: color-mix(in srgb, var(--node-surface-ink) 88%, transparent);
+}
+
+.externalBadge {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ds-space-1);
+  min-height: 24px;
+  padding: 4px 8px;
+  border: 1px solid color-mix(in srgb, var(--node-surface-paper-raised) 18%, transparent);
+  background: color-mix(in srgb, var(--node-surface-ink) 78%, transparent);
+  color: var(--node-surface-paper-raised);
+  font-size: var(--ds-font-size-xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  box-shadow: var(--node-shadow-rail);
+  pointer-events: none;
+}
+
+.externalBadgeInput {
+  left: calc(-1 * var(--ds-space-4));
+  top: calc(-1 * var(--ds-space-5));
+}
+
+.externalBadgeTopRight {
+  right: 0;
+  top: calc(-1 * var(--ds-space-5));
+}
+
+.compactNode,
+.modelPreview,
+.assetPreviewMeta {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-space-2);
+  min-height: 100%;
+}
+
+.compactNode {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ds-space-3);
+  width: 100%;
+  height: 100%;
+}
+
+.compactNode strong,
+.previewHeader strong,
+.assetPreviewMeta strong {
+  min-width: 0;
+  font-size: var(--ds-font-size-sm);
+  font-weight: 700;
+  color: var(--node-surface-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compactNode span,
+.previewHeader span,
+.assetPreviewMeta span {
+  color: var(--node-surface-ink-muted);
+  font-size: var(--ds-font-size-xs);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.previewHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--ds-space-2);
+}
+
+.previewStack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--node-surface-ink-soft);
+  font-size: var(--ds-font-size-xs);
+  line-height: 1.4;
+}
+
+.noteSurface {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-space-3);
+  padding: var(--ds-space-1);
+}
+
+.stickyNote {
+  justify-content: space-between;
+}
+
+.noteEditor,
+.modelPrompt,
+.templateEditor,
+.fieldControl,
+.listHeaderInput,
+.listCellInput {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--node-surface-ink);
+  font: inherit;
+  outline: none;
+}
+
+.noteEditor {
+  flex: 1 1 auto;
+  min-height: 0;
+  resize: none;
+  font-size: 0.8rem;
+  line-height: 1.48;
+  white-space: pre-wrap;
+  padding: 0;
+}
+
+.noteReadOnly {
+  overflow: hidden;
+}
+
+.templatePillRow,
+.templateVariableShelf {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ds-space-2);
+}
+
+.templatePill,
+.templateVariableButton {
+  border-radius: var(--ds-radius-round);
+}
+
+.templatePill {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  border: 1px solid color-mix(in srgb, var(--node-accent-function) 28%, transparent);
+  background: color-mix(in srgb, var(--node-accent-text) 14%, var(--node-surface-paper-raised));
+  color: color-mix(in srgb, var(--node-accent-function) 72%, var(--node-surface-ink) 28%);
+  font-size: var(--ds-font-size-xs);
+  font-weight: 700;
+}
+
+.listShell {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  border: 1px solid var(--node-border-soft);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--node-surface-paper-raised) 98%, transparent), color-mix(in srgb, var(--node-surface-paper) 98%, transparent));
+}
+
+.listFloatingAction {
+  position: absolute;
+  top: calc(-1 * var(--ds-space-5));
+  right: 0;
+  pointer-events: auto;
+  z-index: 2;
+}
+
+.listScroller {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
+}
+
+.listTable {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed;
+}
+
+.listTable th,
+.listTable td {
+  border-right: 1px solid var(--node-border-soft);
+  border-bottom: 1px solid color-mix(in srgb, var(--node-border-soft) 84%, transparent);
+  background: color-mix(in srgb, var(--node-surface-paper-raised) 92%, transparent);
+}
+
+.listTable thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: color-mix(in srgb, var(--node-surface-paper-muted) 92%, transparent);
+}
+
+.listRowHead {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  width: 58px;
+  min-width: 58px;
+  text-align: center;
+  background: color-mix(in srgb, var(--node-surface-paper-muted) 98%, transparent) !important;
+  color: var(--node-surface-ink-muted);
+  font-size: var(--ds-font-size-sm);
+}
+
+.listRowHeadInner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ds-space-1);
+  padding: 10px 8px;
+}
+
+.listHeaderCell {
+  position: relative;
+  min-width: 132px;
+}
+
+.listHeaderCellInner {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px 10px;
+}
+
+.listColumnLetter {
+  color: var(--node-surface-ink-muted);
+  font-size: var(--ds-font-size-xs);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.listHeaderInput,
+.listHeaderValue {
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--node-surface-ink);
+}
+
+.listHeaderValue {
+  display: block;
+}
+
+.listColumnRemove,
+.listRowRemove {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: var(--ds-radius-round);
+  line-height: 1;
+  pointer-events: auto;
+}
+
+.listColumnResizer {
+  position: absolute;
+  top: 0;
+  right: -4px;
+  bottom: 0;
+  width: 8px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: col-resize;
+}
+
+.listCell {
+  min-width: 132px;
+}
+
+.listCellInput,
+.listCellValue {
+  display: block;
+  padding: 11px 12px;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.listCellValue {
+  color: var(--node-surface-ink-soft);
+}
+
+.listDraftRow td {
+  background: color-mix(in srgb, var(--node-accent-text) 6%, var(--node-surface-paper-raised));
+}
+
+.listDraftInput {
+  color: var(--node-surface-ink-soft);
+}
+
+.templateEditorShell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-space-3);
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: var(--ds-space-3);
+  border: 1px solid var(--node-border-soft);
+  background: color-mix(in srgb, var(--node-surface-paper-raised) 96%, transparent);
+}
+
+.templateEditor {
+  flex: 1 1 auto;
+  min-height: 0;
+  resize: none;
+  font-size: 0.82rem;
+  line-height: 1.48;
+}
+
+.templateStatusStrip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ds-space-3);
+  color: var(--node-surface-ink-muted);
+  font-size: var(--ds-font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.modelShell {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
+}
+
+.modelGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--ds-space-3);
+  padding: var(--ds-space-3);
+}
+
+.modelPanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-space-3);
+  min-height: 0;
+  padding: var(--ds-space-3);
+  border: 1px solid var(--node-border-soft);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--node-surface-paper-raised) 98%, transparent), color-mix(in srgb, var(--node-surface-paper) 98%, transparent));
+}
+
+.modelPromptPanel {
+  min-height: 260px;
+  grid-column: span 2;
+}
+
+.panelHeader strong,
+.fieldLabel span:first-child {
+  color: var(--node-surface-ink);
+  font-size: var(--ds-font-size-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.fieldLabel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fieldControl {
+  border: 1px solid var(--node-border-soft);
+  background: color-mix(in srgb, var(--node-surface-paper-raised) 94%, transparent);
+  padding: 8px 10px;
+  color: var(--node-surface-ink);
+  font-size: var(--ds-font-size-sm);
+}
+
+.fieldControlTextarea {
+  min-height: 100px;
+}
+
+.parameterGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--ds-space-3);
+}
+
+.modelPrompt {
+  flex: 1 1 auto;
+  min-height: 220px;
+  resize: none;
+  padding: 12px 14px;
+  border: 1px solid var(--node-border-soft);
+  background: color-mix(in srgb, var(--node-surface-paper-raised) 96%, transparent);
+  font-size: 0.82rem;
+  line-height: 1.48;
+}
+
+@media (max-width: 760px) {
+  .modelPromptPanel {
+    grid-column: span 1;
+  }
+}

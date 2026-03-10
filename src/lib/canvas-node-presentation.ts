@@ -7,14 +7,31 @@ import type {
 
 export type CanvasNodeRenderMode = WorkflowNodeDisplayMode | "full";
 
+export type CanvasNodeInteractionPolicy =
+  | "model"
+  | "text-note"
+  | "list"
+  | "text-template"
+  | "image-asset"
+  | "asset";
+
 export type ResolvedCanvasNodePresentation = {
   persistedMode: WorkflowNodeDisplayMode;
   renderMode: CanvasNodeRenderMode;
   canResize: boolean;
   lockAspectRatio: boolean;
   size: WorkflowNodeSize;
+  interactionPolicy: CanvasNodeInteractionPolicy;
+  isActive: boolean;
+  isEditing: boolean;
+  isExpanded: boolean;
+  showTitleRail: boolean;
+  showActionRail: boolean;
+  showExternalBadges: boolean;
+  useRailDragHandle: boolean;
 };
 
+const MIN_MODEL_SIZE: WorkflowNodeSize = { width: 460, height: 320 };
 const MIN_TEXT_NOTE_SIZE: WorkflowNodeSize = { width: 244, height: 152 };
 const MIN_LIST_SIZE: WorkflowNodeSize = { width: 520, height: 320 };
 const MIN_TEMPLATE_SIZE: WorkflowNodeSize = { width: 420, height: 300 };
@@ -48,7 +65,13 @@ export function normalizeWorkflowNodeSize(value: unknown): WorkflowNodeSize | nu
 }
 
 export function canResizeWorkflowNode(node: Pick<WorkflowNode, "kind">) {
-  return node.kind === "text-note" || node.kind === "list" || node.kind === "text-template" || node.kind === "asset-source";
+  return (
+    node.kind === "model" ||
+    node.kind === "text-note" ||
+    node.kind === "list" ||
+    node.kind === "text-template" ||
+    node.kind === "asset-source"
+  );
 }
 
 export function doesWorkflowNodeLockAspectRatio(node: Pick<WorkflowNode, "kind" | "outputType">) {
@@ -59,6 +82,10 @@ export function getWorkflowNodeMinimumSize(
   node: Pick<WorkflowNode, "kind" | "outputType">,
   aspectRatio = 1
 ): WorkflowNodeSize {
+  if (node.kind === "model") {
+    return MIN_MODEL_SIZE;
+  }
+
   if (node.kind === "text-note") {
     return MIN_TEXT_NOTE_SIZE;
   }
@@ -98,7 +125,7 @@ export function getWorkflowNodeDefaultSize(
       return { width: 168, height: 48 };
     }
     if (renderMode === "full") {
-      return { width: 980, height: 336 };
+      return { width: 980, height: 420 };
     }
     return { width: 236, height: 84 };
   }
@@ -154,6 +181,32 @@ export function getWorkflowNodeDefaultSize(
   return { width: 220, height: 76 };
 }
 
+export function getCanvasNodeInteractionPolicy(
+  node: Pick<WorkflowNode, "kind" | "outputType">
+): CanvasNodeInteractionPolicy {
+  if (node.kind === "model") {
+    return "model";
+  }
+
+  if (node.kind === "text-note") {
+    return "text-note";
+  }
+
+  if (node.kind === "list") {
+    return "list";
+  }
+
+  if (node.kind === "text-template") {
+    return "text-template";
+  }
+
+  if (node.kind === "asset-source" && node.outputType === "image") {
+    return "image-asset";
+  }
+
+  return "asset";
+}
+
 export function clampWorkflowNodeSize(
   node: Pick<WorkflowNode, "kind" | "outputType">,
   size: WorkflowNodeSize,
@@ -174,11 +227,21 @@ export function resolveCanvasNodePresentation(input: {
   aspectRatio?: number;
 }): ResolvedCanvasNodePresentation {
   const persistedMode = normalizeWorkflowNodeDisplayMode(input.node.displayMode);
-  const renderMode =
-    input.fullNodeId === input.nodeId ? ("full" as const) : persistedMode;
+  const interactionPolicy = getCanvasNodeInteractionPolicy(input.node);
+  const isActive = input.activeNodeId === input.nodeId;
+  const isEditing = input.fullNodeId === input.nodeId && interactionPolicy === "text-template";
+  let renderMode: CanvasNodeRenderMode = persistedMode;
+
+  if (interactionPolicy === "model" && isActive && persistedMode === "preview") {
+    renderMode = "full";
+  } else if (interactionPolicy === "text-template" && isEditing) {
+    renderMode = persistedMode === "resized" ? "resized" : "full";
+  }
+
   const lockAspectRatio = doesWorkflowNodeLockAspectRatio(input.node);
   const canResize = canResizeWorkflowNode(input.node);
   const defaultSize = getWorkflowNodeDefaultSize(input.node.kind, renderMode, input.aspectRatio);
+  const isExpanded = isActive || isEditing;
 
   if (renderMode === "resized" && input.node.size) {
     return {
@@ -186,6 +249,14 @@ export function resolveCanvasNodePresentation(input: {
       renderMode,
       canResize,
       lockAspectRatio,
+      interactionPolicy,
+      isActive,
+      isEditing,
+      isExpanded,
+      showTitleRail: isExpanded,
+      showActionRail: isExpanded,
+      showExternalBadges: isExpanded,
+      useRailDragHandle: isExpanded,
       size: clampWorkflowNodeSize(input.node, input.node.size, input.aspectRatio),
     };
   }
@@ -195,6 +266,14 @@ export function resolveCanvasNodePresentation(input: {
     renderMode,
     canResize,
     lockAspectRatio,
+    interactionPolicy,
+    isActive,
+    isEditing,
+    isExpanded,
+    showTitleRail: isExpanded,
+    showActionRail: isExpanded,
+    showExternalBadges: isExpanded,
+    useRailDragHandle: isExpanded,
     size: defaultSize,
   };
 }

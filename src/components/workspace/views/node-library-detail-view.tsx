@@ -129,6 +129,8 @@ export function NodeLibraryDetailView({ nodeId }: Props) {
             <SearchableModelSelect
               value={selectedModelVariantId}
               options={modelVariants}
+              surface="app"
+              density="comfortable"
               onChange={(variant) => {
                 setSelectedModelVariantId(variant.id);
               }}

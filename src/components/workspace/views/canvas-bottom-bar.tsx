@@ -2,17 +2,15 @@
 
 import {
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
-  type CSSProperties,
   type MutableRefObject,
   type ReactNode,
   type RefObject,
   type WheelEvent as ReactWheelEvent,
 } from "react";
-import { createPortal } from "react-dom";
+import { AnchoredOverlay } from "@/components/ui";
 import { getJobDebug } from "@/components/workspace/client-api";
 import type {
   GeneratedModelTextNoteSettings,
@@ -27,7 +25,6 @@ import type {
 import type { CanvasBottomBarPopoverId } from "@/lib/canvas-primary-editor";
 import type { ModelParameterDefinition } from "@/lib/model-parameters";
 import { isRunnableImageModel } from "@/lib/provider-model-helpers";
-import { buildUiDataAttributes } from "@/lib/design-system";
 import type { TextTemplatePreview } from "@/lib/list-template";
 import styles from "./canvas-bottom-bar.module.css";
 
@@ -119,62 +116,26 @@ type PopoverProps = {
 };
 
 function CanvasBarPopover({ anchorEl, open, width, maxWidth, popoverRef, children }: PopoverProps) {
-  const [style, setStyle] = useState<CSSProperties | null>(null);
-
-  useLayoutEffect(() => {
-    if (!open || !anchorEl) {
-      setStyle(null);
-      return;
-    }
-
-    const updatePosition = () => {
-      const rect = anchorEl.getBoundingClientRect();
-      const viewportPadding = 14;
-      const nextWidth = Math.min(
-        maxWidth,
-        Math.max(width, rect.width),
-        window.innerWidth - viewportPadding * 2
-      );
-      let left = rect.left;
-      if (left + nextWidth > window.innerWidth - viewportPadding) {
-        left = window.innerWidth - viewportPadding - nextWidth;
-      }
-      if (left < viewportPadding) {
-        left = viewportPadding;
-      }
-
-      setStyle({
-        left,
-        bottom: window.innerHeight - rect.top + 10,
-        width: nextWidth,
-        maxHeight: Math.max(180, rect.top - 24),
-      });
-    };
-
-    updatePosition();
-    window.addEventListener("resize", updatePosition);
-    window.addEventListener("scroll", updatePosition, true);
-
-    return () => {
-      window.removeEventListener("resize", updatePosition);
-      window.removeEventListener("scroll", updatePosition, true);
-    };
-  }, [anchorEl, maxWidth, open, width]);
-
-  if (!open || !anchorEl || !style) {
-    return null;
-  }
-
-  return createPortal(
-    <div
-      {...buildUiDataAttributes("canvas-overlay", "compact")}
+  return (
+    <AnchoredOverlay
+      surface="canvas-overlay"
+      density="compact"
       ref={popoverRef}
+      open={open}
+      anchorEl={anchorEl}
+      preferredPlacement="top-start"
+      width={width}
+      maxWidth={maxWidth}
+      matchAnchorWidth
+      offset={10}
+      viewportPadding={14}
+      minHeight={180}
+      closeOnEscape={false}
+      closeOnInteractOutside={false}
       className={styles.popover}
-      style={style}
     >
       {children}
-    </div>,
-    document.body
+    </AnchoredOverlay>
   );
 }
 

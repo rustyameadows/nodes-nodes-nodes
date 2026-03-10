@@ -66,6 +66,7 @@ export function getDesignSystemTokenVariableNames() {
 
 export const designSystemGuardrailScopes = [
   "src/components/ui/",
+  "src/components/canvas-nodes/",
   "src/components/workspace/workspace-shell",
   "src/components/searchable-model-select",
   "src/components/workspace/views/app-home-view",
@@ -91,7 +92,7 @@ export function isDesignSystemGuardrailFile(filePath: string) {
 }
 
 export function stripCssVariableDefinitions(content: string) {
-  return content.replace(/--ds-[\w-]+\s*:\s*[^;]+;/g, "");
+  return content.replace(/--(?:ds|node)-[\w-]+\s*:\s*[^;]+;/g, "");
 }
 
 export function findForbiddenColorLiterals(content: string) {

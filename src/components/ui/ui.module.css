@@ -327,6 +327,13 @@
   justify-content: flex-end;
 }
 
+.anchoredOverlay {
+  position: fixed;
+  z-index: var(--ds-z-popover);
+  display: flex;
+  pointer-events: auto;
+}
+
 .popoverSurface,
 .modalSurface {
   border: 1px solid var(--ds-border-strong);

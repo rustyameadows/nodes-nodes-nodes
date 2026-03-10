@@ -1,0 +1,33 @@
+:root {
+  --node-accent-neutral: rgba(255, 255, 255, 0.9);
+  --node-accent-neutral-glow: rgba(255, 255, 255, 0.26);
+  --node-accent-text: #ff4dc4;
+  --node-accent-text-glow: rgba(255, 77, 196, 0.5);
+  --node-accent-image: #3ea4ff;
+  --node-accent-image-glow: rgba(62, 164, 255, 0.48);
+  --node-accent-video: #ff8d34;
+  --node-accent-video-glow: rgba(255, 141, 52, 0.46);
+  --node-accent-function: #9b4dff;
+  --node-accent-function-glow: rgba(155, 77, 255, 0.48);
+  --node-accent-citrus: #d8ff3e;
+  --node-accent-citrus-glow: rgba(216, 255, 62, 0.52);
+
+  --node-surface-paper: rgba(255, 255, 255, 0.985);
+  --node-surface-paper-muted: rgba(246, 246, 244, 0.985);
+  --node-surface-paper-raised: rgba(255, 255, 255, 0.94);
+  --node-surface-ink: rgba(0, 0, 0, 0.94);
+  --node-surface-ink-soft: rgba(0, 0, 0, 0.76);
+  --node-surface-ink-muted: rgba(0, 0, 0, 0.56);
+  --node-border-soft: rgba(0, 0, 0, 0.12);
+  --node-border-strong: rgba(0, 0, 0, 0.18);
+  --node-checker-light: rgba(255, 255, 255, 0.88);
+  --node-checker-dark: rgba(231, 231, 231, 0.84);
+  --node-checker-grid: rgba(0, 0, 0, 0.08);
+  --node-shadow-card: 0 10px 18px rgba(0, 0, 0, 0.2);
+  --node-shadow-rail: 0 12px 26px rgba(0, 0, 0, 0.28);
+  --node-hotspot-hover: rgba(255, 255, 255, 0.24);
+  --node-title-gap: var(--ds-space-2);
+  --node-rail-offset: 34px;
+  --node-action-offset: 44px;
+  --node-hotspot-size: 24px;
+}

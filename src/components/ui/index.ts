@@ -1,4 +1,5 @@
 export {
+  AnchoredOverlay,
   Badge,
   Button,
   Card,

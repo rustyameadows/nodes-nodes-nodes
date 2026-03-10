@@ -3,7 +3,10 @@ import type {
   WorkflowNode,
   WorkflowNodeSize,
 } from "@/components/workspace/types";
-import type { CanvasNodeRenderMode } from "@/lib/canvas-node-presentation";
+import type {
+  CanvasNodeRenderMode,
+  ResolvedCanvasNodePresentation,
+} from "@/lib/canvas-node-presentation";
 
 export type CanvasAccentType = CanvasConnectionSelection["semanticType"];
 
@@ -53,6 +56,7 @@ export type CanvasRenderNode = Pick<
   canResize: boolean;
   lockAspectRatio: boolean;
   resolvedSize: WorkflowNodeSize;
+  presentation: ResolvedCanvasNodePresentation;
 };
 
 export type CanvasConnection = CanvasConnectionSelection;

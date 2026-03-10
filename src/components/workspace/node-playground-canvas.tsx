@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { CanvasNodeContent, type ActiveCanvasNodeEditorState } from "@/components/canvas-node-content";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { CanvasNodeContent, type ActiveCanvasNodeEditorState } from "@/components/canvas-nodes";
 import { InfiniteCanvas } from "@/components/infinite-canvas";
 import type { CanvasConnection, CanvasPhantomPreview, CanvasRenderNode } from "@/components/canvas-node-types";
 import type {
@@ -263,6 +263,7 @@ export function NodePlaygroundCanvas({
   selectedModelVariantId,
   onModelVariantChange,
 }: Props) {
+  const canvasRef = useRef<HTMLDivElement | null>(null);
   const [canvasDoc, setCanvasDoc] = useState<CanvasDocument>(() => cloneFixtureDoc(fixture));
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>(() => [fixture.focusNodeId]);
   const [selectedConnection, setSelectedConnection] = useState<CanvasConnection | null>(null);
@@ -295,6 +296,22 @@ export function NodePlaygroundCanvas({
         : undefined,
     [providerModels, selectedNode]
   );
+
+  useEffect(() => {
+    if (!activeNodeId) {
+      setActiveFullNodeId(null);
+      return;
+    }
+
+    if (activeFullNodeId && activeFullNodeId !== activeNodeId) {
+      setActiveFullNodeId(null);
+      return;
+    }
+
+    if (!nodesById[activeNodeId]) {
+      setActiveFullNodeId(null);
+    }
+  }, [activeFullNodeId, activeNodeId, nodesById]);
 
   useEffect(() => {
     if (!selectedModelVariantId) {
@@ -342,6 +359,14 @@ export function NodePlaygroundCanvas({
     }));
   }, []);
 
+  const selectSingleNode = useCallback((nodeId: string | null) => {
+    setSelectedNodeIds(nodeId ? [nodeId] : []);
+    setSelectedConnection(null);
+    if (!nodeId) {
+      setActiveFullNodeId(null);
+    }
+  }, []);
+
   const updateNode = useCallback((nodeId: string, mutate: (node: WorkflowNode, allNodes: WorkflowNode[]) => WorkflowNode) => {
     setCanvasDoc((current) => ({
       ...current,
@@ -363,15 +388,27 @@ export function NodePlaygroundCanvas({
   }, [activeFullNodeId, updateNode]);
 
   const handleNodeSizeCommit = useCallback((nodeId: string, size: WorkflowNodeSize) => {
+    const node = nodesById[nodeId];
     updateNode(nodeId, (node) => ({
       ...node,
       displayMode: "resized",
       size,
     }));
-    if (activeFullNodeId === nodeId) {
+    if (activeFullNodeId === nodeId && node?.kind !== "text-template") {
       setActiveFullNodeId(null);
     }
-  }, [activeFullNodeId, updateNode]);
+  }, [activeFullNodeId, nodesById, updateNode]);
+
+  const enterNodeEditMode = useCallback((nodeId: string) => {
+    const node = nodesById[nodeId];
+    if (!node) {
+      return;
+    }
+
+    setSelectedNodeIds([nodeId]);
+    setSelectedConnection(null);
+    setActiveFullNodeId(node.kind === "text-template" ? nodeId : null);
+  }, [nodesById]);
 
   const handleModelVariantSelection = useCallback((variantId: string) => {
     if (!selectedNode || selectedNode.kind !== "model") {
@@ -529,6 +566,7 @@ export function NodePlaygroundCanvas({
       });
       return {
         ...node,
+        presentation,
         assetOrigin: node.kind === "asset-source" ? (isGeneratedAssetNode(node) ? "generated" : "uploaded") : null,
         sourceModelNodeId: getSourceModelNodeId(node),
         displayModelName:
@@ -577,11 +615,38 @@ export function NodePlaygroundCanvas({
     });
   }, [activeFullNodeId, activeNodeId, canvasDoc.workflow.nodes, nodesById, providerModels]);
 
+  const focusNodeViewport = useCallback((nodeId: string) => {
+    const node = canvasNodes.find((candidate) => candidate.id === nodeId);
+    const surfaceElement = canvasRef.current;
+    if (!node || !surfaceElement) {
+      return;
+    }
+
+    const bounds = surfaceElement.getBoundingClientRect();
+    if (bounds.width < 120 || bounds.height < 120) {
+      return;
+    }
+
+    const availableWidth = Math.max(200, bounds.width - 160);
+    const availableHeight = Math.max(160, bounds.height - 128);
+    const fitZoom = Math.min(
+      availableWidth / node.resolvedSize.width,
+      availableHeight / node.resolvedSize.height
+    );
+    const zoom = Math.min(1.5, Math.max(0.8, fitZoom));
+    updateViewport({
+      zoom,
+      x: bounds.width / 2 - (node.x + node.resolvedSize.width / 2) * zoom,
+      y: bounds.height / 2 - (node.y + node.resolvedSize.height / 2) * zoom,
+    });
+  }, [canvasNodes, updateViewport]);
+
   const renderNodeContent = useCallback(
     (node: CanvasRenderNode) => (
       <CanvasNodeContent
         node={node}
         activeEditor={activeEditor}
+        pickerDismissKey={`${selectedNodeIds.join(",")}|${canvasDoc.canvasViewport.x.toFixed(2)}:${canvasDoc.canvasViewport.y.toFixed(2)}:${canvasDoc.canvasViewport.zoom.toFixed(3)}|${node.presentation.renderMode}|${node.resolvedSize.width}x${node.resolvedSize.height}`}
         onSetDisplayMode={(mode) => handleNodeDisplayModeChange(node.id, mode)}
         onLabelChange={(value) => updateNode(node.id, (target) => ({ ...target, label: value }))}
         onPromptChange={(value) => updateNode(node.id, (target) => ({ ...target, prompt: value }))}
@@ -658,28 +723,34 @@ export function NodePlaygroundCanvas({
             };
           })
         }
-        onAddListRow={() =>
+        onAddListRow={(initialValues) => {
+          const targetNode = nodesById[node.id];
+          if (!targetNode) {
+            return null;
+          }
+          const settings = getListNodeSettings(targetNode.settings);
+          const rowId = `playground-row-${settings.rows.length + 1}`;
           updateNode(node.id, (target) => {
-            const settings = getListNodeSettings(target.settings);
-            const rowId = `playground-row-${settings.rows.length + 1}`;
+            const nextSettings = getListNodeSettings(target.settings);
             return {
               ...target,
               settings: {
-                ...settings,
+                ...nextSettings,
                 rows: [
-                  ...settings.rows,
+                  ...nextSettings.rows,
                   {
                     id: rowId,
-                    values: settings.columns.reduce<Record<string, string>>((acc, column) => {
-                      acc[column.id] = "";
+                    values: nextSettings.columns.reduce<Record<string, string>>((acc, column) => {
+                      acc[column.id] = String(initialValues?.[column.id] ?? "");
                       return acc;
                     }, {}),
                   },
                 ],
               },
             };
-          })
-        }
+          });
+          return rowId;
+        }}
         onRemoveListRow={(rowId) =>
           updateNode(node.id, (target) => {
             const settings = getListNodeSettings(target.settings);
@@ -700,13 +771,30 @@ export function NodePlaygroundCanvas({
             upstreamAssetIds: buildAssetRefsFromNodes([], allNodes),
           }))
         }
+        onEnterEditMode={() => enterNodeEditMode(node.id)}
+        onExitEditMode={() => {
+          if (activeFullNodeId === node.id) {
+            setActiveFullNodeId(null);
+          }
+        }}
+        onRunNode={() => undefined}
         onOpenAssetViewer={() => undefined}
         onDownloadAssets={() => undefined}
         onOpenQueueInspect={() => undefined}
         onCommitTextEdits={() => undefined}
       />
     ),
-    [activeEditor, handleModelVariantSelection, handleNodeDisplayModeChange, updateNode]
+    [
+      activeEditor,
+      activeFullNodeId,
+      canvasDoc.canvasViewport,
+      enterNodeEditMode,
+      handleModelVariantSelection,
+      handleNodeDisplayModeChange,
+      nodesById,
+      selectedNodeIds,
+      updateNode,
+    ]
   );
 
   const activePhantomPreview = useMemo<CanvasPhantomPreview | null>(() => {
@@ -833,19 +921,13 @@ export function NodePlaygroundCanvas({
   }, [nodesById]);
 
   return (
-    <div className={styles.playgroundCanvas}>
+    <div ref={canvasRef} className={styles.playgroundCanvas}>
       <InfiniteCanvas
         nodes={canvasNodes}
         selectedNodeIds={selectedNodeIds}
         selectedConnectionId={selectedConnection?.id || null}
         viewport={canvasDoc.canvasViewport}
-        onSelectSingleNode={(nodeId) => {
-          setSelectedNodeIds(nodeId ? [nodeId] : []);
-          setSelectedConnection(null);
-          if (!nodeId) {
-            setActiveFullNodeId(null);
-          }
-        }}
+        onSelectSingleNode={selectSingleNode}
         onToggleNodeSelection={(nodeId) => {
           setSelectedNodeIds((current) =>
             current.includes(nodeId) ? current.filter((candidate) => candidate !== nodeId) : [...current, nodeId]
@@ -876,18 +958,25 @@ export function NodePlaygroundCanvas({
         onCommitNodeSize={handleNodeSizeCommit}
         onConnectNodes={connectNodes}
         onSelectConnection={setSelectedConnection}
-        onNodeActivate={(nodeId) => setActiveFullNodeId(nodeId)}
+        onNodeActivate={enterNodeEditMode}
         onNodeDoubleClick={(nodeId) => {
           const node = nodesById[nodeId];
           if (!node) {
             return;
           }
-          if (node.displayMode === "resized") {
-            setSelectedNodeIds([nodeId]);
+          if (node.kind === "asset-source" && node.outputType === "image") {
+            focusNodeViewport(nodeId);
             return;
           }
-          setSelectedNodeIds([nodeId]);
-          setActiveFullNodeId(nodeId);
+          if (node.kind === "text-template") {
+            enterNodeEditMode(nodeId);
+            return;
+          }
+          if (node.displayMode === "resized") {
+            focusNodeViewport(nodeId);
+            return;
+          }
+          selectSingleNode(nodeId);
         }}
         renderNodeContent={renderNodeContent}
         activePhantomPreview={activePhantomPreview}
