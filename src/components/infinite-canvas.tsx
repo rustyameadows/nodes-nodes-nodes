@@ -1458,7 +1458,6 @@ export function InfiniteCanvas({
             isFunctionNode ||
             (node.kind === "asset-source" && !isModelNode) ||
             (isModelNode && node.outputType !== "text" && Boolean(node.hasStartedJob));
-          const showProcessingState = Boolean(node.processingState);
           const showsProcessingShell = isGeneratedAsset && (node.processingState === "queued" || node.processingState === "running");
           const inputAccentGradient = getInputAccentGradient(node.inputSemanticTypes);
           const semanticOutputType = getNodeOutputSemanticType(node);
@@ -1637,13 +1636,6 @@ export function InfiniteCanvas({
                     ) : (
                       <div className={nodeStyles.imagePlaceholderSurface} />
                     )}
-                    {showProcessingState ? (
-                      <div className={nodeStyles.imageNodeStatus}>
-                        <span className={nodeStyles.statusBubble} data-state={node.processingState || undefined}>
-                          {node.processingState}
-                        </span>
-                      </div>
-                    ) : null}
                   </div>
                   {renderNodeContent(node)}
                 </div>

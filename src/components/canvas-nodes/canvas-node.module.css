@@ -165,15 +165,19 @@
   width: 320px;
   min-height: 214px;
   border-color: var(--node-accent-text);
-  padding: 12px 14px;
   display: flex;
   flex-direction: column;
   box-shadow: var(--node-shadow-card);
 }
 
+.nodeList {
+  padding: 0;
+}
+
 .nodeTextTemplate {
   width: 264px;
   min-height: 182px;
+  padding: 12px 14px;
 }
 
 .nodeCompactMode {
@@ -259,13 +263,6 @@
     var(--node-accent-citrus);
 }
 
-.imageNodeStatus {
-  position: absolute;
-  top: var(--ds-space-2);
-  right: var(--ds-space-2);
-  z-index: 2;
-}
-
 .statusBubble {
   padding: 2px 7px;
   font-size: var(--ds-font-size-xs);
@@ -317,12 +314,6 @@
   opacity: 0;
 }
 
-.resizeHandle:hover,
-.resizeHandle:focus-visible {
-  opacity: 1;
-  box-shadow: inset -1px -1px 0 var(--node-hotspot-hover);
-}
-
 .nodeChrome {
   position: relative;
   width: 100%;
@@ -348,20 +339,24 @@
   left: 0;
   right: 0;
   top: calc(-1 * var(--node-rail-offset));
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--node-title-gap);
+  min-height: 28px;
   pointer-events: auto;
-  cursor: crosshair;
+  cursor: grab;
 }
 
 .titleRailCopy {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  transform: translateX(-50%);
   display: flex;
   flex-direction: column;
   gap: 2px;
+  align-items: center;
+  text-align: center;
   min-width: 0;
-  max-width: calc(100% - 48px);
+  width: max-content;
+  max-width: calc(100% - 112px);
 }
 
 .titleLabel,
@@ -374,6 +369,7 @@
   font-size: var(--ds-font-size-sm);
   font-weight: 700;
   line-height: 1.1;
+  text-align: center;
   text-shadow: 0 1px 3px color-mix(in srgb, var(--node-surface-ink) 60%, transparent);
   outline: none;
 }
@@ -389,31 +385,84 @@
   text-overflow: ellipsis;
 }
 
-.dragRail {
-  width: 42px;
-  height: 18px;
+.topUtilities {
+  position: absolute;
+  top: calc(-1 * var(--node-rail-offset));
+  right: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--ds-space-2);
+  min-height: 28px;
+  pointer-events: auto;
+  z-index: 3;
+}
+
+.dragPill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 20px;
+  padding: 4px 9px;
   border-radius: var(--ds-radius-round);
   border: 1px solid color-mix(in srgb, var(--node-surface-paper-raised) 24%, transparent);
-  background: color-mix(in srgb, var(--node-surface-paper-raised) 8%, transparent);
+  background: color-mix(in srgb, var(--node-surface-ink) 48%, transparent);
+  color: var(--node-surface-paper-raised);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   box-shadow: var(--node-shadow-rail);
+  cursor: grab;
+}
+
+.footerRail {
+  position: absolute;
+  bottom: calc(-1 * var(--node-action-offset));
+  display: inline-flex;
+  flex-direction: column;
+  gap: var(--ds-space-2);
+  pointer-events: auto;
+  z-index: 2;
+}
+
+.footerRailCenter {
+  left: 50%;
+  transform: translateX(-50%);
+  align-items: center;
+}
+
+.footerRailStart {
+  left: 0;
+  align-items: flex-start;
+}
+
+.footerRailTight {
+  top: calc(100% + var(--ds-space-2));
+  bottom: auto;
+  gap: var(--ds-space-1);
+}
+
+.footerCaption {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .actionRail {
-  position: absolute;
-  left: 50%;
-  bottom: calc(-1 * var(--node-action-offset));
   display: flex;
   align-items: center;
   gap: var(--ds-space-2);
-  transform: translateX(-50%);
-  pointer-events: auto;
-  z-index: 2;
+}
+
+.actionRailStart {
+  justify-content: flex-start;
 }
 
 .actionButton,
 .subtleButton,
 .templateVariableButton,
-.listFloatingAction,
+.listUtilityButton,
 .listColumnRemove,
 .listRowRemove {
   border: 1px solid var(--node-border-soft);
@@ -426,7 +475,7 @@
 .actionButton,
 .subtleButton,
 .templateVariableButton,
-.listFloatingAction {
+.listUtilityButton {
   padding: 7px 11px;
   font-size: var(--ds-font-size-xs);
   font-weight: 700;
@@ -439,33 +488,6 @@
   color: color-mix(in srgb, var(--node-surface-ink) 88%, transparent);
 }
 
-.externalBadge {
-  position: absolute;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--ds-space-1);
-  min-height: 24px;
-  padding: 4px 8px;
-  border: 1px solid color-mix(in srgb, var(--node-surface-paper-raised) 18%, transparent);
-  background: color-mix(in srgb, var(--node-surface-ink) 78%, transparent);
-  color: var(--node-surface-paper-raised);
-  font-size: var(--ds-font-size-xs);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  box-shadow: var(--node-shadow-rail);
-  pointer-events: none;
-}
-
-.externalBadgeInput {
-  left: calc(-1 * var(--ds-space-4));
-  top: calc(-1 * var(--ds-space-5));
-}
-
-.externalBadgeTopRight {
-  right: 0;
-  top: calc(-1 * var(--ds-space-5));
-}
-
 .compactNode,
 .modelPreview,
 .assetPreviewMeta {
@@ -476,12 +498,13 @@
 }
 
 .compactNode {
-  flex-direction: row;
+  flex-direction: column;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--ds-space-3);
+  justify-content: center;
+  gap: 2px;
   width: 100%;
   height: 100%;
+  text-align: center;
 }
 
 .compactNode strong,
@@ -563,7 +586,6 @@
   overflow: hidden;
 }
 
-.templatePillRow,
 .templateVariableShelf {
   display: flex;
   flex-wrap: wrap;
@@ -586,22 +608,65 @@
   font-weight: 700;
 }
 
+.templatePreviewText {
+  display: block;
+}
+
+.inlineTemplatePill {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: baseline;
+  margin: 0 0.12em;
+  padding: 1px 7px;
+  border: 1px solid color-mix(in srgb, var(--node-accent-function) 28%, transparent);
+  border-radius: var(--ds-radius-round);
+  background: color-mix(in srgb, var(--node-accent-text) 14%, var(--node-surface-paper-raised));
+  color: color-mix(in srgb, var(--node-accent-function) 72%, var(--node-surface-ink) 28%);
+  font-size: 0.72em;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.imageFooterCaption {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.imageFooterLabel {
+  color: var(--node-surface-paper-raised);
+  font-size: var(--ds-font-size-sm);
+  font-weight: 700;
+  line-height: 1.1;
+  text-shadow: 0 1px 3px color-mix(in srgb, var(--node-surface-ink) 60%, transparent);
+}
+
+.imageFooterBadge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 4px 8px;
+  border: 1px solid color-mix(in srgb, var(--node-surface-paper-raised) 18%, transparent);
+  background: color-mix(in srgb, var(--node-surface-ink) 82%, transparent);
+  color: var(--node-surface-paper-raised);
+  font-size: var(--ds-font-size-xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  box-shadow: var(--node-shadow-rail);
+}
+
 .listShell {
   position: relative;
   width: 100%;
   height: 100%;
   min-height: 0;
-  border: 1px solid var(--node-border-soft);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--node-surface-paper-raised) 98%, transparent), color-mix(in srgb, var(--node-surface-paper) 98%, transparent));
+  overflow: hidden;
+  background: transparent;
 }
 
-.listFloatingAction {
-  position: absolute;
-  top: calc(-1 * var(--ds-space-5));
-  right: 0;
-  pointer-events: auto;
-  z-index: 2;
+.listUtilityButton {
+  justify-content: center;
 }
 
 .listScroller {
@@ -623,34 +688,35 @@
 .listTable td {
   border-right: 1px solid var(--node-border-soft);
   border-bottom: 1px solid color-mix(in srgb, var(--node-border-soft) 84%, transparent);
-  background: color-mix(in srgb, var(--node-surface-paper-raised) 92%, transparent);
+  background: color-mix(in srgb, var(--node-surface-paper-raised) 98%, transparent);
 }
 
 .listTable thead th {
   position: sticky;
   top: 0;
   z-index: 2;
-  background: color-mix(in srgb, var(--node-surface-paper-muted) 92%, transparent);
+  background: color-mix(in srgb, var(--node-surface-paper-muted) 96%, transparent);
 }
 
 .listRowHead {
   position: sticky;
   left: 0;
   z-index: 3;
-  width: 58px;
-  min-width: 58px;
+  width: 42px;
+  min-width: 42px;
   text-align: center;
   background: color-mix(in srgb, var(--node-surface-paper-muted) 98%, transparent) !important;
   color: var(--node-surface-ink-muted);
-  font-size: var(--ds-font-size-sm);
+  font-size: 0.78rem;
 }
 
 .listRowHeadInner {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: var(--ds-space-1);
-  padding: 10px 8px;
+  min-height: 40px;
+  padding: 7px 4px;
 }
 
 .listHeaderCell {
@@ -661,22 +727,14 @@
 .listHeaderCellInner {
   position: relative;
   display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 8px 10px 10px;
-}
-
-.listColumnLetter {
-  color: var(--node-surface-ink-muted);
-  font-size: var(--ds-font-size-xs);
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  align-items: flex-start;
+  min-height: 56px;
+  padding: 8px 28px 8px 12px;
 }
 
 .listHeaderInput,
 .listHeaderValue {
-  font-size: 0.82rem;
+  font-size: 0.84rem;
   font-weight: 700;
   line-height: 1.2;
   color: var(--node-surface-ink);
@@ -688,20 +746,33 @@
 
 .listColumnRemove,
 .listRowRemove {
-  width: 22px;
-  height: 22px;
+  width: 18px;
+  height: 18px;
   padding: 0;
   border-radius: var(--ds-radius-round);
   line-height: 1;
   pointer-events: auto;
 }
 
+.listColumnRemove {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+}
+
+.listRowRemove {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  transform: translateY(-50%);
+}
+
 .listColumnResizer {
   position: absolute;
   top: 0;
-  right: -4px;
+  right: -5px;
   bottom: 0;
-  width: 8px;
+  width: 10px;
   border: 0;
   padding: 0;
   background: transparent;
@@ -715,7 +786,7 @@
 .listCellInput,
 .listCellValue {
   display: block;
-  padding: 11px 12px;
+  padding: 8px 12px;
   font-size: 0.78rem;
   line-height: 1.35;
 }

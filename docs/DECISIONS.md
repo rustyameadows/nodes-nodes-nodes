@@ -114,3 +114,8 @@
 - Decision: extend the design-system work into the canvas with a dedicated node-card layer instead of leaving node renderers permanently outside the system.
 - Rationale: issue `#62` needs the five core node families to share durable rails, actions, resizing, and spreadsheet/editor patterns without repainting the semantic canvas palette or turning node work into ad hoc per-issue CSS.
 - Consequence: canvas nodes now use shared node tokens plus shared node chrome/action primitives, model expansion becomes selection-driven, template edit mode stays explicit, image double-click zooms the viewport instead of changing mode, and the Node Library playground stays on the same renderer path as the real project canvas.
+
+## 2026-03-09 - Canvas Node Chrome Uses Explicit External Slots
+- Decision: standardize node chrome around external title, utility, caption, and action slots instead of ad hoc per-node absolute positioning.
+- Rationale: the post-issue-62 polish pass needs image labels/actions outside the media frame, centered title rails, inline template pills, and list controls that stop participating in table layout.
+- Consequence: the shared node renderer now owns top utility and footer rails, image nodes keep all chrome outside the image surface, template preview variables render inline, and list add/remove controls are overlay affordances rather than content-bearing cells.

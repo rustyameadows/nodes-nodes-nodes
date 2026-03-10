@@ -98,13 +98,20 @@ Usage rules:
 Shared node primitives:
 - `NodeFrame`
 - `NodeTitleRail`
+- `NodeTopUtilities`
+- `NodeFooterRail`
 - `NodeActionRail`
-- `NodeExternalBadge`
 - `NodeResizeHotspot`
 
 Usage rules:
 - keep the semantic canvas palette stable; node-system work should normalize reuse, not repaint node types
-- node rails and badges must render outside the node bounds so controls do not shift canvas content
+- node chrome should route through explicit external slots:
+  - centered title rail
+  - top-right utility slot
+  - bottom caption/action rail
+- image nodes keep the media surface free of labels, badges, and handles; that chrome belongs in the external slots
+- template preview pills belong inline in the preview copy, not in a second shelf below the note body
+- list add/remove/resize affordances should overlay the grid instead of consuming table layout
 - active/edit behavior is derived in `src/lib/canvas-node-presentation.ts`, not redefined ad hoc in each node renderer
 - node action buttons should come from shared action descriptors in `src/lib/canvas-node-actions.ts`
 

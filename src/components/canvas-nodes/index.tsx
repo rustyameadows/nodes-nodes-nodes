@@ -20,6 +20,7 @@ import { getListNodeSettings } from "@/lib/list-template";
 import type { TextTemplatePreview } from "@/lib/list-template";
 import type { ModelParameterDefinition } from "@/lib/model-parameters";
 import type { NodeCatalogVariant } from "@/lib/node-catalog";
+import { tokenizeTemplatePreviewInline } from "@/lib/template-preview-inline";
 import styles from "./canvas-node.module.css";
 
 type RunPreview = {
@@ -72,6 +73,8 @@ type Props = {
 };
 
 type NodeActionHandlerMap = Record<string, () => void>;
+type NodeFooterAlign = "center" | "start";
+type NodeFooterSpacing = "default" | "tight";
 
 function cx(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
@@ -79,18 +82,6 @@ function cx(...parts: Array<string | false | null | undefined>) {
 
 function stopPointer(event: ReactPointerEvent<HTMLElement>) {
   event.stopPropagation();
-}
-
-function spreadsheetColumnLabel(index: number) {
-  let label = "";
-  let cursor = index;
-
-  while (cursor >= 0) {
-    label = String.fromCharCode(65 + (cursor % 26)) + label;
-    cursor = Math.floor(cursor / 26) - 1;
-  }
-
-  return label;
 }
 
 function renderParameterField(
@@ -191,24 +182,45 @@ function NodeTitleRail({
         )}
         <span className={styles.titleMeta}>{secondaryLabel}</span>
       </div>
-      <span className={styles.dragRail} aria-hidden="true" />
     </div>
   );
+}
+
+function DragPill() {
+  return (
+    <span className={styles.dragPill} data-node-drag-handle="true">
+      Drag me
+    </span>
+  );
+}
+
+function NodeTopUtilities({
+  children,
+}: {
+  children?: ReactNode;
+}) {
+  if (!children) {
+    return null;
+  }
+
+  return <div className={styles.topUtilities}>{children}</div>;
 }
 
 function NodeActionRail({
   descriptors,
   handlers,
+  align = "center",
 }: {
   descriptors: ReturnType<typeof getCanvasNodeActionDescriptors>;
   handlers: NodeActionHandlerMap;
+  align?: NodeFooterAlign;
 }) {
   if (descriptors.length === 0) {
     return null;
   }
 
   return (
-    <div className={styles.actionRail}>
+    <div className={cx(styles.actionRail, align === "start" && styles.actionRailStart)}>
       {descriptors.map((descriptor) => (
         <button
           key={descriptor.id}
@@ -227,16 +239,33 @@ function NodeActionRail({
   );
 }
 
-function NodeExternalBadge({
-  children,
-  align = "input",
+function NodeFooterRail({
+  caption,
+  actionDescriptors,
+  actionHandlers,
+  align = "center",
+  spacing = "default",
 }: {
-  children: string;
-  align?: "input" | "top-right";
+  caption?: ReactNode;
+  actionDescriptors: ReturnType<typeof getCanvasNodeActionDescriptors>;
+  actionHandlers: NodeActionHandlerMap;
+  align?: NodeFooterAlign;
+  spacing?: NodeFooterSpacing;
 }) {
+  if (!caption && actionDescriptors.length === 0) {
+    return null;
+  }
+
   return (
-    <div className={cx(styles.externalBadge, align === "input" ? styles.externalBadgeInput : styles.externalBadgeTopRight)}>
-      {children}
+    <div
+      className={cx(
+        styles.footerRail,
+        align === "start" ? styles.footerRailStart : styles.footerRailCenter,
+        spacing === "tight" && styles.footerRailTight
+      )}
+    >
+      {caption ? <div className={styles.footerCaption}>{caption}</div> : null}
+      <NodeActionRail descriptors={actionDescriptors} handlers={actionHandlers} align={align} />
     </div>
   );
 }
@@ -247,7 +276,11 @@ function NodeFrame({
   titleLabel,
   actionDescriptors,
   actionHandlers,
-  externalBadge,
+  hideTitleRail = false,
+  topUtility,
+  footerCaption,
+  footerAlign = "center",
+  footerSpacing = "default",
   onLabelChange,
   onCommitTextEdits,
   children,
@@ -257,11 +290,24 @@ function NodeFrame({
   titleLabel: string;
   actionDescriptors: ReturnType<typeof getCanvasNodeActionDescriptors>;
   actionHandlers: NodeActionHandlerMap;
-  externalBadge?: ReactNode;
+  hideTitleRail?: boolean;
+  topUtility?: ReactNode;
+  footerCaption?: ReactNode;
+  footerAlign?: NodeFooterAlign;
+  footerSpacing?: NodeFooterSpacing;
   onLabelChange: (value: string) => void;
   onCommitTextEdits: () => void;
   children?: ReactNode;
 }) {
+  const showTitleRail = node.presentation.showTitleRail && !hideTitleRail;
+  const showDragPill = node.presentation.useRailDragHandle;
+  const topUtilities = (topUtility || showDragPill) ? (
+    <>
+      {topUtility}
+      {showDragPill ? <DragPill /> : null}
+    </>
+  ) : null;
+
   return (
     <div
       className={styles.nodeChrome}
@@ -270,7 +316,7 @@ function NodeFrame({
       data-active={node.presentation.isExpanded ? "true" : "false"}
       data-editing={node.presentation.isEditing ? "true" : "false"}
     >
-      {node.presentation.showTitleRail ? (
+      {showTitleRail ? (
         <NodeTitleRail
           node={node}
           activeEditor={activeEditor}
@@ -279,11 +325,15 @@ function NodeFrame({
           onCommitTextEdits={onCommitTextEdits}
         />
       ) : null}
-      {node.presentation.showExternalBadges && externalBadge ? externalBadge : null}
+      <NodeTopUtilities>{topUtilities}</NodeTopUtilities>
       {children ? <div className={styles.nodeViewport}>{children}</div> : null}
-      {node.presentation.showActionRail ? (
-        <NodeActionRail descriptors={actionDescriptors} handlers={actionHandlers} />
-      ) : null}
+      <NodeFooterRail
+        caption={footerCaption}
+        actionDescriptors={node.presentation.showActionRail ? actionDescriptors : []}
+        actionHandlers={actionHandlers}
+        align={footerAlign}
+        spacing={footerSpacing}
+      />
     </div>
   );
 }
@@ -293,6 +343,52 @@ function CompactNode({ node }: { node: CanvasRenderNode }) {
     <div className={styles.compactNode}>
       <strong>{node.label}</strong>
       <span>{node.kind === "model" ? node.displayModelName || node.modelId : node.kind}</span>
+    </div>
+  );
+}
+
+function InlineTemplatePreviewText({
+  value,
+  placeholder,
+}: {
+  value: string;
+  placeholder: string;
+}) {
+  const parts = tokenizeTemplatePreviewInline(value);
+
+  if (parts.length === 0) {
+    return <div className={cx(styles.noteEditor, styles.noteReadOnly)}>{placeholder}</div>;
+  }
+
+  return (
+    <div className={cx(styles.noteEditor, styles.noteReadOnly, styles.templatePreviewText)}>
+      {parts.map((part, index) =>
+        part.type === "token" ? (
+          <span key={`${part.raw}:${index}`} className={styles.inlineTemplatePill}>
+            {part.raw}
+          </span>
+        ) : (
+          <span key={`${part.value}:${index}`}>{part.value}</span>
+        )
+      )}
+    </div>
+  );
+}
+
+function ImageFooterCaption({
+  node,
+}: {
+  node: CanvasRenderNode;
+}) {
+  const secondaryLabel =
+    node.displayModelName ||
+    node.displaySourceLabel ||
+    (node.assetOrigin === "uploaded" ? "Uploaded image" : `${node.outputType} source`);
+
+  return (
+    <div className={styles.imageFooterCaption}>
+      <span className={styles.imageFooterLabel}>{node.label}</span>
+      <span className={styles.imageFooterBadge}>{secondaryLabel}</span>
     </div>
   );
 }
@@ -324,14 +420,14 @@ function NoteSurface({
   editable,
   onChange,
   onBlur,
-  pills,
+  previewContent,
 }: {
   value: string;
   placeholder: string;
   editable: boolean;
   onChange?: (value: string) => void;
   onBlur?: () => void;
-  pills?: string[];
+  previewContent?: ReactNode;
 }) {
   return (
     <div className={cx(styles.noteSurface, styles.stickyNote)}>
@@ -345,17 +441,8 @@ function NoteSurface({
           placeholder={placeholder}
         />
       ) : (
-        <div className={cx(styles.noteEditor, styles.noteReadOnly)}>{value.trim() || placeholder}</div>
+        previewContent || <div className={cx(styles.noteEditor, styles.noteReadOnly)}>{value.trim() || placeholder}</div>
       )}
-      {pills && pills.length > 0 ? (
-        <div className={styles.templatePillRow}>
-          {pills.map((pill) => (
-            <span key={pill} className={styles.templatePill}>
-              {pill}
-            </span>
-          ))}
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -365,7 +452,6 @@ function ListSheetEditor({
   editable,
   onUpdateListColumnLabel,
   onUpdateListCell,
-  onAddListColumn,
   onRemoveListColumn,
   onAddListRow,
   onRemoveListRow,
@@ -375,7 +461,6 @@ function ListSheetEditor({
   editable: boolean;
   onUpdateListColumnLabel: (columnId: string, label: string) => void;
   onUpdateListCell: (rowId: string, columnId: string, value: string) => void;
-  onAddListColumn: () => void;
   onRemoveListColumn: (columnId: string) => void;
   onAddListRow: (initialValues?: Record<string, string>) => string | null | void;
   onRemoveListRow: (rowId: string) => void;
@@ -473,20 +558,10 @@ function ListSheetEditor({
 
   return (
     <div className={styles.listShell}>
-      {editable ? (
-        <button
-          type="button"
-          className={styles.listFloatingAction}
-          onPointerDown={stopPointer}
-          onClick={onAddListColumn}
-        >
-          Add column
-        </button>
-      ) : null}
       <div className={styles.listScroller}>
         <table className={styles.listTable}>
           <colgroup>
-            <col style={{ width: 58 }} />
+            <col style={{ width: 42 }} />
             {settings.columns.map((column) => (
               <col key={column.id} style={{ width: columnWidths[column.id] || 160 }} />
             ))}
@@ -497,7 +572,6 @@ function ListSheetEditor({
               {settings.columns.map((column, index) => (
                 <th key={column.id} className={styles.listHeaderCell}>
                   <div className={styles.listHeaderCellInner}>
-                    <span className={styles.listColumnLetter}>{spreadsheetColumnLabel(index)}</span>
                     {editable ? (
                       <input
                         className={styles.listHeaderInput}
@@ -573,7 +647,9 @@ function ListSheetEditor({
             {editable ? (
               <tr ref={draftRowRef} className={styles.listDraftRow}>
                 <td className={styles.listRowHead}>
-                  <span>+</span>
+                  <div className={styles.listRowHeadInner}>
+                    <span>+</span>
+                  </div>
                 </td>
                 {settings.columns.map((column) => (
                   <td key={`draft:${column.id}`} className={styles.listCell}>
@@ -610,22 +686,20 @@ function ListSheetEditor({
 
 function TemplatePreviewBody({
   node,
-  preview,
 }: {
   node: CanvasRenderNode;
-  preview: TextTemplatePreview | null;
 }) {
-  const tokens =
-    (preview?.columns.length || 0) > 0
-      ? (preview?.columns || []).slice(0, 4).map((column) => `[[${column.label}]]`)
-      : (preview?.tokens || []).slice(0, 4).map((token) => `[[${token.label}]]`);
-
   return (
     <NoteSurface
       value={node.prompt}
       placeholder="Empty template"
       editable={false}
-      pills={tokens}
+      previewContent={
+        <InlineTemplatePreviewText
+          value={node.prompt}
+          placeholder="Empty template"
+        />
+      }
     />
   );
 }
@@ -837,6 +911,7 @@ export function CanvasNodeContent({
   const isActive = activeEditor?.nodeId === node.id;
   const editor = isActive ? activeEditor : null;
   const listSettings = editor?.selectedListSettings || (node.kind === "list" ? getListNodeSettings(node.settings) : null);
+  const isImageAssetNode = node.kind === "asset-source" && node.outputType === "image";
   const templatePreview =
     editor?.selectedTemplatePreview ||
     (node.kind === "text-template"
@@ -906,12 +981,23 @@ export function CanvasNodeContent({
     },
   };
 
-  const externalBadge =
-    node.kind === "asset-source" &&
-    node.assetOrigin === "generated" &&
-    node.displayModelName ? (
-      <NodeExternalBadge align="input">{node.displayModelName}</NodeExternalBadge>
+  const topUtility =
+    isImageAssetNode && node.processingState ? (
+      <span className={styles.statusBubble} data-state={node.processingState}>
+        {node.processingState}
+      </span>
+    ) : node.kind === "list" && editor ? (
+      <button
+        type="button"
+        className={styles.listUtilityButton}
+        onPointerDown={stopPointer}
+        onClick={onAddListColumn}
+      >
+        Add column
+      </button>
     ) : null;
+
+  const footerCaption = isImageAssetNode ? <ImageFooterCaption node={node} /> : null;
 
   const frame = (children?: ReactNode) => (
     <NodeFrame
@@ -920,7 +1006,11 @@ export function CanvasNodeContent({
       titleLabel={secondaryLabel}
       actionDescriptors={actionDescriptors}
       actionHandlers={actionHandlers}
-      externalBadge={externalBadge}
+      hideTitleRail={isImageAssetNode}
+      topUtility={topUtility}
+      footerCaption={footerCaption}
+      footerAlign={isImageAssetNode ? "start" : "center"}
+      footerSpacing={isImageAssetNode ? "tight" : "default"}
       onLabelChange={onLabelChange}
       onCommitTextEdits={onCommitTextEdits}
     >
@@ -964,7 +1054,6 @@ export function CanvasNodeContent({
         editable={Boolean(editor)}
         onUpdateListColumnLabel={onUpdateListColumnLabel}
         onUpdateListCell={onUpdateListCell}
-        onAddListColumn={onAddListColumn}
         onRemoveListColumn={onRemoveListColumn}
         onAddListRow={onAddListRow}
         onRemoveListRow={onRemoveListRow}
@@ -982,7 +1071,7 @@ export function CanvasNodeContent({
           onCommitTextEdits={onCommitTextEdits}
         />
       ) : (
-        <TemplatePreviewBody node={node} preview={templatePreview} />
+        <TemplatePreviewBody node={node} />
       )
     );
   }
