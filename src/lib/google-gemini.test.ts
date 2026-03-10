@@ -5,6 +5,7 @@ import {
   classifyGoogleGeminiError,
   extractGoogleGeminiImageParts,
   extractGoogleGeminiText,
+  inspectGoogleGeminiMixedOutputResponse,
 } from "@/lib/server/google-gemini";
 
 test("classifies Gemini billing and quota errors into access states", () => {
@@ -108,4 +109,31 @@ test("extracts Gemini text from direct text and candidate parts", () => {
     }),
     "First paragraph.\n\nSecond paragraph."
   );
+});
+
+test("inspects Gemini mixed output responses for image and text presence", () => {
+  const stats = inspectGoogleGeminiMixedOutputResponse({
+    text: "  {\"nodes\":[]}  ",
+    candidates: [
+      {
+        content: {
+          parts: [
+            {
+              inlineData: {
+                data: "abc123",
+                mimeType: "image/png",
+              },
+            },
+            { text: "extra candidate text" },
+          ],
+        },
+      },
+    ],
+  });
+
+  assert.deepEqual(stats, {
+    rawResponseTextPresent: true,
+    candidateTextPartCount: 1,
+    imagePartCount: 1,
+  });
 });

@@ -200,7 +200,7 @@ Copilot run path:
 - Generated descriptors now include stable response-local `descriptorId` values plus a `runOrigin` of `canvas-node` or `copilot`.
 - `smart` may also return generated connection descriptors keyed by those descriptor IDs.
 - `CanvasView` inserts model-spawned notes, lists, and templates once from `job.generatedNodeDescriptors` instead of parsing raw provider text in the renderer.
-- `CanvasView` now hydrates generated image assets and generated text descriptors independently for the same job, so mixed-output image models can materialize both result kinds from one run.
+- `CanvasView` now hydrates generated image assets and generated text descriptors independently for the same job, so mixed-output image models can materialize every returned image asset plus any returned text descriptors from one run.
 - `CanvasView` applies valid generated connections after node insertion and drops invalid, duplicate, or out-of-scope links with a warning.
 - Root generated descriptors keep a visible source-model anchor unless a valid generated connection already targets that descriptor, so mixed outputs stay discoverable without overriding provider-specified wiring.
 - Model-spawned placeholders and final children now use the same visible-edge spawn anchor as the phantom preview, so active expanded model nodes materialize outputs where the preview projected them.
@@ -211,7 +211,8 @@ Copilot run path:
   - shared Gemini image controls: `temperature`, `aspectRatio`, `maxOutputTokens`, `topP`, `stopSequences`
   - `gemini-3-pro-image-preview` also exposes `imageSize`
   - `gemini-3.1-flash-image-preview` also exposes `outputMode`, `imageSize`, and `thinkingLevel`
-  - `gemini-3.1-flash-image-preview` `Images & Text` also reuses the `smart` structured-output contract for its text modality
+  - `gemini-3.1-flash-image-preview` `Images & Text` reuses the `smart` structured-output contract for its text modality, but as of March 10, 2026 the provider behavior is still experimental and may return image-only
+  - successful mixed image-only Gemini attempts persist typed diagnostics in `job_attempts.provider_response` so queue inspection can explain that Gemini omitted text instead of implying a renderer parse failure
   - OpenAI-style image settings are pruned from Gemini image nodes instead of being carried through as inert payload noise
 - The smart-output prompt builder derives allowed node kinds and payload summaries from the node catalog instead of hardcoded node descriptions.
 

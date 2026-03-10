@@ -241,6 +241,7 @@ The renderer never sees absolute paths; those refs are resolved only in main/wor
   - `latestTextOutputs`
   - `generatedNodeDescriptors`
   - `generatedConnections`
+  - optional `mixedOutputDiagnostics` for experimental Gemini image/text attempts
 - Generated node descriptors can materialize:
   - `text-note`
   - `list`
@@ -253,6 +254,15 @@ The renderer never sees absolute paths; those refs are resolved only in main/wor
 - Parse failure falls back to one generated text-note descriptor instead of failing the job.
 - Those outputs do not create `assets` rows.
 - Queue debug data stores both the returned text and the parsed structured-output metadata inline in `job_attempts.provider_response`.
+- Experimental `Nano Banana 2` mixed image/text attempts may also store:
+  - `mixedOutputDiagnostics.requested`
+  - `mixedOutputDiagnostics.executionMode`
+  - `mixedOutputDiagnostics.inputImageCount`
+  - `mixedOutputDiagnostics.rawResponseTextPresent`
+  - `mixedOutputDiagnostics.candidateTextPartCount`
+  - `mixedOutputDiagnostics.imagePartCount`
+  - `mixedOutputDiagnostics.warningCode`
+  - `mixedOutputDiagnostics.warningMessage`
 - Once a generated output is inserted onto the canvas, it becomes a normal user-owned node. Provenance remains for source/debug UI, but the polling loop no longer rewrites the node's content, layout, or connections.
 - `generatedOutputReceiptKeys` prevent already-inserted outputs from being re-created on reload and prevent deleted generated nodes from coming back automatically.
 

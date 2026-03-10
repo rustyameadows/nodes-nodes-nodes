@@ -1,5 +1,6 @@
 import type { ModelParameterDefinition } from "@/lib/model-parameters";
 import type { GeneratedConnectionDescriptor, GeneratedNodeDescriptor } from "@/lib/generated-text-output";
+import type { GeminiMixedOutputDiagnostics } from "@/lib/gemini-mixed-output";
 
 export type ProviderId = "openai" | "google-gemini" | "topaz";
 export type ProviderCredentialKey = "OPENAI_API_KEY" | "GOOGLE_API_KEY" | "TOPAZ_API_KEY";
@@ -267,6 +268,7 @@ export type Job = {
   generatedNodeDescriptors?: GeneratedNodeDescriptor[];
   generatedConnections?: GeneratedConnectionDescriptor[];
   generatedOutputWarning?: string | null;
+  mixedOutputDiagnostics?: GeminiMixedOutputDiagnostics | null;
 };
 
 export type QueueSummary = {
@@ -328,6 +330,7 @@ export type JobAttemptDebug = {
   errorMessage: string | null;
   durationMs: number | null;
   createdAt: string;
+  mixedOutputDiagnostics?: GeminiMixedOutputDiagnostics | null;
 };
 
 export type JobDebugResponse = {

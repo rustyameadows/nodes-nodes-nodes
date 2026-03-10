@@ -5,10 +5,11 @@ import type { Job, JobDebugResponse } from "@/components/workspace/types";
 import { getDb, getSqlite } from "@/lib/db/client";
 import { assets, jobAttempts, jobPreviewFrames, jobs } from "@/lib/db/schema";
 import {
-  createGeneratedTextNoteDescriptorsFromRawText,
-  type GeneratedConnectionDescriptor,
-  type GeneratedNodeDescriptor,
-} from "@/lib/generated-text-output";
+  getGeneratedOutputData,
+  getGeminiMixedOutputDiagnostics,
+  getLatestTextOutputs,
+  getStoredTextOutputTarget,
+} from "@/lib/job-attempt-response";
 import {
   formatProviderAccessMessage,
   formatProviderRequirementMessage,
@@ -18,7 +19,6 @@ import {
 import { getProviderModel } from "@/lib/providers/registry";
 import { syncProviderModels } from "@/lib/services/providers";
 import { nowIso, newId } from "@/lib/services/common";
-import { readOpenAiTextOutputTarget } from "@/lib/text-output-targets";
 import { isRunnableTopazGigapixelModel, resolveTopazGigapixelSettings } from "@/lib/topaz-gigapixel-settings";
 import type { OpenAIImageMode } from "@/lib/types";
 import type { CreateJobRequest } from "@/lib/ipc-contract";
@@ -28,185 +28,6 @@ import {
   resolveImageModelSettings,
   resolveTextModelSettings,
 } from "@/lib/provider-model-helpers";
-
-function getLatestTextOutputs(providerResponse: Record<string, unknown> | null | undefined) {
-  if (!providerResponse || typeof providerResponse !== "object") {
-    return [];
-  }
-
-  const outputs = Array.isArray(providerResponse.outputs) ? providerResponse.outputs : [];
-
-  return outputs
-    .map((output) => (output && typeof output === "object" ? (output as Record<string, unknown>) : null))
-    .filter((output): output is Record<string, unknown> => Boolean(output))
-    .filter((output) => output.type === "text" && typeof output.content === "string")
-    .map((output, index) => {
-      const metadata =
-        output.metadata && typeof output.metadata === "object"
-          ? (output.metadata as Record<string, unknown>)
-          : {};
-      return {
-        outputIndex:
-          typeof metadata.outputIndex === "number"
-            ? Number(metadata.outputIndex)
-            : typeof output.outputIndex === "number"
-              ? Number(output.outputIndex)
-              : index,
-        content: String(output.content),
-        responseId: metadata.responseId ? String(metadata.responseId) : null,
-      };
-    });
-}
-
-function getStoredTextOutputTarget(
-  providerResponse: Record<string, unknown> | null | undefined,
-  fallback: unknown
-): Job["textOutputTarget"] {
-  if (providerResponse && typeof providerResponse === "object" && "textOutputTarget" in providerResponse) {
-    return readOpenAiTextOutputTarget(
-      (providerResponse as Record<string, unknown>).textOutputTarget,
-      readOpenAiTextOutputTarget(fallback)
-    );
-  }
-
-  return readOpenAiTextOutputTarget(fallback);
-}
-
-function normalizeGeneratedNodeDescriptors(
-  rawDescriptors: unknown[],
-  sourceJobId: string,
-  sourceModelNodeId: string | null | undefined,
-  runOrigin: "canvas-node" | "copilot"
-): GeneratedNodeDescriptor[] {
-  return rawDescriptors
-    .map((descriptor, descriptorIndex) => {
-      if (!descriptor || typeof descriptor !== "object") {
-        return null;
-      }
-
-      const record = descriptor as Record<string, unknown>;
-      const kind = record.kind;
-      const outputIndex = typeof record.outputIndex === "number" ? Number(record.outputIndex) : 0;
-      const normalizedSourceModelNodeId =
-        typeof record.sourceModelNodeId === "string" ? String(record.sourceModelNodeId) : sourceModelNodeId ?? null;
-      const normalizedRunOrigin =
-        record.runOrigin === "copilot" || record.runOrigin === "canvas-node"
-          ? record.runOrigin
-          : normalizedSourceModelNodeId
-            ? "canvas-node"
-            : runOrigin;
-      const shared = {
-        descriptorId:
-          typeof record.descriptorId === "string" && record.descriptorId.trim()
-            ? String(record.descriptorId)
-            : `generated-${outputIndex}-${descriptorIndex}`,
-        label:
-          typeof record.label === "string" && record.label.trim()
-            ? String(record.label)
-            : `Generated ${descriptorIndex + 1}`,
-        sourceJobId: typeof record.sourceJobId === "string" ? String(record.sourceJobId) : sourceJobId,
-        sourceModelNodeId: normalizedSourceModelNodeId,
-        outputIndex,
-        descriptorIndex:
-          typeof record.descriptorIndex === "number" ? Number(record.descriptorIndex) : descriptorIndex,
-        runOrigin: normalizedRunOrigin,
-      } as const;
-
-      if (kind === "list" && Array.isArray(record.columns) && Array.isArray(record.rows)) {
-        return {
-          ...shared,
-          kind: "list" as const,
-          columns: record.columns.map((value) => String(value)),
-          rows: record.rows.map((row) => (Array.isArray(row) ? row.map((value) => String(value)) : [])),
-        };
-      }
-
-      if (kind === "text-template" && typeof record.templateText === "string") {
-        return {
-          ...shared,
-          kind: "text-template" as const,
-          templateText: String(record.templateText),
-        };
-      }
-
-      if (kind === "text-note" && typeof record.text === "string") {
-        return {
-          ...shared,
-          kind: "text-note" as const,
-          text: String(record.text),
-        };
-      }
-
-      return null;
-    })
-    .filter((descriptor): descriptor is GeneratedNodeDescriptor => Boolean(descriptor));
-}
-
-function getGeneratedConnections(providerResponse: Record<string, unknown> | null | undefined): GeneratedConnectionDescriptor[] {
-  if (!providerResponse || typeof providerResponse !== "object" || !Array.isArray(providerResponse.generatedConnections)) {
-    return [];
-  }
-
-  return providerResponse.generatedConnections
-    .map((connection) => (connection && typeof connection === "object" ? (connection as Record<string, unknown>) : null))
-    .filter((connection): connection is Record<string, unknown> => Boolean(connection))
-    .map((connection) => {
-      if (
-        (connection.kind !== "input" && connection.kind !== "prompt") ||
-        typeof connection.sourceDescriptorId !== "string" ||
-        typeof connection.targetDescriptorId !== "string"
-      ) {
-        return null;
-      }
-
-      return {
-        kind: connection.kind,
-        sourceDescriptorId: connection.sourceDescriptorId,
-        targetDescriptorId: connection.targetDescriptorId,
-      } satisfies GeneratedConnectionDescriptor;
-    })
-    .filter((connection): connection is GeneratedConnectionDescriptor => Boolean(connection));
-}
-
-function getGeneratedNodeDescriptors(
-  providerResponse: Record<string, unknown> | null | undefined,
-  sourceJobId: string,
-  sourceModelNodeId: string | null | undefined,
-  runOrigin: "canvas-node" | "copilot"
-): GeneratedNodeDescriptor[] {
-  if (!providerResponse || typeof providerResponse !== "object") {
-    return [];
-  }
-
-  if (Array.isArray(providerResponse.generatedNodeDescriptors)) {
-    return normalizeGeneratedNodeDescriptors(
-      providerResponse.generatedNodeDescriptors,
-      sourceJobId,
-      sourceModelNodeId,
-      runOrigin
-    );
-  }
-
-  const textOutputs = getLatestTextOutputs(providerResponse);
-  if (textOutputs.length === 0) {
-    return [];
-  }
-
-  const textOutputTarget = readOpenAiTextOutputTarget(providerResponse.textOutputTarget);
-  if (textOutputTarget !== "note") {
-    return [];
-  }
-
-  return createGeneratedTextNoteDescriptorsFromRawText({
-    outputs: textOutputs.map((output) => ({
-      content: output.content,
-      outputIndex: output.outputIndex,
-    })),
-    sourceJobId,
-    sourceModelNodeId,
-    runOrigin,
-  });
-}
 
 const createJobSchema = z.object({
   providerId: z.enum(["openai", "google-gemini", "topaz"]),
@@ -333,46 +154,48 @@ function serializeJobRows(
   >,
   latestAttemptByJobId: Map<string, typeof jobAttempts.$inferSelect>
 ): Job[] {
-  return rows.map((job) => ({
-    id: job.id,
-    state: job.state,
-    providerId: job.providerId,
-    modelId: job.modelId,
-    createdAt: job.createdAt,
-    startedAt: job.startedAt,
-    finishedAt: job.finishedAt,
-    errorMessage: job.errorMessage,
-    nodeRunPayload: job.nodeRunPayload as Job["nodeRunPayload"],
-    assets: assetsByJobId.get(job.id) || [],
-    latestPreviewFrames: previewFramesByJobId.get(job.id) || [],
-    latestTextOutputs: getLatestTextOutputs(latestAttemptByJobId.get(job.id)?.providerResponse || null),
-    textOutputTarget: getStoredTextOutputTarget(
-      latestAttemptByJobId.get(job.id)?.providerResponse || null,
-      (job.nodeRunPayload as Record<string, unknown> | undefined)?.settings &&
-        typeof (job.nodeRunPayload as Record<string, unknown> | undefined)?.settings === "object"
-        ? ((job.nodeRunPayload as Record<string, unknown>).settings as Record<string, unknown>).textOutputTarget
-        : undefined
-    ),
-    generatedNodeDescriptors: getGeneratedNodeDescriptors(
-      latestAttemptByJobId.get(job.id)?.providerResponse || null,
-      job.id,
+  return rows.map((job) => {
+    const latestProviderResponse = latestAttemptByJobId.get(job.id)?.providerResponse || null;
+    const sourceModelNodeId =
       typeof (job.nodeRunPayload as Record<string, unknown> | undefined)?.nodeId === "string" &&
-        (job.nodeRunPayload as Record<string, unknown> | undefined)?.runOrigin !== "copilot"
+      (job.nodeRunPayload as Record<string, unknown> | undefined)?.runOrigin !== "copilot"
         ? String((job.nodeRunPayload as Record<string, unknown>).nodeId)
-        : null,
-      (job.nodeRunPayload as Record<string, unknown> | undefined)?.runOrigin === "copilot" ? "copilot" : "canvas-node"
-    ),
-    generatedConnections: getGeneratedConnections(latestAttemptByJobId.get(job.id)?.providerResponse || null),
-    generatedOutputWarning:
-      latestAttemptByJobId.get(job.id)?.providerResponse &&
-      typeof latestAttemptByJobId.get(job.id)?.providerResponse === "object" &&
-      typeof (latestAttemptByJobId.get(job.id)?.providerResponse as Record<string, unknown>).generatedNodeDescriptorWarning ===
-        "string"
-        ? String(
-            (latestAttemptByJobId.get(job.id)?.providerResponse as Record<string, unknown>).generatedNodeDescriptorWarning
-          )
-        : null,
-  }));
+        : null;
+    const runOrigin =
+      (job.nodeRunPayload as Record<string, unknown> | undefined)?.runOrigin === "copilot" ? "copilot" : "canvas-node";
+    const generatedOutputData = getGeneratedOutputData({
+      providerResponse: latestProviderResponse,
+      sourceJobId: job.id,
+      sourceModelNodeId,
+      runOrigin,
+    });
+
+    return {
+      id: job.id,
+      state: job.state,
+      providerId: job.providerId,
+      modelId: job.modelId,
+      createdAt: job.createdAt,
+      startedAt: job.startedAt,
+      finishedAt: job.finishedAt,
+      errorMessage: job.errorMessage,
+      nodeRunPayload: job.nodeRunPayload as Job["nodeRunPayload"],
+      assets: assetsByJobId.get(job.id) || [],
+      latestPreviewFrames: previewFramesByJobId.get(job.id) || [],
+      latestTextOutputs: getLatestTextOutputs(latestProviderResponse),
+      textOutputTarget: getStoredTextOutputTarget(
+        latestProviderResponse,
+        (job.nodeRunPayload as Record<string, unknown> | undefined)?.settings &&
+          typeof (job.nodeRunPayload as Record<string, unknown> | undefined)?.settings === "object"
+          ? ((job.nodeRunPayload as Record<string, unknown>).settings as Record<string, unknown>).textOutputTarget
+          : undefined
+      ),
+      generatedNodeDescriptors: generatedOutputData.generatedNodeDescriptors,
+      generatedConnections: generatedOutputData.generatedConnections,
+      generatedOutputWarning: generatedOutputData.warning,
+      mixedOutputDiagnostics: getGeminiMixedOutputDiagnostics(latestProviderResponse),
+    };
+  });
 }
 
 export async function listJobs(projectId: string): Promise<Job[]> {
@@ -451,8 +274,14 @@ export async function getJobDebug(projectId: string, jobId: string): Promise<Job
     throw new Error("Job not found");
   }
 
-  const [job] = serializeJobRows([row], new Map(), new Map(), new Map());
   const attempts = db.select().from(jobAttempts).where(eq(jobAttempts.jobId, jobId)).orderBy(desc(jobAttempts.attemptNumber), desc(jobAttempts.createdAt)).all();
+  const latestAttemptByJobId = attempts.reduce<Map<string, typeof jobAttempts.$inferSelect>>((acc, attempt) => {
+    if (!acc.has(attempt.jobId)) {
+      acc.set(attempt.jobId, attempt);
+    }
+    return acc;
+  }, new Map());
+  const [job] = serializeJobRows([row], new Map(), new Map(), latestAttemptByJobId);
 
   return {
     job,
@@ -465,6 +294,7 @@ export async function getJobDebug(projectId: string, jobId: string): Promise<Job
       errorMessage: attempt.errorMessage,
       durationMs: attempt.durationMs,
       createdAt: attempt.createdAt,
+      mixedOutputDiagnostics: getGeminiMixedOutputDiagnostics(attempt.providerResponse),
     })),
   };
 }

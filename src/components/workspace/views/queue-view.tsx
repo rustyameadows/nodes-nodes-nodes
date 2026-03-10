@@ -8,6 +8,7 @@ import { WorkspaceShell } from "@/components/workspace/workspace-shell";
 import { getJobDebug, getJobs, openProject } from "@/components/workspace/client-api";
 import type { Job, JobAttemptDebug, JobDebugResponse } from "@/components/workspace/types";
 import { buildUiDataAttributes } from "@/lib/design-system";
+import { formatGeminiMixedOutputDiagnosticsNotice } from "@/lib/gemini-mixed-output";
 import { queryKeys } from "@/renderer/query";
 import styles from "./queue-view.module.css";
 
@@ -95,6 +96,8 @@ export function QueueView({ projectId }: Props) {
   }, [jobs, stateFilter]);
 
   const latestAttempt = jobDebug?.attempts[0] || null;
+  const latestMixedOutputDiagnostics = latestAttempt?.mixedOutputDiagnostics || jobDebug?.job.mixedOutputDiagnostics || null;
+  const mixedOutputNotice = formatGeminiMixedOutputDiagnosticsNotice(latestMixedOutputDiagnostics);
 
   return (
     <WorkspaceShell projectId={projectId} view="queue" jobs={jobs}>
@@ -199,6 +202,11 @@ export function QueueView({ projectId }: Props) {
                         <dd>{jobDebug.attempts.length}</dd>
                       </div>
                     </dl>
+
+                    <section className={styles.inspectSection}>
+                      <h3>Mixed Output</h3>
+                      <pre>{mixedOutputNotice || "-"}</pre>
+                    </section>
 
                     <section className={styles.inspectSection}>
                       <h3>Latest Request</h3>

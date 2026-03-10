@@ -146,15 +146,16 @@ The packaged app can be fully configured from Finder without editing repo env fi
 - support prompt-only `generate` and single-image `edit`
 - use `ai.models.generateContent` with image response modality
 - accept PNG, JPEG, and WebP inputs
-- produce one final output per run in v1
+- persist every returned Gemini image part as a generated image output in provider order
 - do not stream preview frames in this pass
 - shared Gemini image controls: `temperature`, `aspectRatio`, `maxOutputTokens`, `topP`, `stopSequences`
 - `gemini-2.5-flash-image` exposes only the shared Gemini image controls
 - `gemini-3-pro-image-preview` also exposes `imageSize` (`1K`, `2K`, `4K`)
 - `gemini-3.1-flash-image-preview` also exposes `outputMode` (`Images & Text` vs `Images Only`), `imageSize` (`512`, `1K`, `2K`, `4K`), and `thinkingLevel`
-- `gemini-3.1-flash-image-preview` `Images Only` returns one generated image asset
-- `gemini-3.1-flash-image-preview` `Images & Text` returns one generated image asset plus app-owned `Smart Output` JSON text from the same provider call
-- mixed Gemini image/text runs persist both image asset rows and parsed generated-node descriptors in one job attempt record
+- `gemini-3.1-flash-image-preview` `Images Only` returns every generated image part Gemini includes in the response
+- `gemini-3.1-flash-image-preview` `Images & Text` is experimental and provider-authentic: the app requests Gemini image parts plus app-owned `Smart Output` JSON text from the same provider call, but Gemini may still return image-only
+- when Gemini does return mixed output, the job attempt persists both the image asset rows and the parsed generated-node descriptors in one job attempt record
+- when Gemini omits text, the job remains a successful image-only mixed attempt and persists typed mixed-output diagnostics instead of synthesizing fallback smart nodes
 - Gemini image nodes intentionally do not expose OpenAI-style image knobs like `outputFormat`, `quality`, `size`, `background`, `moderation`, `inputFidelity`, or multi-image output counts
 - Gemini intentionally does not expose people-generation toggles, image `seed`, or tool toggles in this pass
 

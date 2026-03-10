@@ -52,7 +52,9 @@ import {
   extractGoogleGeminiImageParts,
   extractGoogleGeminiText,
   getGoogleGeminiClient,
+  inspectGoogleGeminiMixedOutputResponse,
 } from "@/lib/server/google-gemini";
+import type { GeminiMixedOutputDiagnostics } from "@/lib/gemini-mixed-output";
 import { executeTopazImageApi } from "@/lib/server/topaz-image-api";
 import type {
   OpenAIImageMode,
@@ -675,12 +677,16 @@ export function buildGeminiImageOutputsFromResponse(input: {
   const imageParts = extractGoogleGeminiImageParts(input.response);
   const text =
     input.resolvedSettings.outputMode === "images_and_text" ? extractGoogleGeminiText(input.response) : null;
+  const mixedOutputStats =
+    input.resolvedSettings.outputMode === "images_and_text"
+      ? inspectGoogleGeminiMixedOutputResponse(input.response)
+      : null;
 
   if (imageParts.length === 0) {
     throw createProviderError("PROVIDER_ERROR", "Gemini returned no image bytes.");
   }
 
-  const outputs = imageParts.slice(0, 1).map((imagePart, outputIndex) =>
+  const outputs = imageParts.map((imagePart, outputIndex) =>
     buildGeminiImageOutput(input.job, input.executionMode, imagePart.mimeType, imagePart.data, outputIndex)
   );
 
@@ -701,6 +707,33 @@ export function buildGeminiImageOutputsFromResponse(input: {
         text
       )
     );
+  }
+
+  if (mixedOutputStats) {
+    const diagnostics: GeminiMixedOutputDiagnostics = {
+      requested: true,
+      experimental: true,
+      mode: "images_and_text",
+      executionMode: input.executionMode,
+      inputImageCount: input.job.inputAssets.length,
+      rawResponseTextPresent: mixedOutputStats.rawResponseTextPresent,
+      candidateTextPartCount: mixedOutputStats.candidateTextPartCount,
+      imagePartCount: mixedOutputStats.imagePartCount,
+      warningCode: text ? null : "mixed_output_missing_text",
+      warningMessage: text
+        ? null
+        : `Nano Banana 2 Images & Text is experimental. Gemini returned ${mixedOutputStats.imagePartCount} image part(s) but no text for this ${input.executionMode} run with ${input.job.inputAssets.length} input image(s), so the job stayed image-only.`,
+    };
+    const firstOutput = outputs[0];
+    if (firstOutput) {
+      outputs[0] = {
+        ...firstOutput,
+        metadata: {
+          ...firstOutput.metadata,
+          geminiMixedOutputDiagnostics: diagnostics,
+        },
+      };
+    }
   }
 
   return outputs;

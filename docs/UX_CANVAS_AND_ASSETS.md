@@ -154,8 +154,10 @@
   - `Nano Banana Pro` also adds `Resolution`
   - `Nano Banana 2` also adds `Output Format`, `Resolution`, and `Thinking Level`
 - successful image jobs spawn final output nodes once from the completed job output
-- `Nano Banana 2` `Images Only` spawns one generated image output node
-- `Nano Banana 2` `Images & Text` spawns one generated image output node plus `Smart Output` text/list/template nodes from the same run
+- `Nano Banana 2` `Images Only` spawns one generated image output node per returned Gemini image part
+- `Nano Banana 2` `Images & Text` is experimental and provider-authentic:
+  - when Gemini returns both modalities, the run spawns one generated image output node per returned Gemini image part plus `Smart Output` text/list/template nodes from the same run
+  - when Gemini returns image-only, the run stays image-only and the queue inspector surfaces a best-effort diagnostic instead of showing a silent text-parse miss
 - successful OpenAI and Gemini text jobs hydrate generated nodes by output target:
   - `Text Note` -> generated text note
   - `List` -> generated list node

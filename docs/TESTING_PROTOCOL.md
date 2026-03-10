@@ -20,6 +20,13 @@ npm run build
 npm run db:generate
 ```
 
+Mixed Gemini output hardening:
+- cover request-shape parity for `Nano Banana 2` `Images & Text` in both `generate` and `edit`
+- cover provider normalization for both image+text and image-only mixed responses
+- cover worker attempt-persistence for mixed image-only diagnostics and mixed image+text generated descriptors
+- cover job-attempt serialization fallback so stored smart text outputs can still hydrate generated descriptors even if explicit descriptor arrays are absent
+- cover queue-debug formatting so experimental image-only mixed runs explain “Gemini returned image-only” instead of reading like a renderer failure
+
 Expected results:
 - `lint` passes
 - `check:design-system` passes

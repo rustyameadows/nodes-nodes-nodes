@@ -168,3 +168,31 @@ test("builds Gemini image debug requests with Gemini generateContent config", ()
     "object"
   );
 });
+
+test("Gemini mixed image requests keep the same text scaffolding in generate and edit modes", () => {
+  const generateRequest = buildGeminiImageDebugRequest({
+    modelId: "gemini-3.1-flash-image-preview",
+    prompt: "Render a poster.",
+    executionMode: "generate",
+    rawSettings: {
+      outputMode: "images_and_text",
+      imageSize: "2K",
+    },
+    inputImageAssetIds: [],
+  });
+  const editRequest = buildGeminiImageDebugRequest({
+    modelId: "gemini-3.1-flash-image-preview",
+    prompt: "Edit this poster.",
+    executionMode: "edit",
+    rawSettings: {
+      outputMode: "images_and_text",
+      imageSize: "2K",
+    },
+    inputImageAssetIds: ["asset-1"],
+  });
+
+  assert.deepEqual(generateRequest.request.config, editRequest.request.config);
+  assert.equal(generateRequest.request.config.responseMimeType, "application/json");
+  assert.deepEqual(generateRequest.request.config.responseModalities, ["TEXT", "IMAGE"]);
+  assert.deepEqual(editRequest.request.contents, [{ text: "Edit this poster." }, { inputAssetId: "asset-1" }]);
+});

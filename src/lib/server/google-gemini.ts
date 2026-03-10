@@ -153,6 +153,16 @@ export function extractGoogleGeminiImageParts(response: GoogleGeminiResponseShap
     }));
 }
 
+export function inspectGoogleGeminiMixedOutputResponse(response: GoogleGeminiResponseShape) {
+  const candidateParts = response.candidates?.[0]?.content?.parts || [];
+
+  return {
+    rawResponseTextPresent: Boolean(response.text?.trim()),
+    candidateTextPartCount: candidateParts.filter((part) => typeof part.text === "string" && part.text.trim()).length,
+    imagePartCount: extractGoogleGeminiImageParts(response).length,
+  };
+}
+
 export function classifyGoogleGeminiError(error: unknown): GoogleGeminiErrorClassification {
   const status =
     error && typeof error === "object" && "status" in error && typeof error.status === "number"

@@ -123,6 +123,99 @@ test("Nano Banana 2 images only returns only image outputs", async () => {
   assert.equal(outputs[0]?.metadata.outputIndex, 0);
 });
 
+test("Nano Banana 2 preserves all returned Gemini image parts", async () => {
+  const outputs = buildGeminiImageOutputsFromResponse({
+    job: {
+      projectId: "project-1",
+      jobId: "job-1",
+      providerId: "google-gemini",
+      modelId: "gemini-3.1-flash-image-preview",
+      payload: {
+        nodeId: "model-1",
+        nodeType: "image-gen",
+        prompt: "Draw three poster variations.",
+        settings: {
+          outputMode: "images_and_text",
+        },
+        outputType: "image",
+        executionMode: "generate",
+        outputCount: 1,
+        runOrigin: "canvas-node",
+        upstreamNodeIds: [],
+        upstreamAssetIds: [],
+        inputImageAssetIds: [],
+      },
+      inputAssets: [],
+    },
+    executionMode: "generate",
+    resolvedSettings: {
+      outputCount: 1,
+      aspectRatio: "auto",
+      temperature: 1,
+      topP: 0.95,
+      maxOutputTokens: 65536,
+      stopSequences: null,
+      stopSequenceList: [],
+      imageSize: "1K",
+      thinkingLevel: "minimal",
+      outputMode: "images_and_text",
+      effectiveSettings: {
+        outputMode: "images_and_text",
+      },
+    },
+    response: {
+      candidates: [
+        {
+          content: {
+            parts: [
+              {
+                inlineData: {
+                  data: ONE_BY_ONE_PNG_BASE64,
+                  mimeType: "image/png",
+                },
+              },
+              {
+                inlineData: {
+                  data: ONE_BY_ONE_PNG_BASE64,
+                  mimeType: "image/png",
+                },
+              },
+              {
+                inlineData: {
+                  data: ONE_BY_ONE_PNG_BASE64,
+                  mimeType: "image/png",
+                },
+              },
+            ],
+          },
+        },
+      ],
+    },
+  });
+
+  assert.deepEqual(
+    outputs.map((output) => output.type),
+    ["image", "image", "image"]
+  );
+  assert.deepEqual(
+    outputs.map((output) => output.metadata.outputIndex),
+    [0, 1, 2]
+  );
+  assert.deepEqual(outputs[0]?.metadata.geminiMixedOutputDiagnostics, {
+    requested: true,
+    experimental: true,
+    mode: "images_and_text",
+    executionMode: "generate",
+    inputImageCount: 0,
+    rawResponseTextPresent: false,
+    candidateTextPartCount: 0,
+    imagePartCount: 3,
+    warningCode: "mixed_output_missing_text",
+    warningMessage:
+      "Nano Banana 2 Images & Text is experimental. Gemini returned 3 image part(s) but no text for this generate run with 0 input image(s), so the job stayed image-only.",
+  });
+});
+
 test("Nano Banana 2 images and text returns image plus smart text outputs", async () => {
   const outputs = buildGeminiImageOutputsFromResponse({
     job: {
@@ -219,4 +312,101 @@ test("Nano Banana 2 images and text returns image plus smart text outputs", asyn
   assert.equal(outputs[1]?.metadata.outputIndex, 1);
   assert.equal(outputs[1]?.metadata.textOutputTarget, "smart");
   assert.equal(outputs[1]?.mimeType, "application/json");
+  assert.deepEqual(outputs[0]?.metadata.geminiMixedOutputDiagnostics, {
+    requested: true,
+    experimental: true,
+    mode: "images_and_text",
+    executionMode: "generate",
+    inputImageCount: 0,
+    rawResponseTextPresent: true,
+    candidateTextPartCount: 1,
+    imagePartCount: 1,
+    warningCode: null,
+    warningMessage: null,
+  });
+});
+
+test("Nano Banana 2 images and text preserves image-only edit responses with diagnostics", async () => {
+  const outputs = buildGeminiImageOutputsFromResponse({
+    job: {
+      projectId: "project-1",
+      jobId: "job-1",
+      providerId: "google-gemini",
+      modelId: "gemini-3.1-flash-image-preview",
+      payload: {
+        nodeId: "model-1",
+        nodeType: "image-gen",
+        prompt: "Edit this image and write a caption.",
+        settings: {
+          outputMode: "images_and_text",
+        },
+        outputType: "image",
+        executionMode: "edit",
+        outputCount: 1,
+        runOrigin: "canvas-node",
+        upstreamNodeIds: [],
+        upstreamAssetIds: [],
+        inputImageAssetIds: ["asset-1"],
+      },
+      inputAssets: [
+        {
+          assetId: "asset-1",
+          type: "image",
+          storageRef: "assets/project-1/input.png",
+          mimeType: "image/png",
+          buffer: Buffer.from("png"),
+        },
+      ],
+    },
+    executionMode: "edit",
+    resolvedSettings: {
+      outputCount: 1,
+      aspectRatio: "auto",
+      temperature: 1,
+      topP: 0.95,
+      maxOutputTokens: 65536,
+      stopSequences: null,
+      stopSequenceList: [],
+      imageSize: "1K",
+      thinkingLevel: "minimal",
+      outputMode: "images_and_text",
+      effectiveSettings: {
+        outputMode: "images_and_text",
+      },
+    },
+    response: {
+      candidates: [
+        {
+          content: {
+            parts: [
+              {
+                inlineData: {
+                  data: ONE_BY_ONE_PNG_BASE64,
+                  mimeType: "image/png",
+                },
+              },
+            ],
+          },
+        },
+      ],
+    },
+  });
+
+  assert.deepEqual(
+    outputs.map((output) => output.type),
+    ["image"]
+  );
+  assert.deepEqual(outputs[0]?.metadata.geminiMixedOutputDiagnostics, {
+    requested: true,
+    experimental: true,
+    mode: "images_and_text",
+    executionMode: "edit",
+    inputImageCount: 1,
+    rawResponseTextPresent: false,
+    candidateTextPartCount: 0,
+    imagePartCount: 1,
+    warningCode: "mixed_output_missing_text",
+    warningMessage:
+      "Nano Banana 2 Images & Text is experimental. Gemini returned 1 image part(s) but no text for this edit run with 1 input image(s), so the job stayed image-only.",
+  });
 });

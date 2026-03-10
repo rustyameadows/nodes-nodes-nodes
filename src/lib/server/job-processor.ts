@@ -6,6 +6,7 @@ import {
 } from "@/lib/generated-text-output";
 import { getDb } from "@/lib/db/client";
 import { assets, jobAttempts, jobPreviewFrames, jobs } from "@/lib/db/schema";
+import { getGeminiMixedOutputDiagnosticsFromOutputs } from "@/lib/gemini-mixed-output";
 import { getProviderAdapter } from "@/lib/providers/registry";
 import { createImportedAsset } from "@/lib/services/assets";
 import { nowIso, newId } from "@/lib/services/common";
@@ -202,6 +203,54 @@ export function buildGeneratedTextResultFromOutputs(input: {
   };
 }
 
+export function buildJobAttemptProviderResponse(input: {
+  outputs: NormalizedOutput[];
+  persistedPreviewFrames: Array<{
+    id: string;
+    outputIndex: number;
+    previewIndex: number;
+    mimeType: string;
+    createdAt: string;
+  }>;
+  generatedTextResult: ReturnType<typeof buildGeneratedTextResultFromOutputs>;
+  topazApiMetadata: {
+    request: Record<string, unknown> | null;
+    response: Record<string, unknown> | null;
+  } | null;
+}) {
+  const geminiMixedOutputDiagnostics = getGeminiMixedOutputDiagnosticsFromOutputs(input.outputs);
+
+  return {
+    outputCount: input.outputs.length,
+    outputTypes: input.outputs.map((output) => output.type),
+    outputs: input.outputs.map((output) => ({
+      type: output.type,
+      mimeType: output.mimeType,
+      extension: output.extension,
+      metadata: output.metadata,
+      ...(output.type === "text" && typeof output.content === "string" ? { content: output.content } : {}),
+    })),
+    previewFrameCount: input.persistedPreviewFrames.length,
+    previewFrames: input.persistedPreviewFrames.map((previewFrame) => ({
+      id: previewFrame.id,
+      outputIndex: previewFrame.outputIndex,
+      previewIndex: previewFrame.previewIndex,
+      mimeType: previewFrame.mimeType,
+      createdAt: previewFrame.createdAt,
+    })),
+    ...(input.generatedTextResult.generatedNodeDescriptorResult
+      ? {
+          textOutputTarget: input.generatedTextResult.textOutputTarget,
+          generatedNodeDescriptors: input.generatedTextResult.generatedNodeDescriptorResult.generatedNodeDescriptors,
+          generatedConnections: input.generatedTextResult.generatedNodeDescriptorResult.generatedConnections,
+          generatedNodeDescriptorWarning: input.generatedTextResult.generatedNodeDescriptorResult.warning,
+        }
+      : {}),
+    ...(geminiMixedOutputDiagnostics ? { mixedOutputDiagnostics: geminiMixedOutputDiagnostics } : {}),
+    ...(input.topazApiMetadata ? { topazApi: input.topazApiMetadata } : {}),
+  };
+}
+
 async function persistPreviewFrame(projectId: string, jobId: string, previewFrame: NormalizedPreviewFrame) {
   const db = getDb();
   const stored = await saveBufferAsPreview(
@@ -297,7 +346,7 @@ export async function processJobById(jobId: string) {
                 : null,
           }
         : null;
-    const { textOutputTarget, generatedNodeDescriptorResult } = buildGeneratedTextResultFromOutputs({
+    const generatedTextResult = buildGeneratedTextResultFromOutputs({
       outputs,
       fallbackTextOutputTarget: readOpenAiTextOutputTarget(payload.settings.textOutputTarget),
       sourceJobId: jobId,
@@ -311,34 +360,12 @@ export async function processJobById(jobId: string) {
         jobId,
         attemptNumber,
         providerRequest: buildProviderRequest(providerId, existing.modelId, payload, inputAssets),
-        providerResponse: {
-          outputCount: outputs.length,
-          outputTypes: outputs.map((output) => output.type),
-          outputs: outputs.map((output) => ({
-            type: output.type,
-            mimeType: output.mimeType,
-            extension: output.extension,
-            metadata: output.metadata,
-            ...(output.type === "text" && typeof output.content === "string" ? { content: output.content } : {}),
-          })),
-          previewFrameCount: persistedPreviewFrames.length,
-          previewFrames: persistedPreviewFrames.map((previewFrame) => ({
-            id: previewFrame.id,
-            outputIndex: previewFrame.outputIndex,
-            previewIndex: previewFrame.previewIndex,
-            mimeType: previewFrame.mimeType,
-            createdAt: previewFrame.createdAt,
-          })),
-          ...(generatedNodeDescriptorResult
-            ? {
-                textOutputTarget,
-                generatedNodeDescriptors: generatedNodeDescriptorResult.generatedNodeDescriptors,
-                generatedConnections: generatedNodeDescriptorResult.generatedConnections,
-                generatedNodeDescriptorWarning: generatedNodeDescriptorResult.warning,
-              }
-            : {}),
-          ...(topazApiMetadata ? { topazApi: topazApiMetadata } : {}),
-        },
+        providerResponse: buildJobAttemptProviderResponse({
+          outputs,
+          persistedPreviewFrames,
+          generatedTextResult,
+          topazApiMetadata,
+        }),
         durationMs: Date.now() - start,
         createdAt: nowIso(),
       })
