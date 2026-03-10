@@ -135,6 +135,7 @@ TanStack Query owns persisted app data in the renderer and is invalidated from t
 - `InfiniteCanvas` renders live drag previews, resize handles, phantom previews, quick mode transitions, and the edge-mounted run launcher, but committed node movement is written back once per drag through `onCommitNodePositions`.
 - Multi-node drag uses the current selection as a batch and preserves relative spacing across the moved nodes.
 - Active node cards switch drag to floating rail/hotspot affordances so inline controls stay editable without causing content shift.
+- Double-click node focus is owned by `CanvasView`: it may first change the node's presentation state, then waits for the node shell to settle before animating the viewport fit.
 - Primary inline editor routing is resolved by node type:
   - model -> `prompt`
   - text note -> `note`

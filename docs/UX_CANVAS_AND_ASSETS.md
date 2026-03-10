@@ -81,8 +81,10 @@
 - mode changes animate quickly on shell size/content transitions, but those transitions shut off while dragging, resizing, or panning
 - inline full-mode entry points:
   - `Enter` activates the selected node's primary mode
-  - image node double-click zooms the viewport to the node without changing node mode
-  - template node double-click enters edit mode
+  - double-click zooms the viewport to fit the target node
+  - if double-click also changes the node's presentation mode, the viewport refit waits for the node size transition to settle first
+  - image node double-click keeps the node in place and only reframes the viewport
+  - template node double-click enters edit mode and then reframes to the expanded editor
   - resized nodes keep their custom size when re-opened
 - active-node behavior by kind:
   - image asset: the media surface stays visually pure; labels, badges, status, and actions live outside the frame in external chrome

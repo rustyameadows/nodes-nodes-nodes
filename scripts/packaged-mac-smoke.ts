@@ -393,6 +393,7 @@ async function main() {
             const api = (window as typeof window & {
               __NND_CANVAS_TEST__?: {
                 getState: () => {
+                  selectedNodeIds: string[];
                   activeFullNodeId: string | null;
                   canvasViewport: { x: number; y: number; zoom: number };
                 };
@@ -403,7 +404,12 @@ async function main() {
             }
 
             const state = api.getState();
-            return state.activeFullNodeId === "smoke-text-note" && state.canvasViewport.zoom > beforeZoom + 0.02;
+            return (
+              state.selectedNodeIds.length === 1 &&
+              state.selectedNodeIds[0] === "smoke-text-note" &&
+              state.activeFullNodeId === null &&
+              state.canvasViewport.zoom > beforeZoom + 0.02
+            );
           }, viewportBeforeNodeFocus.canvasViewport.zoom)
         ),
       15_000
@@ -413,17 +419,20 @@ async function main() {
         (window as typeof window & {
           __NND_CANVAS_TEST__?: {
             getState: () => {
+              selectedNodeIds: string[];
               activeFullNodeId: string | null;
               canvasViewport: { x: number; y: number; zoom: number };
             };
           };
         }).__NND_CANVAS_TEST__?.getState() || {
+          selectedNodeIds: [],
           activeFullNodeId: null,
           canvasViewport: { x: 0, y: 0, zoom: 1 },
         }
       );
     });
-    assert.equal(viewportAfterNodeFocus.activeFullNodeId, "smoke-text-note");
+    assert.deepEqual(viewportAfterNodeFocus.selectedNodeIds, ["smoke-text-note"]);
+    assert.equal(viewportAfterNodeFocus.activeFullNodeId, null);
     assert.ok(viewportAfterNodeFocus.canvasViewport.zoom <= 1.1, "Expected packaged node focus zoom to stay gentle.");
     await saveScreenshot(driver, nodeFocusScreenshotPath);
 

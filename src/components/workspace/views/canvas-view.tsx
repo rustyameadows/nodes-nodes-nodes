@@ -143,6 +143,8 @@ const NODE_FOCUS_ZOOM_PADDING_Y = 84;
 const NODE_FOCUS_MIN_ZOOM = 0.42;
 const NODE_FOCUS_MAX_ZOOM = 1.08;
 const NODE_FOCUS_ANIMATION_DURATION_MS = 165;
+const NODE_FOCUS_SETTLE_MAX_FRAMES = 18;
+const NODE_FOCUS_SETTLE_STABLE_FRAMES = 2;
 
 type Props = {
   projectId: string;
@@ -2840,7 +2842,7 @@ export function CanvasView({ projectId }: Props) {
   }, [applyCanvasHistoryState, captureCanvasHistoryState, commitPendingCoalescedHistory, syncHistoryStacks]);
 
   const openPrimaryEditorForNode = useCallback(
-    (nodeId: string) => {
+    (nodeId: string, options?: { focusViewport?: boolean }) => {
       const node = nodesById[nodeId];
       if (!node) {
         return;
@@ -2852,12 +2854,15 @@ export function CanvasView({ projectId }: Props) {
       setInsertMenu(null);
       setAssetPicker(null);
       setActiveFullNodeId(node.kind === "text-template" ? nodeId : null);
+      if (options?.focusViewport) {
+        setPendingViewportFocusNodeId(nodeId);
+      }
     },
     [commitPendingCoalescedHistory, nodesById, setTrackedSelectedConnection, setTrackedSelectedNodeIds]
   );
 
   const enterNodeEditMode = useCallback(
-    (nodeId: string) => {
+    (nodeId: string, options?: { focusViewport?: boolean }) => {
       const node = nodesById[nodeId];
       if (!node) {
         return;
@@ -2869,6 +2874,9 @@ export function CanvasView({ projectId }: Props) {
       setInsertMenu(null);
       setAssetPicker(null);
       setActiveFullNodeId(node.kind === "text-template" ? nodeId : null);
+      if (options?.focusViewport) {
+        setPendingViewportFocusNodeId(nodeId);
+      }
     },
     [commitPendingCoalescedHistory, nodesById, setTrackedSelectedConnection, setTrackedSelectedNodeIds]
   );
@@ -2911,7 +2919,7 @@ export function CanvasView({ projectId }: Props) {
       }
 
       if (node.kind === "text-template") {
-        enterNodeEditMode(nodeId);
+        enterNodeEditMode(nodeId, { focusViewport: true });
         return;
       }
 
@@ -2920,7 +2928,7 @@ export function CanvasView({ projectId }: Props) {
         return;
       }
 
-      openPrimaryEditorForNode(nodeId);
+      openPrimaryEditorForNode(nodeId, { focusViewport: true });
     },
     [enterNodeEditMode, focusNodeViewport, nodesById, openPrimaryEditorForNode]
   );
@@ -3826,32 +3834,78 @@ export function CanvasView({ projectId }: Props) {
 
     cancelViewportFocusAnimation();
 
-    const firstFrameId = window.requestAnimationFrame(() => {
-      viewportFocusSetupFrameIdsRef.current = viewportFocusSetupFrameIdsRef.current.filter((frameId) => frameId !== firstFrameId);
-      const secondFrameId = window.requestAnimationFrame(() => {
-        viewportFocusSetupFrameIdsRef.current = viewportFocusSetupFrameIdsRef.current.filter((frameId) => frameId !== secondFrameId);
-        const bounds = surfaceElement.getBoundingClientRect();
-        if (bounds.width < 160 || bounds.height < 120) {
-          setPendingViewportFocusNodeId(null);
-          return;
-        }
-
-        const availableWidth = Math.max(220, bounds.width - NODE_FOCUS_ZOOM_PADDING_X * 2);
-        const availableHeight = Math.max(180, bounds.height - NODE_FOCUS_ZOOM_PADDING_Y * 2);
-        const fitZoom = Math.min(
-          availableWidth / targetNode.resolvedSize.width,
-          availableHeight / targetNode.resolvedSize.height
-        );
-        const zoom = Math.min(NODE_FOCUS_MAX_ZOOM, Math.max(NODE_FOCUS_MIN_ZOOM, fitZoom));
-        const x = bounds.width / 2 - (targetNode.x + targetNode.resolvedSize.width / 2) * zoom;
-        const y = bounds.height / 2 - (targetNode.y + targetNode.resolvedSize.height / 2) * zoom;
-
-        animateViewportTo({ x, y, zoom });
-        setPendingViewportFocusNodeId((current) => (current === targetNode.id ? null : current));
+    const scheduleSetupFrame = (callback: FrameRequestCallback) => {
+      let frameId = 0;
+      frameId = window.requestAnimationFrame((timestamp) => {
+        viewportFocusSetupFrameIdsRef.current = viewportFocusSetupFrameIdsRef.current.filter((candidate) => candidate !== frameId);
+        callback(timestamp);
       });
-      viewportFocusSetupFrameIdsRef.current.push(secondFrameId);
+      viewportFocusSetupFrameIdsRef.current.push(frameId);
+    };
+
+    const finalizeViewportFocus = () => {
+      const latestTargetNode = canvasNodes.find((node) => node.id === pendingViewportFocusNodeId);
+      if (!latestTargetNode) {
+        setPendingViewportFocusNodeId(null);
+        return;
+      }
+
+      const bounds = surfaceElement.getBoundingClientRect();
+      if (bounds.width < 160 || bounds.height < 120) {
+        setPendingViewportFocusNodeId(null);
+        return;
+      }
+
+      const availableWidth = Math.max(220, bounds.width - NODE_FOCUS_ZOOM_PADDING_X * 2);
+      const availableHeight = Math.max(180, bounds.height - NODE_FOCUS_ZOOM_PADDING_Y * 2);
+      const fitZoom = Math.min(
+        availableWidth / latestTargetNode.resolvedSize.width,
+        availableHeight / latestTargetNode.resolvedSize.height
+      );
+      const zoom = Math.min(NODE_FOCUS_MAX_ZOOM, Math.max(NODE_FOCUS_MIN_ZOOM, fitZoom));
+      const x = bounds.width / 2 - (latestTargetNode.x + latestTargetNode.resolvedSize.width / 2) * zoom;
+      const y = bounds.height / 2 - (latestTargetNode.y + latestTargetNode.resolvedSize.height / 2) * zoom;
+
+      animateViewportTo({ x, y, zoom });
+      setPendingViewportFocusNodeId((current) => (current === latestTargetNode.id ? null : current));
+    };
+
+    let previousWidth = -1;
+    let previousHeight = -1;
+    let stableFrames = 0;
+    let sampleCount = 0;
+
+    const waitForNodeLayoutToSettle = () => {
+      const nodeElement = surfaceElement.querySelector<HTMLElement>(`[data-node-id="${pendingViewportFocusNodeId}"]`);
+      if (!nodeElement) {
+        finalizeViewportFocus();
+        return;
+      }
+
+      const rect = nodeElement.getBoundingClientRect();
+      const hasSize = rect.width > 0 && rect.height > 0;
+      if (hasSize && Math.abs(rect.width - previousWidth) < 0.5 && Math.abs(rect.height - previousHeight) < 0.5) {
+        stableFrames += 1;
+      } else {
+        stableFrames = 0;
+      }
+      previousWidth = rect.width;
+      previousHeight = rect.height;
+      sampleCount += 1;
+
+      if ((hasSize && stableFrames >= NODE_FOCUS_SETTLE_STABLE_FRAMES) || sampleCount >= NODE_FOCUS_SETTLE_MAX_FRAMES) {
+        finalizeViewportFocus();
+        return;
+      }
+
+      scheduleSetupFrame(() => {
+        waitForNodeLayoutToSettle();
+      });
+    };
+
+    scheduleSetupFrame(() => {
+      waitForNodeLayoutToSettle();
     });
-    viewportFocusSetupFrameIdsRef.current.push(firstFrameId);
 
     return () => {
       clearViewportFocusSetupFrames();

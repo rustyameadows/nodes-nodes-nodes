@@ -1079,11 +1079,28 @@ async function main() {
 
     await screenshotCanvasNode(window, "Draw a red square on a blue background.", nodeFocusBeforeScreenshotPath);
     console.log("Node focus before screenshot:", nodeFocusBeforeScreenshotPath);
+    const viewportBeforeNodeFocus = await window.evaluate(() => {
+      return (
+        (window as typeof window & {
+          __NND_CANVAS_TEST__?: {
+            getState: () => {
+              selectedNodeIds: string[];
+              activeFullNodeId: string | null;
+              canvasViewport: { x: number; y: number; zoom: number };
+            };
+          };
+        }).__NND_CANVAS_TEST__?.getState() || {
+          selectedNodeIds: [],
+          activeFullNodeId: null,
+          canvasViewport: { x: 0, y: 0, zoom: 1 },
+        }
+      );
+    });
     await clickCanvasNode(window, "Draw a red square on a blue background.", { doubleClick: true });
     await withTimeout(
       "note selection via double click",
       window.waitForFunction(
-        ({ expectedNodeId }) => {
+        ({ expectedNodeId, beforeViewport }) => {
           const api = (window as typeof window & {
             __NND_CANVAS_TEST__?: {
               getState: () => {
@@ -1097,11 +1114,15 @@ async function main() {
             api &&
             api.getState().selectedNodeIds.length === 1 &&
             api.getState().selectedNodeIds[0] === expectedNodeId &&
-            api.getState().activeFullNodeId === null
+            api.getState().activeFullNodeId === null &&
+            (Math.abs(api.getState().canvasViewport.x - beforeViewport.x) > 1 ||
+              Math.abs(api.getState().canvasViewport.y - beforeViewport.y) > 1 ||
+              Math.abs(api.getState().canvasViewport.zoom - beforeViewport.zoom) > 0.01)
           );
         },
         {
           expectedNodeId: promptNodeId,
+          beforeViewport: viewportBeforeNodeFocus.canvasViewport,
         },
         { timeout: 15_000 }
       )

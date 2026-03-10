@@ -1545,6 +1545,7 @@ export function InfiniteCanvas({
               }}
               role="button"
               tabIndex={0}
+              data-node-id={node.id}
               data-rail-drag={node.presentation.useRailDragHandle ? "true" : "false"}
               className={`${styles.node} ${isSelected ? styles.nodeSelected : ""} ${shouldRenderImageFrame ? nodeStyles.nodeWithImage : ""} ${isGeneratedAsset ? nodeStyles.nodeGeneratedAsset : ""} ${isUploadedAsset ? nodeStyles.nodeUploadedAsset : ""} ${isTextNote ? nodeStyles.nodeTextNote : ""} ${isTextNote && !isGeneratedTextNote ? nodeStyles.nodeSemanticFrame : ""} ${isGeneratedTextNote ? nodeStyles.nodeGeneratedTextNote : ""} ${isListNode ? nodeStyles.nodeList : ""} ${isListNode ? nodeStyles.nodeSemanticFrame : ""} ${isTextTemplateNode ? nodeStyles.nodeTextTemplate : ""} ${isModelNode || isFunctionNode ? nodeStyles.nodeModel : ""} ${activeConnectionNodeIds.has(node.id) ? styles.nodePortActive : ""} ${showsProcessingShell ? nodeStyles.nodeGeneratedProcessing : ""} ${node.renderMode === "compact" ? nodeStyles.nodeCompactMode : ""} ${node.renderMode === "full" ? nodeStyles.nodeFullMode : ""} ${node.renderMode === "resized" ? nodeStyles.nodeResizedMode : ""}`}
               style={nodeStyle}

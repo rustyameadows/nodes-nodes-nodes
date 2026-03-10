@@ -113,7 +113,7 @@
 ## 2026-03-09 - Canvas Nodes Move Into A Dedicated Node Design System
 - Decision: extend the design-system work into the canvas with a dedicated node-card layer instead of leaving node renderers permanently outside the system.
 - Rationale: issue `#62` needs the five core node families to share durable rails, actions, resizing, and spreadsheet/editor patterns without repainting the semantic canvas palette or turning node work into ad hoc per-issue CSS.
-- Consequence: canvas nodes now use shared node tokens plus shared node chrome/action primitives, model expansion becomes selection-driven, template edit mode stays explicit, image double-click zooms the viewport instead of changing mode, and the Node Library playground stays on the same renderer path as the real project canvas.
+- Consequence: canvas nodes now use shared node tokens plus shared node chrome/action primitives, model expansion becomes selection-driven, template edit mode stays explicit, node double-click reframes the viewport after any size-changing mode transition settles, and the Node Library playground stays on the same renderer path as the real project canvas.
 
 ## 2026-03-09 - Canvas Node Chrome Uses Explicit External Slots
 - Decision: standardize node chrome around external title, utility, caption, and action slots instead of ad hoc per-node absolute positioning.
