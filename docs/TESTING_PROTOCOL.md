@@ -53,14 +53,18 @@ What it does:
 - verifies the shared searchable model selector updates the model playground
 - creates a project from the native `File > New Project` menu
 - triggers one native `Canvas > Add Model Node` command on canvas
+- verifies the inserted model opens directly in the full response-settings shell
 - writes a canvas snapshot with two nodes through the live preload bridge
 - verifies canvas interaction behavior in the real Electron window:
   - `A` opens the insert menu
   - multi-selected nodes move as one batch
   - `C` connects exactly two selected nodes
   - `Enter` opens the selected node's inline full editor
-  - node double-click opens the same primary inline editor mapping on `preview` / `compact` nodes and gently animates the viewport focus
+  - single-click on a `preview` or `compact` model only selects it, keeps its size unchanged, and reveals the shared rails plus the external side run launcher
+  - node double-click opens the same primary inline editor mapping on `preview` / `compact` nodes, immediately shows the correct top-left mode pills for the new shell, keeps model full shells open after focus moves away, and gently animates the viewport focus
+  - unfocused model nodes that remain in `full` or persisted `resized` keep the large body visible but hide the shared top/bottom rails until refocused
   - double-click on a `resized` node keeps it resized and only focuses the viewport
+  - selected model nodes in `preview`, `full`, and persisted `resized` show the bottom-right resize handle, and resize enters `displayMode: "resized"` at drag start and keeps it until `Default` or `Compact`
   - `Cmd/Ctrl+Z` and `Cmd/Ctrl+Shift+Z` undo/redo batch move, connection, inline edit, and node insertion
   - typing inside inline editors does not trigger canvas shortcuts
   - resized asset nodes can still be dragged after resize

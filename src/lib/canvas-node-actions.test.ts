@@ -60,6 +60,42 @@ test("resized model actions restore default and compact modes while keeping dupl
   );
 });
 
+test("transient full model actions expose default immediately on first open", () => {
+  const actions = getCanvasNodeActionDescriptors({
+    interactionPolicy: "model",
+    persistedMode: "preview",
+    renderMode: "full",
+    isEditing: false,
+  });
+
+  assert.deepEqual(
+    actions.map((action) => [action.id, action.slot]),
+    [
+      ["default", "top-left"],
+      ["compact", "top-left"],
+      ["duplicate", "bottom"],
+    ]
+  );
+});
+
+test("transient full model actions keep compact available when the persisted mode is compact", () => {
+  const actions = getCanvasNodeActionDescriptors({
+    interactionPolicy: "model",
+    persistedMode: "compact",
+    renderMode: "full",
+    isEditing: false,
+  });
+
+  assert.deepEqual(
+    actions.map((action) => [action.id, action.slot]),
+    [
+      ["default", "top-left"],
+      ["compact", "top-left"],
+      ["duplicate", "bottom"],
+    ]
+  );
+});
+
 test("list actions place add column in the bottom rail", () => {
   const actions = getCanvasNodeActionDescriptors({
     interactionPolicy: "list",

@@ -208,6 +208,10 @@
   padding: 0;
 }
 
+.nodeResizedMode.nodeList {
+  min-height: 0;
+}
+
 .nodeTextTemplate {
   width: 264px;
   min-height: 182px;
@@ -234,16 +238,23 @@
 .nodeResizedMode.nodeModel {
   max-width: none;
   min-height: 0;
+}
+
+.nodeFullMode.nodeModel {
   height: auto;
 }
 
 .nodeFullMode.nodeModel .nodeChrome,
-.nodeResizedMode.nodeModel .nodeChrome,
 .nodeFullMode.nodeModel .nodeViewport,
-.nodeResizedMode.nodeModel .nodeViewport,
-.nodeFullMode.nodeModel .modelShell,
-.nodeResizedMode.nodeModel .modelShell {
+.nodeFullMode.nodeModel .modelShell {
   height: auto;
+}
+
+.nodeResizedMode.nodeModel .nodeChrome,
+.nodeResizedMode.nodeModel .nodeViewport,
+.nodeResizedMode.nodeModel .modelShell {
+  height: 100%;
+  min-height: 0;
 }
 
 .assetNodeLayout {
@@ -360,8 +371,33 @@
   border: 0;
   background: transparent;
   cursor: nwse-resize;
-  z-index: 3;
+  z-index: 4;
   opacity: 0;
+}
+
+.resizeHandle::before,
+.resizeHandle::after {
+  content: "";
+  position: absolute;
+  right: 5px;
+  bottom: 5px;
+  width: 10px;
+  height: 10px;
+  border-right: 2px solid color-mix(in srgb, var(--node-surface-ink) 54%, transparent);
+  border-bottom: 2px solid color-mix(in srgb, var(--node-surface-ink) 54%, transparent);
+  pointer-events: none;
+}
+
+.resizeHandle::after {
+  right: 9px;
+  bottom: 9px;
+  width: 6px;
+  height: 6px;
+  opacity: 0.72;
+}
+
+.resizeHandleVisible {
+  opacity: 1;
 }
 
 .nodeChrome {
@@ -1010,6 +1046,15 @@
   align-items: stretch;
 }
 
+.nodeResizedMode.nodeModel .modelShell {
+  overflow: auto;
+}
+
+.nodeResizedMode.nodeModel .modelGrid {
+  min-height: 100%;
+  align-content: flex-start;
+}
+
 .modelPanel {
   display: flex;
   flex-direction: column;
@@ -1107,6 +1152,14 @@
   font-family: system-ui, sans-serif;
 }
 
+.fieldControlReadOnly {
+  display: flex;
+  align-items: flex-start;
+  min-height: 34px;
+  color: var(--node-surface-ink);
+  white-space: pre-wrap;
+}
+
 .fieldControl[data-control="select"] {
   appearance: none;
   background-image:
@@ -1122,6 +1175,24 @@
 
 .fieldControlTextarea {
   min-height: 100px;
+}
+
+.modelSelectReadOnly {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.modelSelectReadOnly strong {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.modelSelectReadOnly span {
+  color: var(--node-surface-ink-muted);
+  font-size: 11px;
+  line-height: 1.35;
 }
 
 .parameterGrid {

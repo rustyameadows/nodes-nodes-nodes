@@ -113,7 +113,7 @@
 ## 2026-03-09 - Canvas Nodes Move Into A Dedicated Node Design System
 - Decision: extend the design-system work into the canvas with a dedicated node-card layer instead of leaving node renderers permanently outside the system.
 - Rationale: issue `#62` needs the five core node families to share durable rails, actions, resizing, and spreadsheet/editor patterns without repainting the semantic canvas palette or turning node work into ad hoc per-issue CSS.
-- Consequence: canvas nodes now use shared node tokens plus shared node chrome/action primitives, model expansion becomes selection-driven, template edit mode stays explicit, node double-click reframes the viewport after any size-changing mode transition settles, and the Node Library playground stays on the same renderer path as the real project canvas.
+- Consequence: canvas nodes now use shared node tokens plus shared node chrome/action primitives, template edit mode stays explicit, node double-click reframes the viewport after any size-changing mode transition settles, and the Node Library playground stays on the same renderer path as the real project canvas.
 
 ## 2026-03-09 - Canvas Node Chrome Uses Explicit External Slots
 - Decision: standardize node chrome around external title, utility, caption, and action slots instead of ad hoc per-node absolute positioning.
@@ -169,3 +169,13 @@
 - Decision: rename the purple canvas semantic from `function` to `operator`, treat templates as the first operator node family, resolve border accents through one shared provenance-aware helper, and reserve red as a right-edge-only failed-output semantic.
 - Rationale: "generator" is too ambiguous once model nodes also generate outputs, while ad hoc per-node border logic makes template/model/generated states drift and makes failure styling hard to extend.
 - Consequence: fresh template nodes stay neutral until they have downstream output, operator-produced children carry purple on the left edge, model-produced children carry citrus on the left edge, failed nodes keep their normal left-edge provenance/input accents while forcing the right edge red, and queued/running generated outputs shimmer until they settle.
+
+## 2026-03-11 - Resized Canvas Nodes Use Hard Stored Dimensions
+- Decision: treat `displayMode: "resized"` as an authoritative stored frame size, allow only transient full model nodes to auto-measure content height, and lower the list resize floor to the compact list footprint.
+- Rationale: users expect a manual resize to stick exactly as set, but auto-height models were collapsing after focus changes and the old list minimum prevented dense spreadsheet nodes.
+- Consequence: resized model nodes now keep their saved width and height with internal scrolling for overflow, keep their expanded editor chrome/body visible even when selection moves away, preview/full models still open with their adaptive sizing behavior, and resized lists can shrink to compact-size shells without disappearing.
+
+## 2026-03-11 - Model Full Mode Is Explicit Instead Of Selection-Driven
+- Decision: stop promoting preview and compact model nodes into transient `full` mode on single selection, and reserve model full-mode entry for explicit primary-editor gestures.
+- Rationale: model nodes should align with the other canvas node families, where selection reveals chrome but does not silently change the node’s size or body layout.
+- Consequence: single-click model selection now keeps the persisted preview/compact shell while showing the shared rails and external side run launcher, while double-click and keyboard `Enter` open the full response-settings editor; that full shell stays open across focus changes until `Default`, `Compact`, or resize mode takes over; selected preview/full/resized model shells expose the bottom-right resize handle; resize switches into persisted `displayMode: "resized"` at drag start so the node stops fitting to content immediately; and only `Default` or `Compact` clear that persisted resized state.

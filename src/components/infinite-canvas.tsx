@@ -22,7 +22,11 @@ import type {
   CanvasRenderNode,
   CanvasSelectionAction,
 } from "@/components/canvas-node-types";
-import { clampWorkflowNodeSize } from "@/lib/canvas-node-presentation";
+import {
+  clampWorkflowNodeSize,
+  resolveCanvasNodeFrameSize,
+  shouldCanvasNodeMeasureContentHeight,
+} from "@/lib/canvas-node-presentation";
 import { getUploadedAssetNodeAspectRatio } from "@/lib/canvas-asset-nodes";
 import { sortCanvasNodesForDisplay } from "@/lib/canvas-layout";
 import {
@@ -55,6 +59,7 @@ type Props = {
   onViewportChange: (viewport: CanvasViewport) => void;
   onViewportInteractionStart?: () => void;
   onCommitNodePositions: (positions: Record<string, { x: number; y: number }>) => void;
+  onStartNodeResize?: (nodeId: string, size: WorkflowNodeSize) => void;
   onCommitNodeSize: (nodeId: string, size: WorkflowNodeSize) => void;
   onConnectNodes: (sourceNodeId: string, targetNodeId: string) => void;
   onSelectConnection: (connection: CanvasConnection | null) => void;
@@ -140,7 +145,10 @@ function getOutputPortPoint(node: CanvasRenderNode, size: { width: number; heigh
 }
 
 function usesContentHeight(node: CanvasRenderNode) {
-  return node.kind === "model" && (node.renderMode === "full" || node.renderMode === "resized");
+  return shouldCanvasNodeMeasureContentHeight({
+    kind: node.kind,
+    renderMode: node.renderMode,
+  });
 }
 
 function curvePath(startX: number, startY: number, endX: number, endY: number) {
@@ -376,6 +384,7 @@ export function InfiniteCanvas({
   onViewportChange,
   onViewportInteractionStart,
   onCommitNodePositions,
+  onStartNodeResize,
   onCommitNodeSize,
   onConnectNodes,
   onSelectConnection,
@@ -457,31 +466,25 @@ export function InfiniteCanvas({
       const resized = resizeDraftSizes?.[nodeId];
       const node = nodesById[nodeId];
       const measured = nodeSizes[nodeId];
-      if (resized) {
-        if (node && usesContentHeight(node)) {
-          return {
-            width: resized.width,
-            height: measured?.height || node.resolvedSize.height,
-          };
+
+      if (!node) {
+        if (resized) {
+          return resized;
         }
-        return resized;
-      }
-
-      if (node) {
-        if (usesContentHeight(node) && measured) {
-          return {
-            width: node.resolvedSize.width,
-            height: measured.height,
-          };
+        if (measured) {
+          return measured;
         }
-        return node.resolvedSize;
+        return { width: DEFAULT_NODE_WIDTH, height: DEFAULT_NODE_HEIGHT };
       }
 
-      if (measured) {
-        return measured;
-      }
-
-      return { width: DEFAULT_NODE_WIDTH, height: DEFAULT_NODE_HEIGHT };
+      return resolveCanvasNodeFrameSize({
+        kind: node.kind,
+        renderMode: node.renderMode,
+        resolvedSize: node.resolvedSize,
+        measuredSize: measured,
+        resizeDraftSize: resized,
+        fallbackSize: { width: DEFAULT_NODE_WIDTH, height: DEFAULT_NODE_HEIGHT },
+      });
     },
     [nodeSizes, nodesById, resizeDraftSizes]
   );
@@ -1161,6 +1164,8 @@ export function InfiniteCanvas({
       event.preventDefault();
       onViewportInteractionStart?.();
       const startSize = getNodeSize(node.id);
+      onSelectSingleNode(node.id);
+      onStartNodeResize?.(node.id, startSize);
       interactionRef.current = {
         type: "resize",
         nodeId: node.id,
@@ -1170,9 +1175,8 @@ export function InfiniteCanvas({
         aspectRatio: node.lockAspectRatio ? startSize.width / Math.max(1, startSize.height) : null,
       };
       setInteractionMode("resize");
-      onSelectSingleNode(node.id);
     },
-    [getNodeSize, onSelectSingleNode, onViewportInteractionStart]
+    [getNodeSize, onSelectSingleNode, onStartNodeResize, onViewportInteractionStart]
   );
 
   const onPortPointerDown = useCallback(
@@ -1629,10 +1633,10 @@ export function InfiniteCanvas({
               {hasNonImageSource ? (
                 <div className={nodeStyles.sourceBadge}>{`${node.outputType.toUpperCase()} source`}</div>
               ) : null}
-              {node.canResize && node.presentation.isExpanded && node.renderMode !== "compact" ? (
+              {node.presentation.showResizeHandle ? (
                 <button
                   type="button"
-                  className={nodeStyles.resizeHandle}
+                  className={`${nodeStyles.resizeHandle} ${nodeStyles.resizeHandleVisible}`}
                   onPointerDown={(event) => onResizeHandlePointerDown(node, event)}
                   onClick={(event) => event.stopPropagation()}
                   aria-label={`Resize ${node.label}`}

@@ -1,7 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CanvasNodeContent, type ActiveCanvasNodeEditorState } from "@/components/canvas-nodes";
+import {
+  CanvasNodeContent,
+  type ActiveCanvasNodeEditorState,
+  type CanvasModelEditorState,
+} from "@/components/canvas-nodes";
 import { InfiniteCanvas } from "@/components/infinite-canvas";
 import type {
   CanvasConnection,
@@ -180,18 +184,26 @@ function getGeneratedNodeProvenance(node: WorkflowNode): CanvasNodeGeneratedProv
   return getGeneratedModelNodeSource(node.settings) ? "model" : null;
 }
 
+function getExecutionModeForModelNode(node: WorkflowNode, model: ProviderModel | undefined) {
+  if (node.kind !== "model") {
+    return "generate" as const;
+  }
+
+  return isRunnableTopazGigapixelModel(model?.providerId, model?.modelId)
+    ? ("edit" as const)
+    : isRunnableTextModel(model?.providerId, model?.modelId)
+      ? ("generate" as const)
+      : node.upstreamNodeIds.length > 0
+        ? ("edit" as const)
+        : ("generate" as const);
+}
+
 function getRunPreview(node: WorkflowNode, model: ProviderModel | undefined) {
   if (node.kind !== "model" || !model) {
     return null;
   }
 
-  const executionMode = isRunnableTopazGigapixelModel(model.providerId, model.modelId)
-    ? "edit"
-    : isRunnableTextModel(model.providerId, model.modelId)
-      ? "generate"
-      : node.upstreamNodeIds.length > 0
-        ? "edit"
-        : "generate";
+  const executionMode = getExecutionModeForModelNode(node, model);
   const outputCount =
     resolveImageModelSettings(model.providerId, model.modelId, node.settings, executionMode)?.outputCount || 1;
 
@@ -288,12 +300,14 @@ export function NodePlaygroundCanvas({
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>(() => [fixture.focusNodeId]);
   const [selectedConnection, setSelectedConnection] = useState<CanvasConnection | null>(null);
   const [activeFullNodeId, setActiveFullNodeId] = useState<string | null>(null);
+  const [pinnedModelFullNodeId, setPinnedModelFullNodeId] = useState<string | null>(null);
 
   useEffect(() => {
     setCanvasDoc(cloneFixtureDoc(fixture));
     setSelectedNodeIds([fixture.focusNodeId]);
     setSelectedConnection(null);
     setActiveFullNodeId(null);
+    setPinnedModelFullNodeId(null);
   }, [fixture]);
 
   const modelCatalogVariants = useMemo(() => getModelCatalogVariants(providerModels), [providerModels]);
@@ -307,6 +321,7 @@ export function NodePlaygroundCanvas({
 
   const activeNodeId = selectedNodeIds.length === 1 ? selectedNodeIds[0] || null : null;
   const selectedNode = useMemo(() => (activeNodeId ? nodesById[activeNodeId] || null : null), [activeNodeId, nodesById]);
+  const effectiveFullNodeId = activeFullNodeId || pinnedModelFullNodeId;
   const selectedModel = useMemo(
     () =>
       selectedNode?.kind === "model"
@@ -318,20 +333,16 @@ export function NodePlaygroundCanvas({
   );
 
   useEffect(() => {
-    if (!activeNodeId) {
+    if (activeFullNodeId && !nodesById[activeFullNodeId]) {
       setActiveFullNodeId(null);
-      return;
     }
+  }, [activeFullNodeId, nodesById]);
 
-    if (activeFullNodeId && activeFullNodeId !== activeNodeId) {
-      setActiveFullNodeId(null);
-      return;
+  useEffect(() => {
+    if (pinnedModelFullNodeId && !nodesById[pinnedModelFullNodeId]) {
+      setPinnedModelFullNodeId(null);
     }
-
-    if (!nodesById[activeNodeId]) {
-      setActiveFullNodeId(null);
-    }
-  }, [activeFullNodeId, activeNodeId, nodesById]);
+  }, [nodesById, pinnedModelFullNodeId]);
 
   useEffect(() => {
     if (!selectedModelVariantId) {
@@ -382,9 +393,6 @@ export function NodePlaygroundCanvas({
   const selectSingleNode = useCallback((nodeId: string | null) => {
     setSelectedNodeIds(nodeId ? [nodeId] : []);
     setSelectedConnection(null);
-    if (!nodeId) {
-      setActiveFullNodeId(null);
-    }
   }, []);
 
   const updateNode = useCallback((nodeId: string, mutate: (node: WorkflowNode, allNodes: WorkflowNode[]) => WorkflowNode) => {
@@ -405,19 +413,43 @@ export function NodePlaygroundCanvas({
     if (activeFullNodeId === nodeId) {
       setActiveFullNodeId(null);
     }
-  }, [activeFullNodeId, updateNode]);
+    if (pinnedModelFullNodeId === nodeId) {
+      setPinnedModelFullNodeId(null);
+    }
+  }, [activeFullNodeId, pinnedModelFullNodeId, updateNode]);
+
+  const handleNodeResizeStart = useCallback((nodeId: string, size: WorkflowNodeSize) => {
+    const node = nodesById[nodeId];
+    if (!node || node.kind !== "model" || node.displayMode === "resized") {
+      return;
+    }
+
+    updateNode(nodeId, (currentNode) => ({
+      ...currentNode,
+      displayMode: "resized",
+      size,
+    }));
+    if (activeFullNodeId === nodeId) {
+      setActiveFullNodeId(null);
+    }
+    if (pinnedModelFullNodeId === nodeId) {
+      setPinnedModelFullNodeId(null);
+    }
+  }, [activeFullNodeId, nodesById, pinnedModelFullNodeId, updateNode]);
 
   const handleNodeSizeCommit = useCallback((nodeId: string, size: WorkflowNodeSize) => {
-    const node = nodesById[nodeId];
     updateNode(nodeId, (node) => ({
       ...node,
       displayMode: "resized",
       size,
     }));
-    if (activeFullNodeId === nodeId && node?.kind !== "text-template") {
+    if (activeFullNodeId === nodeId) {
       setActiveFullNodeId(null);
     }
-  }, [activeFullNodeId, nodesById, updateNode]);
+    if (pinnedModelFullNodeId === nodeId) {
+      setPinnedModelFullNodeId(null);
+    }
+  }, [activeFullNodeId, pinnedModelFullNodeId, updateNode]);
 
   const enterNodeEditMode = useCallback((nodeId: string) => {
     const node = nodesById[nodeId];
@@ -427,7 +459,16 @@ export function NodePlaygroundCanvas({
 
     setSelectedNodeIds([nodeId]);
     setSelectedConnection(null);
-    setActiveFullNodeId(node.kind === "text-template" ? nodeId : null);
+    if (node.kind === "text-template") {
+      setActiveFullNodeId(nodeId);
+      setPinnedModelFullNodeId(null);
+    } else if (node.kind === "model" && node.displayMode !== "resized") {
+      setActiveFullNodeId(nodeId);
+      setPinnedModelFullNodeId(nodeId);
+    } else {
+      setActiveFullNodeId(null);
+      setPinnedModelFullNodeId(null);
+    }
   }, [nodesById]);
 
   const handleModelVariantSelection = useCallback((variantId: string) => {
@@ -506,12 +547,20 @@ export function NodePlaygroundCanvas({
     );
   }, [selectedNode, selectedTemplateListNode]);
 
+  const selectedNodeExecutionMode = useMemo(() => {
+    if (!selectedNode || selectedNode.kind !== "model") {
+      return "generate" as const;
+    }
+
+    return getExecutionModeForModelNode(selectedNode, selectedModel);
+  }, [selectedModel, selectedNode]);
+
   const selectedNodeResolvedSettings = useMemo<Record<string, unknown>>(() => {
     if (!selectedNode || selectedNode.kind !== "model") {
       return {};
     }
-    return resolveModelSettings(selectedModel, selectedNode.settings, "generate") as Record<string, unknown>;
-  }, [selectedModel, selectedNode]);
+    return resolveModelSettings(selectedModel, selectedNode.settings, selectedNodeExecutionMode) as Record<string, unknown>;
+  }, [selectedModel, selectedNode, selectedNodeExecutionMode]);
 
   const selectedModelParameters = useMemo(() => {
     if (!selectedNode || selectedNode.kind !== "model" || !selectedModel) {
@@ -519,11 +568,11 @@ export function NodePlaygroundCanvas({
     }
     return (selectedModel.capabilities.parameters || []).filter((parameter) =>
       isModelParameterVisible(parameter, {
-        executionMode: "generate",
+        executionMode: selectedNodeExecutionMode,
         settings: selectedNodeResolvedSettings,
       })
     );
-  }, [selectedModel, selectedNode, selectedNodeResolvedSettings]);
+  }, [selectedModel, selectedNode, selectedNodeExecutionMode, selectedNodeResolvedSettings]);
 
   const activeEditor = useMemo<ActiveCanvasNodeEditorState | null>(() => {
     if (!selectedNode) {
@@ -562,6 +611,44 @@ export function NodePlaygroundCanvas({
     selectedTemplatePreview,
   ]);
 
+  const buildPassiveModelEditor = useCallback(
+    (node: CanvasRenderNode): CanvasModelEditorState | null => {
+      if (node.kind !== "model") {
+        return null;
+      }
+
+      const selectedModel =
+        providerModels.find((model) => model.providerId === node.providerId && model.modelId === node.modelId) || undefined;
+      const executionMode = getExecutionModeForModelNode(node, selectedModel);
+      const selectedNodeResolvedSettings = resolveModelSettings(
+        selectedModel,
+        node.settings,
+        executionMode
+      ) as Record<string, unknown>;
+      const visibleParameters = (selectedModel?.capabilities.parameters || []).filter((parameter) =>
+        isModelParameterVisible(parameter, {
+          executionMode,
+          settings: selectedNodeResolvedSettings,
+        })
+      );
+      const selectedInputNodes = node.upstreamNodeIds
+        .map((nodeId) => nodesById[nodeId])
+        .filter((inputNode): inputNode is WorkflowNode => Boolean(inputNode));
+
+      return {
+        selectedNode: node,
+        selectedModel,
+        selectedNodeResolvedSettings,
+        selectedCoreParameters: visibleParameters.filter((parameter) => parameter.section === "core"),
+        selectedAdvancedParameters: visibleParameters.filter((parameter) => parameter.section === "advanced"),
+        selectedInputNodes,
+        selectedPromptSourceNode: node.promptSourceNodeId ? nodesById[node.promptSourceNodeId] || null : null,
+        modelCatalogVariants,
+      };
+    },
+    [modelCatalogVariants, nodesById, providerModels]
+  );
+
   const canvasNodes = useMemo<CanvasRenderNode[]>(() => {
     const displayNameMap = providerModels.reduce<Record<string, string>>((acc, model) => {
       acc[`${model.providerId}:${model.modelId}`] = model.displayName;
@@ -582,7 +669,7 @@ export function NodePlaygroundCanvas({
       const presentation = resolveCanvasNodePresentation({
         node,
         activeNodeId,
-        fullNodeId: activeFullNodeId,
+        fullNodeId: effectiveFullNodeId,
         nodeId: node.id,
         aspectRatio: uploadedAssetAspectRatio,
       });
@@ -643,7 +730,7 @@ export function NodePlaygroundCanvas({
         resolvedSize: presentation.size,
       };
     });
-  }, [activeFullNodeId, activeNodeId, canvasDoc.workflow.nodes, nodesById, providerModels]);
+  }, [activeNodeId, canvasDoc.workflow.nodes, effectiveFullNodeId, nodesById, providerModels]);
 
   const focusNodeViewport = useCallback((nodeId: string) => {
     const node = canvasNodes.find((candidate) => candidate.id === nodeId);
@@ -675,184 +762,199 @@ export function NodePlaygroundCanvas({
   }, [canvasNodes, updateViewport]);
 
   const renderNodeContent = useCallback(
-    (node: CanvasRenderNode) => (
-      <CanvasNodeContent
-        node={node}
-        activeEditor={activeEditor}
-        pickerDismissKey={`${selectedNodeIds.join(",")}|${canvasDoc.canvasViewport.x.toFixed(2)}:${canvasDoc.canvasViewport.y.toFixed(2)}:${canvasDoc.canvasViewport.zoom.toFixed(3)}|${node.presentation.renderMode}|${node.resolvedSize.width}x${node.resolvedSize.height}`}
-        onSetDisplayMode={(mode) => handleNodeDisplayModeChange(node.id, mode)}
-        onLabelChange={(value) => updateNode(node.id, (target) => ({ ...target, label: value }))}
-        onPromptChange={(value) => updateNode(node.id, (target) => ({ ...target, prompt: value }))}
-        onModelVariantChange={handleModelVariantSelection}
-        onParameterChange={(parameterKey, value) =>
-          updateNode(node.id, (target) => ({
-            ...target,
-            settings: {
-              ...(target.settings as Record<string, unknown>),
-              ...(value === null ? {} : { [parameterKey]: value }),
-            },
-          }))
-        }
-        onUpdateListColumnLabel={(columnId, label) =>
-          updateNode(node.id, (target) => {
-            const settings = getListNodeSettings(target.settings);
-            return {
+    (node: CanvasRenderNode) => {
+      const passiveModelEditor =
+        node.kind === "model" &&
+        (node.presentation.renderMode === "resized" || node.presentation.renderMode === "full") &&
+        activeEditor?.nodeId !== node.id
+          ? buildPassiveModelEditor(node)
+          : null;
+
+      return (
+        <CanvasNodeContent
+          node={node}
+          activeEditor={activeEditor}
+          passiveModelEditor={passiveModelEditor}
+          pickerDismissKey={`${selectedNodeIds.join(",")}|${canvasDoc.canvasViewport.x.toFixed(2)}:${canvasDoc.canvasViewport.y.toFixed(2)}:${canvasDoc.canvasViewport.zoom.toFixed(3)}|${node.presentation.renderMode}|${node.resolvedSize.width}x${node.resolvedSize.height}`}
+          onSetDisplayMode={(mode) => handleNodeDisplayModeChange(node.id, mode)}
+          onLabelChange={(value) => updateNode(node.id, (target) => ({ ...target, label: value }))}
+          onPromptChange={(value) => updateNode(node.id, (target) => ({ ...target, prompt: value }))}
+          onModelVariantChange={handleModelVariantSelection}
+          onParameterChange={(parameterKey, value) =>
+            updateNode(node.id, (target) => ({
               ...target,
               settings: {
-                ...settings,
-                columns: settings.columns.map((column) => (column.id === columnId ? { ...column, label } : column)),
+                ...(target.settings as Record<string, unknown>),
+                ...(value === null ? {} : { [parameterKey]: value }),
               },
-            };
-          })
-        }
-        onUpdateListCell={(rowId, columnId, value) =>
-          updateNode(node.id, (target) => {
-            const settings = getListNodeSettings(target.settings);
-            return {
-              ...target,
-              settings: {
-                ...settings,
-                rows: settings.rows.map((row) =>
-                  row.id === rowId ? { ...row, values: { ...row.values, [columnId]: value } } : row
-                ),
-              },
-            };
-          })
-        }
-        onAddListColumn={() =>
-          updateNode(node.id, (target) => {
-            const settings = getListNodeSettings(target.settings);
-            const columnId = `playground-column-${settings.columns.length + 1}`;
-            return {
-              ...target,
-              settings: {
-                ...settings,
-                columns: [...settings.columns, { id: columnId, label: `Column ${settings.columns.length + 1}` }],
-                rows: settings.rows.map((row) => ({
-                  ...row,
-                  values: { ...row.values, [columnId]: "" },
-                })),
-              },
-            };
-          })
-        }
-        onRemoveListColumn={(columnId) =>
-          updateNode(node.id, (target) => {
-            const settings = getListNodeSettings(target.settings);
-            return {
-              ...target,
-              settings: {
-                ...settings,
-                columns: settings.columns.filter((column) => column.id !== columnId),
-                rows: settings.rows.map((row) => {
-                  const nextValues = { ...row.values };
-                  delete nextValues[columnId];
-                  return {
-                    ...row,
-                    values: nextValues,
-                  };
-                }),
-              },
-            };
-          })
-        }
-        onAddListRow={(initialValues) => {
-          const targetNode = nodesById[node.id];
-          if (!targetNode) {
-            return null;
+            }))
           }
-          const settings = getListNodeSettings(targetNode.settings);
-          const rowId = `playground-row-${settings.rows.length + 1}`;
-          updateNode(node.id, (target) => {
-            const nextSettings = getListNodeSettings(target.settings);
-            return {
+          onUpdateListColumnLabel={(columnId, label) =>
+            updateNode(node.id, (target) => {
+              const settings = getListNodeSettings(target.settings);
+              return {
+                ...target,
+                settings: {
+                  ...settings,
+                  columns: settings.columns.map((column) => (column.id === columnId ? { ...column, label } : column)),
+                },
+              };
+            })
+          }
+          onUpdateListCell={(rowId, columnId, value) =>
+            updateNode(node.id, (target) => {
+              const settings = getListNodeSettings(target.settings);
+              return {
+                ...target,
+                settings: {
+                  ...settings,
+                  rows: settings.rows.map((row) =>
+                    row.id === rowId ? { ...row, values: { ...row.values, [columnId]: value } } : row
+                  ),
+                },
+              };
+            })
+          }
+          onAddListColumn={() =>
+            updateNode(node.id, (target) => {
+              const settings = getListNodeSettings(target.settings);
+              const columnId = `playground-column-${settings.columns.length + 1}`;
+              return {
+                ...target,
+                settings: {
+                  ...settings,
+                  columns: [...settings.columns, { id: columnId, label: `Column ${settings.columns.length + 1}` }],
+                  rows: settings.rows.map((row) => ({
+                    ...row,
+                    values: { ...row.values, [columnId]: "" },
+                  })),
+                },
+              };
+            })
+          }
+          onRemoveListColumn={(columnId) =>
+            updateNode(node.id, (target) => {
+              const settings = getListNodeSettings(target.settings);
+              return {
+                ...target,
+                settings: {
+                  ...settings,
+                  columns: settings.columns.filter((column) => column.id !== columnId),
+                  rows: settings.rows.map((row) => {
+                    const nextValues = { ...row.values };
+                    delete nextValues[columnId];
+                    return {
+                      ...row,
+                      values: nextValues,
+                    };
+                  }),
+                },
+              };
+            })
+          }
+          onAddListRow={(initialValues) => {
+            const targetNode = nodesById[node.id];
+            if (!targetNode) {
+              return null;
+            }
+            const settings = getListNodeSettings(targetNode.settings);
+            const rowId = `playground-row-${settings.rows.length + 1}`;
+            updateNode(node.id, (target) => {
+              const nextSettings = getListNodeSettings(target.settings);
+              return {
+                ...target,
+                settings: {
+                  ...nextSettings,
+                  rows: [
+                    ...nextSettings.rows,
+                    {
+                      id: rowId,
+                      values: nextSettings.columns.reduce<Record<string, string>>((acc, column) => {
+                        acc[column.id] = String(initialValues?.[column.id] ?? "");
+                        return acc;
+                      }, {}),
+                    },
+                  ],
+                },
+              };
+            });
+            return rowId;
+          }}
+          onRemoveListRow={(rowId) =>
+            updateNode(node.id, (target) => {
+              const settings = getListNodeSettings(target.settings);
+              return {
+                ...target,
+                settings: {
+                  ...settings,
+                  rows: settings.rows.filter((row) => row.id !== rowId),
+                },
+              };
+            })
+          }
+          onClearInputs={() =>
+            updateNode(node.id, (target, allNodes) => ({
               ...target,
-              settings: {
-                ...nextSettings,
-                rows: [
-                  ...nextSettings.rows,
+              promptSourceNodeId: null,
+              upstreamNodeIds: [],
+              upstreamAssetIds: buildAssetRefsFromNodes([], allNodes),
+            }))
+          }
+          onDuplicateNode={() => {
+            const targetNode = nodesById[node.id];
+            if (!targetNode) {
+              return;
+            }
+
+            const duplicateId = `playground-copy-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+            setCanvasDoc((current) => ({
+              ...current,
+              workflow: {
+                nodes: [
+                  ...current.workflow.nodes,
                   {
-                    id: rowId,
-                    values: nextSettings.columns.reduce<Record<string, string>>((acc, column) => {
-                      acc[column.id] = String(initialValues?.[column.id] ?? "");
-                      return acc;
-                    }, {}),
+                    ...targetNode,
+                    id: duplicateId,
+                    label: targetNode.label.endsWith(" Copy") ? targetNode.label : `${targetNode.label} Copy`,
+                    settings: JSON.parse(JSON.stringify(targetNode.settings || {})) as WorkflowNode["settings"],
+                    upstreamNodeIds: [...targetNode.upstreamNodeIds],
+                    upstreamAssetIds: [...targetNode.upstreamAssetIds],
+                    x: Math.round(targetNode.x + 44),
+                    y: Math.round(targetNode.y + 36),
                   },
                 ],
               },
-            };
-          });
-          return rowId;
-        }}
-        onRemoveListRow={(rowId) =>
-          updateNode(node.id, (target) => {
-            const settings = getListNodeSettings(target.settings);
-            return {
-              ...target,
-              settings: {
-                ...settings,
-                rows: settings.rows.filter((row) => row.id !== rowId),
-              },
-            };
-          })
-        }
-        onClearInputs={() =>
-          updateNode(node.id, (target, allNodes) => ({
-            ...target,
-            promptSourceNodeId: null,
-            upstreamNodeIds: [],
-            upstreamAssetIds: buildAssetRefsFromNodes([], allNodes),
-          }))
-        }
-        onDuplicateNode={() => {
-          const targetNode = nodesById[node.id];
-          if (!targetNode) {
-            return;
-          }
-
-          const duplicateId = `playground-copy-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-          setCanvasDoc((current) => ({
-            ...current,
-            workflow: {
-              nodes: [
-                ...current.workflow.nodes,
-                {
-                  ...targetNode,
-                  id: duplicateId,
-                  label: targetNode.label.endsWith(" Copy") ? targetNode.label : `${targetNode.label} Copy`,
-                  settings: JSON.parse(JSON.stringify(targetNode.settings || {})) as WorkflowNode["settings"],
-                  upstreamNodeIds: [...targetNode.upstreamNodeIds],
-                  upstreamAssetIds: [...targetNode.upstreamAssetIds],
-                  x: Math.round(targetNode.x + 44),
-                  y: Math.round(targetNode.y + 36),
-                },
-              ],
-            },
-          }));
-          setSelectedNodeIds([duplicateId]);
-          setSelectedConnection(null);
-        }}
-        onEnterEditMode={() => enterNodeEditMode(node.id)}
-        onExitEditMode={() => {
-          if (activeFullNodeId === node.id) {
-            setActiveFullNodeId(null);
-          }
-        }}
-        onRunNode={() => undefined}
-        onOpenAssetViewer={() => undefined}
-        onDownloadAssets={() => undefined}
-        onOpenQueueInspect={() => undefined}
-        onCommitTextEdits={() => undefined}
-      />
-    ),
+            }));
+            setSelectedNodeIds([duplicateId]);
+            setSelectedConnection(null);
+          }}
+          onEnterEditMode={() => enterNodeEditMode(node.id)}
+          onExitEditMode={() => {
+            if (activeFullNodeId === node.id) {
+              setActiveFullNodeId(null);
+            }
+            if (pinnedModelFullNodeId === node.id) {
+              setPinnedModelFullNodeId(null);
+            }
+          }}
+          onRunNode={() => undefined}
+          onOpenAssetViewer={() => undefined}
+          onDownloadAssets={() => undefined}
+          onOpenQueueInspect={() => undefined}
+          onCommitTextEdits={() => undefined}
+        />
+      );
+    },
     [
       activeEditor,
-      activeFullNodeId,
+      buildPassiveModelEditor,
       canvasDoc.canvasViewport,
       enterNodeEditMode,
       handleModelVariantSelection,
       handleNodeDisplayModeChange,
+      handleNodeResizeStart,
       nodesById,
+      pinnedModelFullNodeId,
       selectedNodeIds,
       updateNode,
     ]
@@ -1016,6 +1118,7 @@ export function NodePlaygroundCanvas({
             },
           }));
         }}
+        onStartNodeResize={handleNodeResizeStart}
         onCommitNodeSize={handleNodeSizeCommit}
         onConnectNodes={connectNodes}
         onSelectConnection={setSelectedConnection}
@@ -1035,6 +1138,10 @@ export function NodePlaygroundCanvas({
           }
           if (node.displayMode === "resized") {
             focusNodeViewport(nodeId);
+            return;
+          }
+          if (node.kind === "model") {
+            enterNodeEditMode(nodeId);
             return;
           }
           selectSingleNode(nodeId);

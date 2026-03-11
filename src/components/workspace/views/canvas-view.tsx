@@ -10,7 +10,11 @@ import {
 import { useHotkey } from "@tanstack/react-hotkeys";
 import { useRouter } from "@/renderer/navigation";
 import { InfiniteCanvas } from "@/components/infinite-canvas";
-import { CanvasNodeContent, type ActiveCanvasNodeEditorState } from "@/components/canvas-nodes";
+import {
+  CanvasNodeContent,
+  type ActiveCanvasNodeEditorState,
+  type CanvasModelEditorState,
+} from "@/components/canvas-nodes";
 import { CanvasCopilotWidget } from "@/components/workspace/views/canvas-copilot-widget";
 import type {
   CanvasConnection,
@@ -805,6 +809,7 @@ export function CanvasView({ projectId }: Props) {
   const [assetPickerError, setAssetPickerError] = useState<string | null>(null);
   const [selectedConnection, setSelectedConnection] = useState<CanvasConnection | null>(null);
   const [activeFullNodeId, setActiveFullNodeId] = useState<string | null>(null);
+  const [pinnedModelFullNodeId, setPinnedModelFullNodeId] = useState<string | null>(null);
   const [pendingViewportFocusNodeId, setPendingViewportFocusNodeId] = useState<string | null>(null);
   const [pendingCenteredInsert, setPendingCenteredInsert] = useState<PendingCenteredInsert | null>(null);
   const [copilotOpen, setCopilotOpen] = useState(false);
@@ -829,6 +834,7 @@ export function CanvasView({ projectId }: Props) {
   const selectedNodeIdsRef = useRef(selectedNodeIds);
   const selectedConnectionRef = useRef(selectedConnection);
   const activeFullNodeIdRef = useRef(activeFullNodeId);
+  const pinnedModelFullNodeIdRef = useRef(pinnedModelFullNodeId);
   const viewportFocusAnimationFrameRef = useRef<number | null>(null);
   const viewportFocusSetupFrameIdsRef = useRef<number[]>([]);
   const historyStacksRef = useRef(historyStacks);
@@ -850,6 +856,10 @@ export function CanvasView({ projectId }: Props) {
   useEffect(() => {
     activeFullNodeIdRef.current = activeFullNodeId;
   }, [activeFullNodeId]);
+
+  useEffect(() => {
+    pinnedModelFullNodeIdRef.current = pinnedModelFullNodeId;
+  }, [pinnedModelFullNodeId]);
 
   useEffect(() => {
     if (!insertMenu) {
@@ -1160,6 +1170,7 @@ export function CanvasView({ projectId }: Props) {
       return acc;
     }, {});
   }, [canvasDoc.workflow.nodes]);
+  const effectiveFullNodeId = activeFullNodeId || pinnedModelFullNodeId;
 
   const selectedNodes = useMemo(() => {
     return selectedNodeIds
@@ -1301,7 +1312,7 @@ export function CanvasView({ projectId }: Props) {
       const presentation = resolveCanvasNodePresentation({
         node,
         activeNodeId,
-        fullNodeId: activeFullNodeId,
+        fullNodeId: effectiveFullNodeId,
         nodeId: node.id,
         aspectRatio: uploadedAssetAspectRatio,
       });
@@ -1416,9 +1427,9 @@ export function CanvasView({ projectId }: Props) {
       };
     });
   }, [
-    activeFullNodeId,
     activeNodeId,
     canvasDoc.workflow.nodes,
+    effectiveFullNodeId,
     latestPreviewFrameByJobOutputKey,
     nodesById,
     projectId,
@@ -1602,7 +1613,6 @@ export function CanvasView({ projectId }: Props) {
     if (!nodeId) {
       setTrackedSelectedConnection(null);
       setTrackedSelectedNodeIds([]);
-      setActiveFullNodeId(null);
       return;
     }
 
@@ -1628,7 +1638,6 @@ export function CanvasView({ projectId }: Props) {
       setTrackedSelectedConnection(null);
       setTrackedSelectedNodeIds([nodeId]);
     }
-    setActiveFullNodeId((current) => (current && current === nodeId ? current : null));
   }, [commitPendingCoalescedHistory, runUserCanvasMutation, setTrackedSelectedConnection, setTrackedSelectedNodeIds]);
 
   const toggleNodeSelection = useCallback((nodeId: string) => {
@@ -1897,20 +1906,16 @@ export function CanvasView({ projectId }: Props) {
   );
 
   useEffect(() => {
-    if (!activeNodeId) {
+    if (activeFullNodeId && !nodesById[activeFullNodeId]) {
       setActiveFullNodeId(null);
-      return;
     }
+  }, [activeFullNodeId, nodesById]);
 
-    if (activeFullNodeId && activeFullNodeId !== activeNodeId) {
-      setActiveFullNodeId(null);
-      return;
+  useEffect(() => {
+    if (pinnedModelFullNodeId && !nodesById[pinnedModelFullNodeId]) {
+      setPinnedModelFullNodeId(null);
     }
-
-    if (!nodesById[activeNodeId]) {
-      setActiveFullNodeId(null);
-    }
-  }, [activeFullNodeId, activeNodeId, nodesById]);
+  }, [nodesById, pinnedModelFullNodeId]);
 
   useEffect(() => {
     setIsLoading(true);
@@ -2095,7 +2100,7 @@ export function CanvasView({ projectId }: Props) {
           ? getGeneratedModelSpawnAnchor({
               modelNode,
               activeNodeId: activeCanvasNodeId,
-              fullNodeId: activeFullNodeId,
+              fullNodeId: effectiveFullNodeId,
             })
           : null;
 
@@ -2690,7 +2695,13 @@ export function CanvasView({ projectId }: Props) {
         });
       }
       setInsertMenu(null);
-      setActiveFullNodeId(null);
+      if (didMutate) {
+        setActiveFullNodeId(nodeId);
+        setPinnedModelFullNodeId(nodeId);
+      } else {
+        setActiveFullNodeId(null);
+        setPinnedModelFullNodeId(null);
+      }
     },
     [providers, runUserCanvasMutation]
   );
@@ -3176,7 +3187,16 @@ export function CanvasView({ projectId }: Props) {
       setTrackedSelectedConnection(null);
       setInsertMenu(null);
       setAssetPicker(null);
-      setActiveFullNodeId(node.kind === "text-template" ? nodeId : null);
+      if (node.kind === "text-template") {
+        setActiveFullNodeId(nodeId);
+        setPinnedModelFullNodeId(null);
+      } else if (node.kind === "model" && node.displayMode !== "resized") {
+        setActiveFullNodeId(nodeId);
+        setPinnedModelFullNodeId(nodeId);
+      } else {
+        setActiveFullNodeId(null);
+        setPinnedModelFullNodeId(null);
+      }
       if (options?.focusViewport) {
         setPendingViewportFocusNodeId(nodeId);
       }
@@ -3196,7 +3216,16 @@ export function CanvasView({ projectId }: Props) {
       setTrackedSelectedConnection(null);
       setInsertMenu(null);
       setAssetPicker(null);
-      setActiveFullNodeId(node.kind === "text-template" ? nodeId : null);
+      if (node.kind === "text-template") {
+        setActiveFullNodeId(nodeId);
+        setPinnedModelFullNodeId(null);
+      } else if (node.kind === "model" && node.displayMode !== "resized") {
+        setActiveFullNodeId(nodeId);
+        setPinnedModelFullNodeId(nodeId);
+      } else {
+        setActiveFullNodeId(null);
+        setPinnedModelFullNodeId(null);
+      }
       if (options?.focusViewport) {
         setPendingViewportFocusNodeId(nodeId);
       }
@@ -3223,7 +3252,6 @@ export function CanvasView({ projectId }: Props) {
       setTrackedSelectedConnection(null);
       setInsertMenu(null);
       setAssetPicker(null);
-      setActiveFullNodeId(null);
       setPendingViewportFocusNodeId(nodeId);
     },
     [commitPendingCoalescedHistory, nodesById, setTrackedSelectedConnection, setTrackedSelectedNodeIds]
@@ -4280,7 +4308,7 @@ export function CanvasView({ projectId }: Props) {
       const modelSpawnAnchor = getGeneratedModelSpawnAnchor({
         modelNode,
         activeNodeId: selectedNodeIdsRef.current.length === 1 ? selectedNodeIdsRef.current[0]! : null,
-        fullNodeId: activeFullNodeId,
+        fullNodeId: effectiveFullNodeId,
       });
 
       const generatedCount = prev.workflow.nodes.filter(
@@ -4338,7 +4366,7 @@ export function CanvasView({ projectId }: Props) {
         modelAnchor: getGeneratedModelSpawnAnchor({
           modelNode,
           activeNodeId: selectedNodeIdsRef.current.length === 1 ? selectedNodeIdsRef.current[0]! : null,
-          fullNodeId: activeFullNodeId,
+          fullNodeId: effectiveFullNodeId,
         }),
       }).position;
 
@@ -4360,7 +4388,7 @@ export function CanvasView({ projectId }: Props) {
         },
       });
     },
-    [activeFullNodeId, applyCanvasDocWithoutHistory]
+    [applyCanvasDocWithoutHistory, effectiveFullNodeId]
   );
 
   const updateSelectedListSettings = useCallback(
@@ -4801,8 +4829,39 @@ export function CanvasView({ projectId }: Props) {
       if (activeFullNodeIdRef.current === nodeId) {
         setActiveFullNodeId(null);
       }
+      if (pinnedModelFullNodeIdRef.current === nodeId) {
+        setPinnedModelFullNodeId(null);
+      }
     },
     [updateNode]
+  );
+
+  const handleNodeResizeStart = useCallback(
+    (nodeId: string, size: WorkflowNodeSize) => {
+      const node = nodesById[nodeId];
+      if (!node || node.kind !== "model" || node.displayMode === "resized") {
+        return;
+      }
+
+      updateNode(
+        nodeId,
+        {
+          displayMode: "resized",
+          size,
+        },
+        {
+          historyMode: "coalesced",
+          historyKey: `node:${nodeId}:resize`,
+        }
+      );
+      if (activeFullNodeIdRef.current === nodeId) {
+        setActiveFullNodeId(null);
+      }
+      if (pinnedModelFullNodeIdRef.current === nodeId) {
+        setPinnedModelFullNodeId(null);
+      }
+    },
+    [nodesById, updateNode]
   );
 
   const handleNodeSizeCommit = useCallback(
@@ -4815,12 +4874,17 @@ export function CanvasView({ projectId }: Props) {
           size,
         },
         {
-          historyMode: "immediate",
+          historyMode: node?.kind === "model" ? "coalesced" : "immediate",
+          historyKey: node?.kind === "model" ? `node:${nodeId}:resize` : undefined,
         }
       );
-
-      if (activeFullNodeIdRef.current === nodeId && node?.kind !== "text-template") {
-        setActiveFullNodeId(null);
+      if (node?.kind === "model") {
+        if (activeFullNodeIdRef.current === nodeId) {
+          setActiveFullNodeId(null);
+        }
+        if (pinnedModelFullNodeIdRef.current === nodeId) {
+          setPinnedModelFullNodeId(null);
+        }
       }
     },
     [nodesById, updateNode]
@@ -4865,47 +4929,99 @@ export function CanvasView({ projectId }: Props) {
     selectedTemplatePreview,
   ]);
 
+  const buildPassiveModelEditor = useCallback(
+    (node: CanvasRenderNode): CanvasModelEditorState | null => {
+      if (node.kind !== "model") {
+        return null;
+      }
+
+      const selectedModel =
+        providers.find((model) => model.providerId === node.providerId && model.modelId === node.modelId) || undefined;
+      const executionMode = getExecutionModeForModel(selectedModel, node.upstreamNodeIds);
+      const selectedNodeResolvedSettings = resolveModelSettings(
+        selectedModel,
+        node.settings,
+        executionMode
+      ) as Record<string, unknown>;
+      const visibleParameters = (selectedModel?.capabilities.parameters || []).filter((parameter) =>
+        isModelParameterVisible(parameter, {
+          executionMode,
+          settings: selectedNodeResolvedSettings,
+        })
+      );
+      const selectedInputNodes = node.upstreamNodeIds
+        .map((nodeId) => nodesById[nodeId] || null)
+        .filter((inputNode): inputNode is WorkflowNode => Boolean(inputNode));
+
+      return {
+        selectedNode: node,
+        selectedModel,
+        selectedNodeResolvedSettings,
+        selectedCoreParameters: visibleParameters.filter((parameter) => parameter.section === "core"),
+        selectedAdvancedParameters: visibleParameters.filter((parameter) => parameter.section === "advanced"),
+        selectedInputNodes,
+        selectedPromptSourceNode: node.promptSourceNodeId ? nodesById[node.promptSourceNodeId] || null : null,
+        modelCatalogVariants,
+      };
+    },
+    [getExecutionModeForModel, modelCatalogVariants, nodesById, providers]
+  );
+
   const renderNodeContent = useCallback(
-    (node: CanvasRenderNode) => (
-      <CanvasNodeContent
-        node={node}
-        activeEditor={activeEditor}
-        pickerDismissKey={`${selectedNodeIds.join(",")}|${canvasDoc.canvasViewport.x.toFixed(2)}:${canvasDoc.canvasViewport.y.toFixed(2)}:${canvasDoc.canvasViewport.zoom.toFixed(3)}|${node.presentation.renderMode}|${node.resolvedSize.width}x${node.resolvedSize.height}`}
-        onSetDisplayMode={(mode) => handleNodeDisplayModeChange(node.id, mode)}
-        onEnterEditMode={() => enterNodeEditMode(node.id)}
-        onExitEditMode={() => {
-          if (activeFullNodeIdRef.current === node.id) {
-            setActiveFullNodeId(null);
-          }
-        }}
-        onRunNode={() => {
-          const currentNode = nodesById[node.id];
-          if (currentNode) {
-            runNode(currentNode).catch(console.error);
-          }
-        }}
-        onLabelChange={handleSelectedNodeLabelChange}
-        onPromptChange={handleSelectedNodePromptChange}
-        onModelVariantChange={handleSelectedNodeModelVariantChange}
-        onParameterChange={updateSelectedModelParameter}
-        onUpdateListColumnLabel={updateSelectedListColumnLabel}
-        onUpdateListCell={updateSelectedListCell}
-        onAddListColumn={addSelectedListColumn}
-        onRemoveListColumn={removeSelectedListColumn}
-        onAddListRow={addSelectedListRow}
-        onRemoveListRow={removeSelectedListRow}
-        onClearInputs={handleClearSelectedInputs}
-        onDuplicateNode={() => duplicateNode(node.id)}
-        onOpenAssetViewer={openAssetViewer}
-        onDownloadAssets={downloadAssets}
-        onOpenQueueInspect={openQueueInspect}
-        onCommitTextEdits={commitPendingCoalescedHistory}
-      />
-    ),
+    (node: CanvasRenderNode) => {
+      const passiveModelEditor =
+        node.kind === "model" &&
+        (node.presentation.renderMode === "resized" || node.presentation.renderMode === "full") &&
+        activeEditor?.nodeId !== node.id
+          ? buildPassiveModelEditor(node)
+          : null;
+
+      return (
+        <CanvasNodeContent
+          node={node}
+          activeEditor={activeEditor}
+          passiveModelEditor={passiveModelEditor}
+          pickerDismissKey={`${selectedNodeIds.join(",")}|${canvasDoc.canvasViewport.x.toFixed(2)}:${canvasDoc.canvasViewport.y.toFixed(2)}:${canvasDoc.canvasViewport.zoom.toFixed(3)}|${node.presentation.renderMode}|${node.resolvedSize.width}x${node.resolvedSize.height}`}
+          onSetDisplayMode={(mode) => handleNodeDisplayModeChange(node.id, mode)}
+          onEnterEditMode={() => enterNodeEditMode(node.id)}
+          onExitEditMode={() => {
+            if (activeFullNodeIdRef.current === node.id) {
+              setActiveFullNodeId(null);
+            }
+            if (pinnedModelFullNodeIdRef.current === node.id) {
+              setPinnedModelFullNodeId(null);
+            }
+          }}
+          onRunNode={() => {
+            const currentNode = nodesById[node.id];
+            if (currentNode) {
+              runNode(currentNode).catch(console.error);
+            }
+          }}
+          onLabelChange={handleSelectedNodeLabelChange}
+          onPromptChange={handleSelectedNodePromptChange}
+          onModelVariantChange={handleSelectedNodeModelVariantChange}
+          onParameterChange={updateSelectedModelParameter}
+          onUpdateListColumnLabel={updateSelectedListColumnLabel}
+          onUpdateListCell={updateSelectedListCell}
+          onAddListColumn={addSelectedListColumn}
+          onRemoveListColumn={removeSelectedListColumn}
+          onAddListRow={addSelectedListRow}
+          onRemoveListRow={removeSelectedListRow}
+          onClearInputs={handleClearSelectedInputs}
+          onDuplicateNode={() => duplicateNode(node.id)}
+          onOpenAssetViewer={openAssetViewer}
+          onDownloadAssets={downloadAssets}
+          onOpenQueueInspect={openQueueInspect}
+          onCommitTextEdits={commitPendingCoalescedHistory}
+        />
+      );
+    },
     [
       activeEditor,
       addSelectedListColumn,
       addSelectedListRow,
+      buildPassiveModelEditor,
       canvasDoc.canvasViewport,
       commitPendingCoalescedHistory,
       downloadAssets,
@@ -5091,6 +5207,7 @@ export function CanvasView({ projectId }: Props) {
         getState: () => {
           selectedNodeIds: string[];
           activeFullNodeId: string | null;
+          pinnedModelFullNodeId: string | null;
           canvasViewport: CanvasDocument["canvasViewport"];
           canUndo: boolean;
           canRedo: boolean;
@@ -5104,7 +5221,6 @@ export function CanvasView({ projectId }: Props) {
         setTrackedSelectedConnection(null);
         const validNodeIds = new Set(canvasDocRef.current.workflow.nodes.map((node) => node.id));
         setTrackedSelectedNodeIds(nodeIds.filter((nodeId) => validNodeIds.has(nodeId)));
-        setActiveFullNodeId(null);
       },
       moveSelectedNodesBy: (deltaX: number, deltaY: number) => {
         const positions = selectedNodeIdsRef.current.reduce<Record<string, { x: number; y: number }>>((acc, nodeId) => {
@@ -5148,6 +5264,7 @@ export function CanvasView({ projectId }: Props) {
       getState: () => ({
         selectedNodeIds: [...selectedNodeIdsRef.current],
         activeFullNodeId: activeFullNodeIdRef.current,
+        pinnedModelFullNodeId: pinnedModelFullNodeIdRef.current,
         canvasViewport: canvasDocRef.current.canvasViewport,
         canUndo: historyStacksRef.current.undo.length > 0,
         canRedo: historyStacksRef.current.redo.length > 0,
@@ -5165,6 +5282,7 @@ export function CanvasView({ projectId }: Props) {
     commitPendingCoalescedHistory,
     connectSelectedNodes,
     handleNodeDisplayModeChange,
+    handleNodeResizeStart,
     handleNodeSizeCommit,
     focusAndOpenNode,
     openPrimaryEditorForNode,
@@ -5198,6 +5316,7 @@ export function CanvasView({ projectId }: Props) {
               onViewportChange={updateViewport}
               onViewportInteractionStart={handleViewportInteractionStart}
               onCommitNodePositions={commitNodePositions}
+              onStartNodeResize={handleNodeResizeStart}
               onCommitNodeSize={handleNodeSizeCommit}
               onConnectNodes={connectNodes}
               onSelectConnection={selectCanvasConnection}

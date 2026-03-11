@@ -93,17 +93,23 @@
   - `compact` is a persisted pill/tiny-node state
   - `full` is transient and primarily used for model response settings plus template edit mode
   - `resized` is a persisted custom size for text notes, lists, templates, model nodes, and asset nodes
+  - `resized` means the stored width and height are authoritative across focus changes; overflow stays inside the node instead of collapsing the shell back to content height
+  - resized model nodes also keep their expanded chrome and editor layout after focus moves away; the inactive surface becomes read-only until the node is selected again
 - mode changes animate quickly on shell size/content transitions, but those transitions shut off while dragging, resizing, or panning
 - inline full-mode entry points:
+  - newly inserted model nodes land with the full response-settings shell already open
   - `Enter` activates the selected node's primary mode
   - double-click zooms the viewport to fit the target node
   - if double-click also changes the node's presentation mode, the viewport refit waits for the node size transition to settle first
   - image node double-click keeps the node in place and only reframes the viewport
+  - model node double-click opens the full response-settings editor while keeping the shared rails/run launcher behavior on single select
   - template node double-click enters edit mode and then reframes to the expanded editor
   - resized nodes keep their custom size when re-opened
 - active-node behavior by kind:
   - image asset: the media surface stays visually pure; preview shows only the image, and active labels return to the shared top title rail while actions stay outside the frame
-  - model: single-select opens a simplified full response-settings layout unless the node is explicitly in `compact`
+  - model: single-select keeps the node at its persisted `preview` or `compact` size, reveals the shared top/bottom rails, and keeps the external side run launcher visible; `Enter` or double-click opens the simplified full response-settings layout, the top-left rail immediately rehydrates to show `Default` and `Compact`, and that full shell stays open until `Default`, `Compact`, or resize mode takes over
+  - model: when a full or persisted `resized` shell loses focus, the large body stays open but the shared top/bottom rails and drag pill hide until the node is focused again
+  - model: selected `preview`, `full`, and persisted `resized` shells expose the bottom-right resize handle; `compact` does not
   - text note: single-select reveals rails but keeps the sticky-note body visually unchanged
   - list: single-select keeps the spreadsheet look and reveals edit affordances in place
   - template: single-select stays in preview; `Edit` or double-click enters the larger editor
@@ -123,7 +129,11 @@
 - active node drag uses rail/hotspot affordances instead of visible drag indicators
 - model full and resized modes use a simplified two-panel layout:
   - left prompt surface, right model-settings surface at larger widths
-  - the outer node shell hugs the rendered panel content height instead of holding an extra fixed-height canvas body
+  - `full` mode lets the outer shell hug the rendered panel content height instead of holding an extra fixed-height canvas body
+  - resizing from `preview` or `full` immediately commits persisted `displayMode: "resized"` plus stored `size` at drag start, so the shell stops fitting to content before the resize drag settles
+  - persisted `resized` mode honors the stored width and height and scrolls internally when the prompt/settings content is taller than the node
+  - persisted `resized` mode keeps the same expanded layout when inactive instead of swapping back to the preview card
+  - persisted `resized` mode is sticky across focus changes and reloads until the user explicitly clicks `Default` or `Compact`
   - prompt sources connected from text notes swap the prompt editor for a same-size readonly preview of the upstream note text
   - provider settings flow in two columns when space allows and collapse as the node width tightens
   - compact/default mode changes move into the top-left utility-pill rail, while the footer rail is reserved for node actions like duplicate
@@ -135,6 +145,7 @@
   - add-column action in the shared bottom rail
   - resizable column dividers
   - row/column remove controls as overlay affordances that do not consume layout space
+  - resized lists may shrink down to the compact list footprint and rely on the existing internal sheet scroller when the table is larger than the node
 - template mode includes:
   - text-note-like preview styling when not editing
   - inline variable pills inside preview copy as the primary differentiator, rendered with clean labels instead of bracketed syntax

@@ -57,9 +57,22 @@ export type ActiveCanvasNodeEditorState = {
   modelCatalogVariants: NodeCatalogVariant[];
 };
 
+export type CanvasModelEditorState = Pick<
+  ActiveCanvasNodeEditorState,
+  | "selectedNode"
+  | "selectedModel"
+  | "selectedNodeResolvedSettings"
+  | "selectedCoreParameters"
+  | "selectedAdvancedParameters"
+  | "selectedInputNodes"
+  | "selectedPromptSourceNode"
+  | "modelCatalogVariants"
+>;
+
 type Props = {
   node: CanvasRenderNode;
   activeEditor: ActiveCanvasNodeEditorState | null;
+  passiveModelEditor?: CanvasModelEditorState | null;
   pickerDismissKey?: string | number | null;
   onSetDisplayMode: (mode: "preview" | "compact") => void;
   onEnterEditMode: () => void;
@@ -103,9 +116,32 @@ function stopPointer(event: ReactPointerEvent<HTMLElement>) {
 function renderParameterField(
   definition: ModelParameterDefinition,
   value: unknown,
+  interactive: boolean,
   onChange: (value: string | number | null) => void,
   onBlur: () => void
 ) {
+  if (!interactive) {
+    const textValue =
+      definition.control === "select"
+        ? (definition.options || []).find((option) => option.value === value)?.label || definition.placeholder || "Unset"
+        : value === null || value === undefined || value === ""
+          ? definition.placeholder || "Unset"
+          : String(value);
+
+    return (
+      <div
+        className={cx(
+          styles.fieldControl,
+          styles.fieldControlReadOnly,
+          definition.control === "textarea" && styles.fieldControlTextarea
+        )}
+        data-control="readonly"
+      >
+        {textValue}
+      </div>
+    );
+  }
+
   if (definition.control === "select") {
     return (
       <select
@@ -876,7 +912,8 @@ function TemplateEditorBody({
 
 function ModelEditorBody({
   node,
-  activeEditor,
+  editorState,
+  interactive,
   pickerDismissKey,
   onPromptChange,
   onModelVariantChange,
@@ -885,7 +922,8 @@ function ModelEditorBody({
   onCommitTextEdits,
 }: {
   node: CanvasRenderNode;
-  activeEditor: ActiveCanvasNodeEditorState | null;
+  editorState: CanvasModelEditorState | null;
+  interactive: boolean;
   pickerDismissKey?: string | number | null;
   onPromptChange: (value: string) => void;
   onModelVariantChange: (variantId: string) => void;
@@ -893,29 +931,33 @@ function ModelEditorBody({
   onClearInputs: () => void;
   onCommitTextEdits: () => void;
 }) {
-  if (!activeEditor) {
+  if (!editorState) {
     return <PreviewModelNode node={node} />;
   }
 
-  const selectedVariantId = `model:${activeEditor.selectedNode.providerId}:${activeEditor.selectedNode.modelId}`;
+  const selectedVariantId = `model:${editorState.selectedNode.providerId}:${editorState.selectedNode.modelId}`;
+  const selectedVariant =
+    editorState.modelCatalogVariants.find((variant) => variant.id === selectedVariantId) || null;
   const promptSurface = getModelPromptSurfaceState({
-    prompt: activeEditor.selectedNode.prompt,
-    promptSourceNode: activeEditor.selectedPromptSourceNode,
+    prompt: editorState.selectedNode.prompt,
+    promptSourceNode: editorState.selectedPromptSourceNode,
   });
   const hasConnectedInputs =
-    activeEditor.selectedInputNodes.length > 0 || Boolean(activeEditor.selectedPromptSourceNode);
-  const visibleParameters = [...activeEditor.selectedCoreParameters, ...activeEditor.selectedAdvancedParameters];
+    editorState.selectedInputNodes.length > 0 || Boolean(editorState.selectedPromptSourceNode);
+  const showClearInputs = hasConnectedInputs && interactive;
+  const visibleParameters = [...editorState.selectedCoreParameters, ...editorState.selectedAdvancedParameters];
+  const promptValue = promptSurface.value.trim() || promptSurface.placeholder;
 
   return (
     <div className={styles.modelShell}>
       <div className={styles.modelGrid}>
         <section className={cx(styles.modelPanel, styles.modelPromptPanel)}>
-          <div className={cx(styles.panelHeader, hasConnectedInputs && styles.panelHeaderWithAction)}>
-            {hasConnectedInputs ? <span className={styles.panelHeaderSpacer} aria-hidden="true" /> : null}
+          <div className={cx(styles.panelHeader, showClearInputs && styles.panelHeaderWithAction)}>
+            {showClearInputs ? <span className={styles.panelHeaderSpacer} aria-hidden="true" /> : null}
             <strong className={cx(styles.panelTitle, promptSurface.isConnectedPreview && styles.panelHeaderAccent)}>
               {promptSurface.title}
             </strong>
-            {hasConnectedInputs ? (
+            {showClearInputs ? (
               <button
                 type="button"
                 className={styles.panelClearButton}
@@ -926,21 +968,21 @@ function ModelEditorBody({
               </button>
             ) : null}
           </div>
-          {promptSurface.readOnly ? (
+          {promptSurface.readOnly || !interactive ? (
             <div
               className={cx(
                 styles.modelPrompt,
                 styles.modelPromptReadOnly,
-                styles.modelPromptConnected,
+                promptSurface.isConnectedPreview && styles.modelPromptConnected,
                 !promptSurface.value.trim() && styles.modelPromptPlaceholder
               )}
             >
-              {promptSurface.value.trim() || promptSurface.placeholder}
+              {promptValue}
             </div>
           ) : (
             <textarea
               className={styles.modelPrompt}
-              value={activeEditor.selectedNode.prompt}
+              value={editorState.selectedNode.prompt}
               onChange={(event) => onPromptChange(event.target.value)}
               onBlur={onCommitTextEdits}
               onPointerDown={stopPointer}
@@ -953,22 +995,38 @@ function ModelEditorBody({
           <div className={cx(styles.panelHeader, styles.panelHeaderCentered)}>
             <strong className={styles.panelTitle}>Model Settings</strong>
           </div>
-          <SearchableModelSelect
-            value={selectedVariantId}
-            options={activeEditor.modelCatalogVariants}
-            surface="canvas-overlay"
-            density="compact"
-            triggerTone="model-node"
-            dismissKey={pickerDismissKey}
-            onChange={(variant) => onModelVariantChange(variant.id)}
-          />
+          {interactive ? (
+            <SearchableModelSelect
+              value={selectedVariantId}
+              options={editorState.modelCatalogVariants}
+              surface="canvas-overlay"
+              density="compact"
+              triggerTone="model-node"
+              dismissKey={pickerDismissKey}
+              onChange={(variant) => onModelVariantChange(variant.id)}
+            />
+          ) : (
+            <div className={cx(styles.fieldControl, styles.fieldControlReadOnly, styles.modelSelectReadOnly)}>
+              <strong>
+                {selectedVariant
+                  ? `${selectedVariant.providerLabel} · ${selectedVariant.label}`
+                  : editorState.selectedModel?.displayName || node.displayModelName || node.modelId}
+              </strong>
+              <span>
+                {selectedVariant
+                  ? `${selectedVariant.modelId} · ${selectedVariant.availabilityLabel}`
+                  : editorState.selectedNode.modelId}
+              </span>
+            </div>
+          )}
           <div className={styles.parameterGrid}>
             {visibleParameters.map((parameter) => (
               <label key={parameter.key} className={styles.fieldLabel}>
                 <span className={styles.fieldLabelText}>{parameter.label}</span>
                 {renderParameterField(
                   parameter,
-                  activeEditor.selectedNodeResolvedSettings[parameter.key],
+                  editorState.selectedNodeResolvedSettings[parameter.key],
+                  interactive,
                   (value) => onParameterChange(parameter.key, value),
                   onCommitTextEdits
                 )}
@@ -984,6 +1042,7 @@ function ModelEditorBody({
 export function CanvasNodeContent({
   node,
   activeEditor,
+  passiveModelEditor = null,
   pickerDismissKey,
   onSetDisplayMode,
   onEnterEditMode,
@@ -1008,6 +1067,7 @@ export function CanvasNodeContent({
 }: Props) {
   const isActive = activeEditor?.nodeId === node.id;
   const editor = isActive ? activeEditor : null;
+  const modelEditor = node.kind === "model" ? editor || passiveModelEditor : null;
   const listSettings = editor?.selectedListSettings || (node.kind === "list" ? getListNodeSettings(node.settings) : null);
   const isImageAssetNode = node.kind === "asset-source" && node.outputType === "image";
   const templatePreview =
@@ -1176,7 +1236,8 @@ export function CanvasNodeContent({
       node.presentation.renderMode === "full" || node.presentation.renderMode === "resized" ? (
         <ModelEditorBody
           node={node}
-          activeEditor={editor}
+          editorState={modelEditor}
+          interactive={Boolean(editor)}
           pickerDismissKey={pickerDismissKey}
           onPromptChange={onPromptChange}
           onModelVariantChange={onModelVariantChange}

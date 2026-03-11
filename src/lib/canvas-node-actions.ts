@@ -42,7 +42,7 @@ function getModeActionDescriptors(
 ) {
   const actions: CanvasNodeActionDescriptor[] = [];
 
-  if (persistedMode !== "preview" || renderMode === "resized") {
+  if (persistedMode !== "preview" || renderMode === "full" || renderMode === "resized") {
     actions.push({
       id: "default",
       label: "Default",
@@ -51,7 +51,7 @@ function getModeActionDescriptors(
     });
   }
 
-  if (persistedMode !== "compact") {
+  if (persistedMode !== "compact" || renderMode === "full" || renderMode === "resized") {
     actions.push({
       id: "compact",
       label: "Compact",
