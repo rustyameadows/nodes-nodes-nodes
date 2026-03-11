@@ -3,7 +3,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CanvasNodeContent, type ActiveCanvasNodeEditorState } from "@/components/canvas-nodes";
 import { InfiniteCanvas } from "@/components/infinite-canvas";
-import type { CanvasConnection, CanvasPhantomPreview, CanvasRenderNode } from "@/components/canvas-node-types";
+import type {
+  CanvasConnection,
+  CanvasNodeGeneratedProvenance,
+  CanvasPhantomPreview,
+  CanvasRenderNode,
+} from "@/components/canvas-node-types";
 import type {
   CanvasDocument,
   ListNodeSettings,
@@ -17,6 +22,8 @@ import { getGeneratedDescriptorDefaultLabel } from "@/lib/generated-text-output"
 import { getModelCatalogVariantById, getModelCatalogVariants, type NodePlaygroundFixture } from "@/lib/node-catalog";
 import {
   buildTextTemplatePreview,
+  getGeneratedModelNodeSource,
+  getGeneratedTextNoteSettings,
   getListNodeSettings,
 } from "@/lib/list-template";
 import { isModelParameterVisible } from "@/lib/model-parameters";
@@ -122,7 +129,7 @@ function resolveModelSettings(
 
 function outputSemanticType(node: WorkflowNode) {
   if (node.kind === "text-template") {
-    return "function" as const;
+    return "operator" as const;
   }
   if (node.kind === "model") {
     return "citrus" as const;
@@ -159,6 +166,18 @@ function getSourceModelNodeId(node: WorkflowNode) {
 
 function isGeneratedAssetNode(node: WorkflowNode) {
   return node.kind === "asset-source" && getNodeSourceJobId(node) !== null;
+}
+
+function getGeneratedNodeProvenance(node: WorkflowNode): CanvasNodeGeneratedProvenance | null {
+  if (node.kind === "asset-source" && isGeneratedAssetNode(node)) {
+    return "model";
+  }
+
+  if (node.kind === "text-note" && getGeneratedTextNoteSettings(node.settings)) {
+    return "operator";
+  }
+
+  return getGeneratedModelNodeSource(node.settings) ? "model" : null;
 }
 
 function getRunPreview(node: WorkflowNode, model: ProviderModel | undefined) {
@@ -567,11 +586,13 @@ export function NodePlaygroundCanvas({
         nodeId: node.id,
         aspectRatio: uploadedAssetAspectRatio,
       });
+      const generatedProvenance = getGeneratedNodeProvenance(node);
       return {
         ...node,
         presentation,
         assetOrigin: node.kind === "asset-source" ? (isGeneratedAssetNode(node) ? "generated" : "uploaded") : null,
         sourceModelNodeId: getSourceModelNodeId(node),
+        generatedProvenance,
         displayModelName:
           node.kind === "asset-source"
             ? null

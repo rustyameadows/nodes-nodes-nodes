@@ -18,7 +18,7 @@ test("model title chip uses the current model label with citrus color", () => {
   });
 });
 
-test("text-family nodes share the text accent chip labels", () => {
+test("text notes and lists keep the text accent chip labels while templates use operator purple", () => {
   assert.deepEqual(
     getCanvasNodeTitleChip({
       kind: "text-note",
@@ -59,8 +59,8 @@ test("text-family nodes share the text accent chip labels", () => {
     }),
     {
       label: "Template Node",
-      accentType: "text",
-      color: "#ff4dc4",
+      accentType: "operator",
+      color: "#9b4dff",
     }
   );
 });

@@ -164,3 +164,8 @@
 - Decision: canvas nodes now carry a persisted `zIndex`, focusing/selecting a node promotes it to the front by updating that saved order, and insert-picker creation still centers the new shell on the requested canvas coordinate.
 - Rationale: temporary selection-only layering makes overlap debugging feel unstable because the node drops back under neighbors as soon as focus changes, while users expect "bring to front" to stay exactly where they last saw it.
 - Consequence: saved canvas documents now preserve node stacking order across deselection and reload, newly created nodes spawn at the front by default, and overlap behavior is driven by document state rather than transient CSS-only selected styling.
+
+## 2026-03-11 - Canvas Border Semantics Use Operator Provenance And Red Failure Output
+- Decision: rename the purple canvas semantic from `function` to `operator`, treat templates as the first operator node family, resolve border accents through one shared provenance-aware helper, and reserve red as a right-edge-only failed-output semantic.
+- Rationale: "generator" is too ambiguous once model nodes also generate outputs, while ad hoc per-node border logic makes template/model/generated states drift and makes failure styling hard to extend.
+- Consequence: fresh template nodes stay neutral until they have downstream output, operator-produced children carry purple on the left edge, model-produced children carry citrus on the left edge, failed nodes keep their normal left-edge provenance/input accents while forcing the right edge red, and queued/running generated outputs shimmer until they settle.

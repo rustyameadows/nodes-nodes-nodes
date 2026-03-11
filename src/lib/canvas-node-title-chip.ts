@@ -50,8 +50,8 @@ export function getCanvasNodeTitleChip(node: Input): CanvasNodeTitleChip {
   if (node.kind === "text-template") {
     return {
       label: "Template Node",
-      accentType: "text",
-      color: getCanvasNodeAccentColor("text"),
+      accentType: "operator",
+      color: getCanvasNodeAccentColor("operator"),
     };
   }
 

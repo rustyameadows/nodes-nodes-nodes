@@ -7,10 +7,12 @@
   --node-accent-image-glow: rgba(62, 164, 255, 0.48);
   --node-accent-video: #ff8d34;
   --node-accent-video-glow: rgba(255, 141, 52, 0.46);
-  --node-accent-function: #9b4dff;
-  --node-accent-function-glow: rgba(155, 77, 255, 0.48);
+  --node-accent-operator: #9b4dff;
+  --node-accent-operator-glow: rgba(155, 77, 255, 0.48);
   --node-accent-citrus: #d8ff3e;
   --node-accent-citrus-glow: rgba(216, 255, 62, 0.52);
+  --node-accent-failed: #ff8aa3;
+  --node-accent-failed-glow: rgba(255, 138, 163, 0.48);
 
   --node-surface-paper: rgba(255, 255, 255, 0.985);
   --node-surface-paper-muted: rgba(246, 246, 244, 0.985);

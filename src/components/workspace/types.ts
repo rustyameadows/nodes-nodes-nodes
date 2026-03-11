@@ -205,7 +205,7 @@ export type CanvasConnectionSelection = {
   kind: "input" | "prompt";
   sourceNodeId: string;
   targetNodeId: string;
-  semanticType: "text" | "image" | "video" | "function" | "citrus" | "neutral";
+  semanticType: "text" | "image" | "video" | "operator" | "citrus" | "neutral";
   lineStyle: "solid" | "dashed";
 };
 

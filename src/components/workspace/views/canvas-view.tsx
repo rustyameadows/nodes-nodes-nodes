@@ -15,6 +15,7 @@ import { CanvasCopilotWidget } from "@/components/workspace/views/canvas-copilot
 import type {
   CanvasConnection,
   CanvasInsertRequest,
+  CanvasNodeGeneratedProvenance,
   CanvasPhantomPreview,
   CanvasRenderNode,
   CanvasSelectionAction,
@@ -186,8 +187,8 @@ type AssetPickerState = {
 };
 
 type PreviewFrameSummary = NonNullable<Job["latestPreviewFrames"]>[number];
-type CanvasSemanticType = WorkflowNode["outputType"] | "function" | "citrus";
-const canvasSemanticTypeOrder: CanvasSemanticType[] = ["text", "image", "video", "function", "citrus"];
+type CanvasSemanticType = WorkflowNode["outputType"] | "operator" | "citrus";
+const canvasSemanticTypeOrder: CanvasSemanticType[] = ["text", "image", "video", "operator", "citrus"];
 type PendingCenteredInsert = {
   nodeId: string;
   anchor: { x: number; y: number };
@@ -216,7 +217,7 @@ function isEditableKeyboardTarget(target: EventTarget | null) {
 
 function getNodeSemanticOutputType(node: WorkflowNode): CanvasSemanticType {
   if (node.kind === "text-template") {
-    return "function";
+    return "operator";
   }
   if (
     node.kind === "model" &&
@@ -490,6 +491,22 @@ function getSourceModelNodeId(node: WorkflowNode | null | undefined) {
     return null;
   }
   return typeof node.settings.sourceModelNodeId === "string" ? node.settings.sourceModelNodeId : null;
+}
+
+function getGeneratedNodeProvenance(node: WorkflowNode | null | undefined): CanvasNodeGeneratedProvenance | null {
+  if (!node) {
+    return null;
+  }
+
+  if (node.kind === "asset-source" && isGeneratedAssetNode(node)) {
+    return "model";
+  }
+
+  if (node.kind === "text-note" && getGeneratedTextNoteSettings(node.settings)) {
+    return "operator";
+  }
+
+  return getGeneratedModelNodeSource(node.settings) ? "model" : null;
 }
 
 function getTextOutputTargetFromSettings(settings: Record<string, unknown> | undefined) {
@@ -1289,6 +1306,7 @@ export function CanvasView({ projectId }: Props) {
         aspectRatio: uploadedAssetAspectRatio,
       });
       const displayModelName = providerModelDisplayNames[`${node.providerId}:${node.modelId}`] || node.modelId;
+      const generatedProvenance = getGeneratedNodeProvenance(node);
       const inputSemanticTypes = sortSemanticTypes([
         ...(node.kind === "model" && node.promptSourceNodeId ? (["text"] as CanvasSemanticType[]) : []),
         ...node.upstreamNodeIds
@@ -1323,6 +1341,7 @@ export function CanvasView({ projectId }: Props) {
           resolvedSize: presentation.size,
           assetOrigin: node.kind === "asset-source" ? ("uploaded" as const) : null,
           sourceModelNodeId: getSourceModelNodeId(node),
+          generatedProvenance,
           displayModelName:
             node.kind === "asset-source" ? null : node.kind === "list" ? "List" : node.kind === "text-template" ? "Template" : displayModelName,
           displaySourceLabel:
@@ -1369,6 +1388,7 @@ export function CanvasView({ projectId }: Props) {
           resolvedSize: presentation.size,
           assetOrigin: "generated" as const,
           sourceModelNodeId,
+          generatedProvenance,
           displayModelName,
           displaySourceLabel: displayModelName,
           inputSemanticTypes,
@@ -1386,6 +1406,7 @@ export function CanvasView({ projectId }: Props) {
         resolvedSize: presentation.size,
         assetOrigin: "generated" as const,
         sourceModelNodeId,
+        generatedProvenance,
         displayModelName,
         displaySourceLabel: displayModelName,
         inputSemanticTypes,

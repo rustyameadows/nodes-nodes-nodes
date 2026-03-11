@@ -2,8 +2,9 @@
   --canvas-semantic-text: #ff4dc4;
   --canvas-semantic-image: #3ea4ff;
   --canvas-semantic-video: #ff8d34;
-  --canvas-semantic-function: #9b4dff;
+  --canvas-semantic-operator: #9b4dff;
   --canvas-placeholder-citrus: #d8ff3e;
+  --canvas-semantic-failed: #ff8aa3;
   --canvas-node-border-width: 2px;
   position: relative;
   width: 100%;

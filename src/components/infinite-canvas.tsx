@@ -29,6 +29,7 @@ import {
   getCanvasNodeAccentColor,
   getCanvasNodeAccentGlow,
   getCanvasNodeBorderLayers,
+  resolveCanvasNodeBorderSemantics,
 } from "@/lib/canvas-node-design-system";
 import { isRunnableOpenAiImageModel, parseImageSize } from "@/lib/openai-image-settings";
 import { isRunnableTopazGigapixelModel } from "@/lib/topaz-gigapixel-settings";
@@ -255,9 +256,7 @@ function getImageFrameAspectRatio(
 }
 
 function getInputAccentGradient(inputSemanticTypes: CanvasAccentType[] | undefined) {
-  const filteredTypes = (["text", "image", "video", "function", "citrus"] as const).filter((type) =>
-    inputSemanticTypes?.includes(type)
-  );
+  const filteredTypes = (inputSemanticTypes || []).filter((type, index, values) => values.indexOf(type) === index);
   if (filteredTypes.length === 0) {
     return "transparent";
   }
@@ -352,56 +351,8 @@ function getBorderGradient(leftAccentTypes: CanvasAccentType[], rightAccentType:
 
 function getSelectionHaloColors(
   leftAccentTypes: CanvasAccentType[],
-  rightAccentType: CanvasAccentType,
-  kind: CanvasRenderNode["kind"],
-  assetOrigin?: CanvasRenderNode["assetOrigin"]
+  rightAccentType: CanvasAccentType
 ) {
-  if (kind === "list") {
-    const color = semanticColor("text");
-    return {
-      leftTop: color,
-      leftBottom: color,
-      right: color,
-    };
-  }
-
-  if (kind === "text-note") {
-    const leftTop = semanticColor(leftAccentTypes[0] || "text");
-    const leftBottom = semanticColor(leftAccentTypes[1] || leftAccentTypes[0] || "text");
-    return {
-      leftTop,
-      leftBottom,
-      right: semanticColor("text"),
-    };
-  }
-
-  if (kind === "text-template") {
-    const leftTop = semanticColor(leftAccentTypes[0] || "neutral");
-    const leftBottom = semanticColor(leftAccentTypes[1] || leftAccentTypes[0] || "neutral");
-    return {
-      leftTop,
-      leftBottom,
-      right: semanticColor(rightAccentType),
-    };
-  }
-
-  if (kind === "asset-source" && assetOrigin === "uploaded") {
-    const color = semanticColor("image");
-    return {
-      leftTop: color,
-      leftBottom: color,
-      right: color,
-    };
-  }
-
-  if (kind === "asset-source" && assetOrigin === "generated") {
-    return {
-      leftTop: semanticColor("citrus"),
-      leftBottom: semanticColor("citrus"),
-      right: semanticColor(rightAccentType),
-    };
-  }
-
   const uniqueLeftTypes = leftAccentTypes.filter((type, index) => leftAccentTypes.indexOf(type) === index);
   const leftTop = uniqueLeftTypes[0] || "neutral";
   const leftBottom = uniqueLeftTypes[1] || leftTop;
@@ -535,6 +486,18 @@ export function InfiniteCanvas({
     [nodeSizes, nodesById, resizeDraftSizes]
   );
 
+  const getNodeBoundsSize = useCallback(
+    (nodeId: string) => {
+      const measured = nodeSizes[nodeId];
+      if (measured) {
+        return measured;
+      }
+
+      return getNodeSize(nodeId);
+    },
+    [getNodeSize, nodeSizes]
+  );
+
   useLayoutEffect(() => {
     const next: Record<string, { width: number; height: number }> = {};
     for (const node of displayNodes) {
@@ -612,8 +575,8 @@ export function InfiniteCanvas({
               ? ("dashed" as const)
               : ("solid" as const);
 
-          const start = getOutputPortPoint(sourceNode, getNodeSize(sourceNode.id));
-          const end = getInputPortPoint(targetNode, getNodeSize(targetNode.id));
+          const start = getOutputPortPoint(sourceNode, getNodeBoundsSize(sourceNode.id));
+          const end = getInputPortPoint(targetNode, getNodeBoundsSize(targetNode.id));
 
           return {
             ...connection,
@@ -629,7 +592,7 @@ export function InfiniteCanvas({
           ): edge is NonNullable<typeof edge> => Boolean(edge)
         );
     });
-  }, [displayNodes, getNodeSize, nodesById]);
+  }, [displayNodes, getNodeBoundsSize, nodesById]);
 
   useEffect(() => {
     setView(viewport);
@@ -872,7 +835,7 @@ export function InfiniteCanvas({
 
       const selectedIds = nodes
         .filter((node) => {
-          const size = getNodeSize(node.id);
+          const size = getNodeBoundsSize(node.id);
           const nodeMinX = node.x;
           const nodeMaxX = node.x + size.width;
           const nodeMinY = node.y;
@@ -894,6 +857,7 @@ export function InfiniteCanvas({
   }, [
     clearConnectionDraft,
     dragDraftPositions,
+    getNodeBoundsSize,
     getNodeSize,
     isCanvasBackgroundTarget,
     nodes,
@@ -1219,7 +1183,9 @@ export function InfiniteCanvas({
       onSelectConnection(null);
 
       const source =
-        port === "output" ? getOutputPortPoint(node, getNodeSize(node.id)) : getInputPortPoint(node, getNodeSize(node.id));
+        port === "output"
+          ? getOutputPortPoint(node, getNodeBoundsSize(node.id))
+          : getInputPortPoint(node, getNodeBoundsSize(node.id));
       interactionRef.current = {
         type: "connect",
         nodeId: node.id,
@@ -1234,7 +1200,7 @@ export function InfiniteCanvas({
       });
       onSelectSingleNode(node.id);
     },
-    [getNodeSize, onSelectConnection, onSelectSingleNode, onViewportInteractionStart]
+    [getNodeBoundsSize, onSelectConnection, onSelectSingleNode, onViewportInteractionStart]
   );
 
   const onPortPointerUp = useCallback(
@@ -1276,10 +1242,10 @@ export function InfiniteCanvas({
 
     const start =
       connectionDraft.port === "output"
-        ? getOutputPortPoint(sourceNode, getNodeSize(sourceNode.id))
-        : getInputPortPoint(sourceNode, getNodeSize(sourceNode.id));
+        ? getOutputPortPoint(sourceNode, getNodeBoundsSize(sourceNode.id))
+        : getInputPortPoint(sourceNode, getNodeBoundsSize(sourceNode.id));
     return curvePath(start.x, start.y, connectionDraft.targetX, connectionDraft.targetY);
-  }, [connectionDraft, getNodeSize, nodesById]);
+  }, [connectionDraft, getNodeBoundsSize, nodesById]);
 
   const activeConnectionNodeIds = useMemo(() => {
     const ids = new Set<string>();
@@ -1317,7 +1283,7 @@ export function InfiniteCanvas({
     let minY = Number.POSITIVE_INFINITY;
 
     for (const node of selectedNodes) {
-      const size = getNodeSize(node.id);
+      const size = getNodeBoundsSize(node.id);
       minX = Math.min(minX, node.x);
       maxX = Math.max(maxX, node.x + size.width);
       minY = Math.min(minY, node.y);
@@ -1327,7 +1293,7 @@ export function InfiniteCanvas({
       x: Math.round((minX + maxX) / 2),
       y: Math.round(minY - 24),
     };
-  }, [displayNodes, getNodeSize, selectedNodeIds, selectionActions.length]);
+  }, [displayNodes, getNodeBoundsSize, selectedNodeIds, selectionActions.length]);
 
   const phantomLayout = useMemo(() => {
     if (!activePhantomPreview) {
@@ -1339,7 +1305,7 @@ export function InfiniteCanvas({
       return null;
     }
 
-    const sourceSize = getNodeSize(sourceNode.id);
+    const sourceSize = getNodeBoundsSize(sourceNode.id);
     const startX = sourceNode.x + sourceSize.width + 84;
     const startY = sourceNode.y;
     const nodes = activePhantomPreview.nodes.map((phantomNode, index) => {
@@ -1359,7 +1325,7 @@ export function InfiniteCanvas({
       sourceSize,
       nodes,
     };
-  }, [activePhantomPreview, getNodeSize, nodesById]);
+  }, [activePhantomPreview, getNodeBoundsSize, nodesById]);
 
   return (
     <div
@@ -1461,7 +1427,7 @@ export function InfiniteCanvas({
           const isListNode = node.kind === "list";
           const isTextTemplateNode = node.kind === "text-template";
           const isModelNode = node.kind === "model";
-          const isFunctionNode = node.kind === "text-template";
+          const isOperatorNode = node.kind === "text-template";
           const isGeneratedAsset = isGeneratedAssetNode(node);
           const isGeneratedTextNote = isGeneratedTextNoteNode(node);
           const isUploadedAsset = node.kind === "asset-source" && node.assetOrigin === "uploaded";
@@ -1479,51 +1445,41 @@ export function InfiniteCanvas({
           const showOutputPort =
             isListNode ||
             isTextNote ||
-            isFunctionNode ||
+            isOperatorNode ||
             (node.kind === "asset-source" && !isModelNode) ||
             (isModelNode && node.outputType !== "text" && Boolean(node.hasStartedJob));
-          const showsProcessingShell = isGeneratedAsset && (node.processingState === "queued" || node.processingState === "running");
-          const inputAccentGradient = getInputAccentGradient(node.inputSemanticTypes);
-          const semanticOutputType = getNodeOutputSemanticType(node);
           const outputAccentType = getNodeOutputAccentType(node);
-          const outputColor = semanticColor(outputAccentType);
-          const hasConnectedOutput = isModelNode || isFunctionNode
+          const hasConnectedOutput = isModelNode || isOperatorNode
             ? edges.some((edge) => edge.sourceNodeId === node.id)
             : false;
-          const modelRightAccentType: CanvasAccentType = hasConnectedOutput ? "citrus" : "neutral";
-          const functionRightAccentType: CanvasAccentType = hasConnectedOutput ? "function" : "neutral";
-          const primaryBorderInputTypes = (
-            node.inputSemanticTypes && node.inputSemanticTypes.length > 0
-              ? node.inputSemanticTypes
-              : ["neutral"]
-          ) as CanvasAccentType[];
+          const borderSemantics = resolveCanvasNodeBorderSemantics({
+            kind: node.kind,
+            assetOrigin: node.assetOrigin,
+            outputAccentType,
+            inputAccentTypes: node.inputSemanticTypes,
+            generatedProvenance: node.generatedProvenance,
+            processingState: node.processingState,
+            hasConnectedOutput,
+          });
+          const normalizedLeftAccentTypes =
+            borderSemantics.leftAccentTypes.length > 0
+              ? borderSemantics.leftAccentTypes
+              : [borderSemantics.fallbackLeftAccentType];
+          const showsProcessingShell = borderSemantics.shouldShowProcessingShimmer;
+          const inputAccentGradient = getInputAccentGradient(normalizedLeftAccentTypes);
+          const outputColor = semanticColor(borderSemantics.rightAccentType);
           const imageFrameAspectRatio = shouldRenderImageFrame
             ? getImageFrameAspectRatio(node, nodesById, imageAspectRatios)
             : 1;
-          const generatedBorderGradient = getBorderGradient(["citrus"], semanticOutputType);
-          const modelBorderLayers = getCanvasNodeBorderLayers(
-            primaryBorderInputTypes,
-            isFunctionNode ? functionRightAccentType : modelRightAccentType
-          );
-          const textNoteBorderLayers = getCanvasNodeBorderLayers(
-            (node.inputSemanticTypes && node.inputSemanticTypes.length > 0
-              ? node.inputSemanticTypes
-              : ["text"]) as CanvasAccentType[],
-            "text",
-            "text"
-          );
-          const semanticFrameBorderLayers = getCanvasNodeBorderLayers(
-            (node.inputSemanticTypes && node.inputSemanticTypes.length > 0
-              ? node.inputSemanticTypes
-              : ["text"]) as CanvasAccentType[],
-            "text",
-            "text"
+          const generatedBorderGradient = getBorderGradient(normalizedLeftAccentTypes, borderSemantics.rightAccentType);
+          const borderLayers = getCanvasNodeBorderLayers(
+            borderSemantics.leftAccentTypes,
+            borderSemantics.rightAccentType,
+            borderSemantics.fallbackLeftAccentType
           );
           const selectionHaloColors = getSelectionHaloColors(
-            primaryBorderInputTypes,
-            isModelNode ? modelRightAccentType : isFunctionNode ? functionRightAccentType : outputAccentType,
-            node.kind,
-            node.assetOrigin
+            normalizedLeftAccentTypes,
+            borderSemantics.rightAccentType
           );
           const autoHeight = usesContentHeight(node);
           const nodeStyle: CSSProperties = {
@@ -1534,33 +1490,33 @@ export function InfiniteCanvas({
             height: autoHeight ? undefined : `${getNodeSize(node.id).height}px`,
             "--node-output-accent": outputColor,
             "--node-border-gradient": generatedBorderGradient,
-            "--model-border-top": modelBorderLayers.top,
-            "--model-border-right": modelBorderLayers.right,
-            "--model-border-bottom": modelBorderLayers.bottom,
-            "--model-border-left": modelBorderLayers.left,
-            "--text-note-border-top": textNoteBorderLayers.top,
-            "--text-note-border-right": textNoteBorderLayers.right,
-            "--text-note-border-bottom": textNoteBorderLayers.bottom,
-            "--text-note-border-left": textNoteBorderLayers.left,
-            "--node-frame-border-top": semanticFrameBorderLayers.top,
-            "--node-frame-border-right": semanticFrameBorderLayers.right,
-            "--node-frame-border-bottom": semanticFrameBorderLayers.bottom,
-            "--node-frame-border-left": semanticFrameBorderLayers.left,
+            "--model-border-top": borderLayers.top,
+            "--model-border-right": borderLayers.right,
+            "--model-border-bottom": borderLayers.bottom,
+            "--model-border-left": borderLayers.left,
+            "--text-note-border-top": borderLayers.top,
+            "--text-note-border-right": borderLayers.right,
+            "--text-note-border-bottom": borderLayers.bottom,
+            "--text-note-border-left": borderLayers.left,
+            "--node-frame-border-top": borderLayers.top,
+            "--node-frame-border-right": borderLayers.right,
+            "--node-frame-border-bottom": borderLayers.bottom,
+            "--node-frame-border-left": borderLayers.left,
             "--node-glow-left-top": selectionHaloColors.leftTop,
             "--node-glow-left-bottom": selectionHaloColors.leftBottom,
             "--node-glow-right": selectionHaloColors.right,
-            "--node-right-accent": semanticColor(isModelNode ? modelRightAccentType : isFunctionNode ? functionRightAccentType : outputAccentType),
+            "--node-right-accent": semanticColor(borderSemantics.rightAccentType),
           } as CSSProperties;
           const inputPortStyle = {
             "--port-fill": inputAccentGradient,
             "--port-glow":
-              node.inputSemanticTypes && node.inputSemanticTypes.length > 0
-                ? semanticGlow(node.inputSemanticTypes[0])
+              normalizedLeftAccentTypes.length > 0
+                ? semanticGlow(normalizedLeftAccentTypes[0])
                 : "color-mix(in srgb, var(--node-accent-neutral) 38%, transparent)",
           } as CSSProperties;
           const outputPortStyle = {
             "--port-fill": outputColor,
-            "--port-glow": semanticGlow(outputAccentType),
+            "--port-glow": semanticGlow(borderSemantics.rightAccentType),
           } as CSSProperties;
 
           return (
@@ -1573,7 +1529,7 @@ export function InfiniteCanvas({
               tabIndex={0}
               data-node-id={node.id}
               data-rail-drag={node.presentation.useRailDragHandle ? "true" : "false"}
-              className={`${styles.node} ${isSelected ? styles.nodeSelected : ""} ${shouldRenderImageFrame ? nodeStyles.nodeWithImage : ""} ${isGeneratedAsset ? nodeStyles.nodeGeneratedAsset : ""} ${isUploadedAsset ? nodeStyles.nodeUploadedAsset : ""} ${isTextNote ? nodeStyles.nodeTextNote : ""} ${isTextNote && !isGeneratedTextNote ? nodeStyles.nodeSemanticFrame : ""} ${isGeneratedTextNote ? nodeStyles.nodeGeneratedTextNote : ""} ${isListNode ? nodeStyles.nodeList : ""} ${isListNode ? nodeStyles.nodeSemanticFrame : ""} ${isTextTemplateNode ? nodeStyles.nodeTextTemplate : ""} ${isModelNode || isFunctionNode ? nodeStyles.nodeModel : ""} ${activeConnectionNodeIds.has(node.id) ? styles.nodePortActive : ""} ${showsProcessingShell ? nodeStyles.nodeGeneratedProcessing : ""} ${node.renderMode === "compact" ? nodeStyles.nodeCompactMode : ""} ${node.renderMode === "full" ? nodeStyles.nodeFullMode : ""} ${node.renderMode === "resized" ? nodeStyles.nodeResizedMode : ""}`}
+              className={`${styles.node} ${isSelected ? styles.nodeSelected : ""} ${shouldRenderImageFrame ? nodeStyles.nodeWithImage : ""} ${isGeneratedAsset ? nodeStyles.nodeGeneratedAsset : ""} ${isUploadedAsset ? nodeStyles.nodeUploadedAsset : ""} ${isTextNote ? nodeStyles.nodeTextNote : ""} ${isTextNote && !isGeneratedTextNote ? nodeStyles.nodeSemanticFrame : ""} ${isGeneratedTextNote ? nodeStyles.nodeGeneratedTextNote : ""} ${isListNode ? nodeStyles.nodeList : ""} ${isListNode ? nodeStyles.nodeSemanticFrame : ""} ${isTextTemplateNode ? nodeStyles.nodeTextTemplate : ""} ${isModelNode || isOperatorNode ? nodeStyles.nodeModel : ""} ${activeConnectionNodeIds.has(node.id) ? styles.nodePortActive : ""} ${showsProcessingShell ? nodeStyles.nodeGeneratedProcessing : ""} ${node.renderMode === "compact" ? nodeStyles.nodeCompactMode : ""} ${node.renderMode === "full" ? nodeStyles.nodeFullMode : ""} ${node.renderMode === "resized" ? nodeStyles.nodeResizedMode : ""}`}
               style={nodeStyle}
               onClick={(event) => {
                 event.stopPropagation();

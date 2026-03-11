@@ -17,13 +17,17 @@ export const canvasNodeAccentTokens = {
     color: "#ff8d34",
     glow: "rgba(255, 141, 52, 0.46)",
   },
-  function: {
+  operator: {
     color: "#9b4dff",
     glow: "rgba(155, 77, 255, 0.48)",
   },
   citrus: {
     color: "#d8ff3e",
     glow: "rgba(216, 255, 62, 0.52)",
+  },
+  failed: {
+    color: "#ff8aa3",
+    glow: "rgba(255, 138, 163, 0.48)",
   },
 } satisfies Record<CanvasAccentType, { color: string; glow: string }>;
 

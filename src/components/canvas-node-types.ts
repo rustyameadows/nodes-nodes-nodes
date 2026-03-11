@@ -8,7 +8,8 @@ import type {
   ResolvedCanvasNodePresentation,
 } from "@/lib/canvas-node-presentation";
 
-export type CanvasAccentType = CanvasConnectionSelection["semanticType"];
+export type CanvasAccentType = CanvasConnectionSelection["semanticType"] | "failed";
+export type CanvasNodeGeneratedProvenance = "model" | "operator";
 
 export type CanvasRenderNode = Pick<
   WorkflowNode,
@@ -37,6 +38,7 @@ export type CanvasRenderNode = Pick<
 > & {
   assetOrigin?: "generated" | "uploaded" | null;
   sourceModelNodeId?: string | null;
+  generatedProvenance?: CanvasNodeGeneratedProvenance | null;
   displayModelName?: string | null;
   displaySourceLabel?: string | null;
   inputSemanticTypes?: CanvasAccentType[];

@@ -67,6 +67,15 @@
       )
       padding-box,
     linear-gradient(
+        112deg,
+        transparent 0%,
+        transparent 36%,
+        color-mix(in srgb, var(--node-surface-paper-raised) 72%, transparent) 50%,
+        transparent 64%,
+        transparent 100%
+      )
+      padding-box,
+    linear-gradient(
         90deg,
         var(--node-accent-citrus) 0%,
         var(--node-accent-citrus) 22%,
@@ -74,9 +83,34 @@
         var(--node-output-accent, var(--node-accent-image)) 100%
       )
       border-box;
+  background-size:
+    auto,
+    220% 100%,
+    100% 100%;
+  background-position:
+    center,
+    180% 0,
+    center;
   box-shadow:
-    0 0 20px color-mix(in srgb, var(--node-accent-citrus) 38%, transparent),
+    0 0 18px color-mix(in srgb, var(--node-accent-citrus) 32%, transparent),
     0 12px 18px color-mix(in srgb, var(--node-surface-ink) 20%, transparent);
+  animation: generatedNodeProcessingShimmer 1.9s linear infinite;
+}
+
+@keyframes generatedNodeProcessingShimmer {
+  from {
+    background-position:
+      center,
+      180% 0,
+      center;
+  }
+
+  to {
+    background-position:
+      center,
+      -80% 0,
+      center;
+  }
 }
 
 .nodeTextNote {
@@ -164,7 +198,7 @@
 .nodeTextTemplate {
   width: 320px;
   min-height: 214px;
-  border-color: var(--node-accent-text);
+  border-color: transparent;
   display: flex;
   flex-direction: column;
   box-shadow: var(--node-shadow-card);
@@ -716,9 +750,9 @@
   display: inline-flex;
   align-items: center;
   padding: 4px 8px;
-  border: 1px solid color-mix(in srgb, var(--node-accent-function) 28%, transparent);
+  border: 1px solid color-mix(in srgb, var(--node-accent-operator) 28%, transparent);
   background: color-mix(in srgb, var(--node-accent-text) 14%, var(--node-surface-paper-raised));
-  color: color-mix(in srgb, var(--node-accent-function) 72%, var(--node-surface-ink) 28%);
+  color: color-mix(in srgb, var(--node-accent-operator) 72%, var(--node-surface-ink) 28%);
   font-size: var(--ds-font-size-xs);
   font-weight: 700;
 }
@@ -737,10 +771,10 @@
   vertical-align: baseline;
   margin: 0 0.12em;
   padding: 1px 7px;
-  border: 1px solid color-mix(in srgb, var(--node-accent-function) 28%, transparent);
+  border: 1px solid color-mix(in srgb, var(--node-accent-operator) 28%, transparent);
   border-radius: var(--ds-radius-round);
   background: color-mix(in srgb, var(--node-accent-text) 14%, var(--node-surface-paper-raised));
-  color: color-mix(in srgb, var(--node-accent-function) 72%, var(--node-surface-ink) 28%);
+  color: color-mix(in srgb, var(--node-accent-operator) 72%, var(--node-surface-ink) 28%);
   font-size: 0.72em;
   font-weight: 700;
   line-height: 1.2;

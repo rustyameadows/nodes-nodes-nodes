@@ -26,11 +26,15 @@
   - pink for text
   - blue for image assets
   - orange for video
+  - purple for operator nodes and operator-generated flow
   - citrus for generated output flow
-- Node borders stay neutral until the node is wired into the graph.
-- Once wired, borders advertise semantics:
-  - input-side accents appear on the left edge from connected upstream semantics
-  - node/output accents appear on the right edge from downstream/output meaning
+- model and operator/template shells stay neutral until they are wired into real output flow
+- node borders advertise semantics with explicit left/right roles:
+  - left edge: provenance or connected input meaning
+  - right edge: node/output meaning
+- border precedence is fixed:
+  - generated child provenance beats incidental input color on the left edge
+  - failed state overrides only the right edge to red
 - Functional parity matters more than exact shell/layout parity.
 
 ## Canvas
@@ -63,6 +67,15 @@
 - native canvas insertions land at the current viewport center with a small stagger and use the same save/selection path as the insert popup
 - insert-picker node creation centers the new node shell on the requested canvas point instead of dropping its top-left corner there
 - focusing or selecting a node promotes it to the front of the canvas stack and that frontmost order persists after the node is deselected or the canvas reloads
+- canonical border recipes:
+  - fresh operator/template node: left edge stays input-driven, right edge stays neutral
+  - active operator/template node with downstream output: left edge stays input-driven, right edge turns purple
+  - operator-produced note: purple left, pink right
+  - model-produced note or list: citrus left, pink right
+  - model-produced image: citrus left, blue right
+  - model-produced operator/template: citrus left, purple right
+  - failed model or generated node: keep the normal left edge, force the right edge red
+  - queued or running generated outputs get a subtle shimmer until they succeed or fail
 - the same provider/model catalog also powers the shared searchable model picker used in:
   - full model nodes
   - node-library model detail/playground
@@ -99,7 +112,8 @@
   - the top-left rail is reserved for display-mode pills like `Compact` and `Default`
   - the centered title rail always includes a shared mono chip under the editable node title:
     - model uses the current model label in citrus
-    - text note, list, and template use their node-type label in the text accent
+    - text note and list use their node-type label in the text accent
+    - template uses the operator accent
     - uploaded and generated asset nodes use source-specific labels with output-semantic chip colors
   - the top-right rail is reserved for `Drag me` plus non-interactive status pills
   - bottom action rails hold all remaining interactive node controls so body layouts stay stable
