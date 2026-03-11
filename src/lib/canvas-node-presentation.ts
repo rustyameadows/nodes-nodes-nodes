@@ -125,7 +125,7 @@ export function getWorkflowNodeDefaultSize(
       return { width: 168, height: 48 };
     }
     if (renderMode === "full") {
-      return { width: 980, height: 420 };
+      return { width: 980, height: 385 };
     }
     return { width: 236, height: 84 };
   }

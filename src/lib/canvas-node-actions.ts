@@ -7,6 +7,7 @@ import type {
 export type CanvasNodeActionId =
   | "default"
   | "compact"
+  | "duplicate"
   | "edit"
   | "run"
   | "open"

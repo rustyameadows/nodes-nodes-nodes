@@ -15,7 +15,10 @@ import type {
   ProviderModel,
   WorkflowNode,
 } from "@/components/workspace/types";
-import { getCanvasNodeActionDescriptors } from "@/lib/canvas-node-actions";
+import {
+  getCanvasNodeActionDescriptors,
+  type CanvasNodeActionDescriptor,
+} from "@/lib/canvas-node-actions";
 import {
   buildTemplateVariableInsertText,
   getListNodeSettings,
@@ -23,6 +26,7 @@ import {
 } from "@/lib/list-template";
 import type { TextTemplatePreview } from "@/lib/list-template";
 import type { ModelParameterDefinition } from "@/lib/model-parameters";
+import { getModelPromptSurfaceState } from "@/lib/model-node-editor";
 import type { NodeCatalogVariant } from "@/lib/node-catalog";
 import { tokenizeTemplatePreviewInline } from "@/lib/template-preview-inline";
 import styles from "./canvas-node.module.css";
@@ -70,6 +74,7 @@ type Props = {
   onAddListRow: (initialValues?: Record<string, string>) => string | null | void;
   onRemoveListRow: (rowId: string) => void;
   onClearInputs: () => void;
+  onDuplicateNode: () => void;
   onOpenAssetViewer: (assetId: string) => void;
   onDownloadAssets: (assetIds: string[]) => void;
   onOpenQueueInspect: (jobId: string) => void;
@@ -103,6 +108,7 @@ function renderParameterField(
     return (
       <select
         className={styles.fieldControl}
+        data-control="select"
         value={value === null || value === undefined ? "" : String(value)}
         onChange={(event) => onChange(event.target.value === "" ? null : event.target.value)}
         onBlur={onBlur}
@@ -122,6 +128,7 @@ function renderParameterField(
     return (
       <input
         className={styles.fieldControl}
+        data-control="input"
         type="number"
         min={definition.min}
         max={definition.max}
@@ -139,6 +146,7 @@ function renderParameterField(
     return (
       <textarea
         className={cx(styles.fieldControl, styles.fieldControlTextarea)}
+        data-control="textarea"
         rows={definition.rows || 4}
         value={value === null || value === undefined ? "" : String(value)}
         placeholder={definition.placeholder}
@@ -152,6 +160,7 @@ function renderParameterField(
   return (
     <input
       className={styles.fieldControl}
+      data-control="input"
       type="text"
       value={value === null || value === undefined ? "" : String(value)}
       placeholder={definition.placeholder}
@@ -175,6 +184,8 @@ function NodeTitleRail({
   onLabelChange: (value: string) => void;
   onCommitTextEdits: () => void;
 }) {
+  const showModelPill = node.kind === "model" && secondaryLabel.trim().length > 0;
+
   return (
     <div className={styles.titleRail} data-node-drag-handle="true">
       <div className={styles.titleRailCopy}>
@@ -189,7 +200,15 @@ function NodeTitleRail({
         ) : (
           <span className={styles.titleLabel}>{node.label}</span>
         )}
-        <span className={styles.titleMeta}>{secondaryLabel}</span>
+        {showModelPill ? (
+          <span className={styles.titleMetaPillRail}>
+            <span className={styles.titleMetaPill}>
+              <span className={styles.titleMetaPillText}>{secondaryLabel}</span>
+            </span>
+          </span>
+        ) : (
+          <span className={styles.titleMeta}>{secondaryLabel}</span>
+        )}
       </div>
     </div>
   );
@@ -203,16 +222,43 @@ function DragPill() {
   );
 }
 
-function NodeTopUtilities({
-  children,
-}: {
-  children?: ReactNode;
-}) {
+function NodeTopUtilities({ children }: { children?: ReactNode }) {
   if (!children) {
     return null;
   }
 
-  return <div className={styles.topUtilities}>{children}</div>;
+  return <>{children}</>;
+}
+
+function NodeUtilityPillRail({
+  descriptors,
+  handlers,
+}: {
+  descriptors: CanvasNodeActionDescriptor[];
+  handlers: NodeActionHandlerMap;
+}) {
+  if (descriptors.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className={styles.utilityPillRail}>
+      {descriptors.map((descriptor) => (
+        <button
+          key={descriptor.id}
+          type="button"
+          className={styles.utilityPillButton}
+          disabled={descriptor.disabled}
+          onPointerDown={stopPointer}
+          onClick={() => {
+            handlers[descriptor.id]?.();
+          }}
+        >
+          {descriptor.label}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 function NodeActionRail({
@@ -286,6 +332,7 @@ function NodeFrame({
   actionDescriptors,
   actionHandlers,
   hideTitleRail = false,
+  leftUtility,
   topUtility,
   footerCaption,
   footerAlign = "center",
@@ -300,6 +347,7 @@ function NodeFrame({
   actionDescriptors: ReturnType<typeof getCanvasNodeActionDescriptors>;
   actionHandlers: NodeActionHandlerMap;
   hideTitleRail?: boolean;
+  leftUtility?: ReactNode;
   topUtility?: ReactNode;
   footerCaption?: ReactNode;
   footerAlign?: NodeFooterAlign;
@@ -310,12 +358,14 @@ function NodeFrame({
 }) {
   const showTitleRail = node.presentation.showTitleRail && !hideTitleRail;
   const showDragPill = node.presentation.useRailDragHandle;
+  const leftUtilities = leftUtility ? <NodeTopUtilities>{leftUtility}</NodeTopUtilities> : null;
   const topUtilities = (topUtility || showDragPill) ? (
-    <>
+    <NodeTopUtilities>
       {topUtility}
       {showDragPill ? <DragPill /> : null}
-    </>
+    </NodeTopUtilities>
   ) : null;
+  const showTopBar = node.presentation.showTitleRail;
 
   return (
     <div
@@ -325,16 +375,23 @@ function NodeFrame({
       data-active={node.presentation.isExpanded ? "true" : "false"}
       data-editing={node.presentation.isEditing ? "true" : "false"}
     >
-      {showTitleRail ? (
-        <NodeTitleRail
-          node={node}
-          activeEditor={activeEditor}
-          secondaryLabel={titleLabel}
-          onLabelChange={onLabelChange}
-          onCommitTextEdits={onCommitTextEdits}
-        />
+      {showTopBar ? (
+        <div className={styles.topBar}>
+          <div className={cx(styles.topBarSection, styles.topBarSectionStart)}>{leftUtilities}</div>
+          <div className={cx(styles.topBarSection, styles.topBarSectionCenter)}>
+            {showTitleRail ? (
+              <NodeTitleRail
+                node={node}
+                activeEditor={activeEditor}
+                secondaryLabel={titleLabel}
+                onLabelChange={onLabelChange}
+                onCommitTextEdits={onCommitTextEdits}
+              />
+            ) : null}
+          </div>
+          <div className={cx(styles.topBarSection, styles.topBarSectionEnd)}>{topUtilities}</div>
+        </div>
       ) : null}
-      <NodeTopUtilities>{topUtilities}</NodeTopUtilities>
       {children ? <div className={styles.nodeViewport}>{children}</div> : null}
       <NodeFooterRail
         caption={footerCaption}
@@ -832,76 +889,78 @@ function ModelEditorBody({
   }
 
   const selectedVariantId = `model:${activeEditor.selectedNode.providerId}:${activeEditor.selectedNode.modelId}`;
-  const summaryLines = [
+  const promptSurface = getModelPromptSurfaceState({
+    prompt: activeEditor.selectedNode.prompt,
+    promptSourceNode: activeEditor.selectedPromptSourceNode,
+  });
+  const statusSummary =
+    activeEditor.selectedNodeRunPreview?.disabledReason ||
     activeEditor.selectedNodeRunPreview?.readyMessage ||
-      activeEditor.selectedNodeRunPreview?.disabledReason ||
-      "Not ready yet",
-    activeEditor.selectedNodeRunPreview?.endpoint || "No endpoint",
-    `Target: ${node.outputType}`,
-  ];
+    "Not ready yet";
+  const hasConnectedInputs =
+    activeEditor.selectedInputNodes.length > 0 || Boolean(activeEditor.selectedPromptSourceNode);
+  const visibleParameters = [...activeEditor.selectedCoreParameters, ...activeEditor.selectedAdvancedParameters];
 
   return (
     <div className={styles.modelShell}>
       <div className={styles.modelGrid}>
-        <section className={styles.modelPanel}>
-          <div className={styles.panelHeader}>
-            <strong>Inputs</strong>
-          </div>
-          <div className={styles.previewStack}>
-            {activeEditor.selectedInputNodes.length > 0 ? (
-              activeEditor.selectedInputNodes.map((inputNode) => (
-                <span key={inputNode.id}>{inputNode.label}</span>
-              ))
-            ) : (
-              <span>No connected inputs</span>
-            )}
-            {activeEditor.selectedPromptSourceNode ? (
-              <span>{`Prompt source: ${activeEditor.selectedPromptSourceNode.label}`}</span>
+        <section className={cx(styles.modelPanel, styles.modelPromptPanel)}>
+          <div className={cx(styles.panelHeader, hasConnectedInputs && styles.panelHeaderWithAction)}>
+            {hasConnectedInputs ? <span className={styles.panelHeaderSpacer} aria-hidden="true" /> : null}
+            <strong className={cx(styles.panelTitle, promptSurface.isConnectedPreview && styles.panelHeaderAccent)}>
+              {promptSurface.title}
+            </strong>
+            {hasConnectedInputs ? (
+              <button
+                type="button"
+                className={styles.panelClearButton}
+                onPointerDown={stopPointer}
+                onClick={onClearInputs}
+              >
+                Clear inputs
+              </button>
             ) : null}
           </div>
-          <button
-            type="button"
-            className={styles.subtleButton}
-            onPointerDown={stopPointer}
-            onClick={onClearInputs}
-          >
-            Clear inputs
-          </button>
-        </section>
-
-        <section className={cx(styles.modelPanel, styles.modelPromptPanel)}>
-          <div className={styles.panelHeader}>
-            <strong>Prompt</strong>
-          </div>
-          <textarea
-            className={styles.modelPrompt}
-            value={activeEditor.selectedNode.prompt}
-            onChange={(event) => onPromptChange(event.target.value)}
-            onBlur={onCommitTextEdits}
-            onPointerDown={stopPointer}
-            placeholder="Describe what to generate"
-          />
+          {promptSurface.readOnly ? (
+            <div
+              className={cx(
+                styles.modelPrompt,
+                styles.modelPromptReadOnly,
+                styles.modelPromptConnected,
+                !promptSurface.value.trim() && styles.modelPromptPlaceholder
+              )}
+            >
+              {promptSurface.value.trim() || promptSurface.placeholder}
+            </div>
+          ) : (
+            <textarea
+              className={styles.modelPrompt}
+              value={activeEditor.selectedNode.prompt}
+              onChange={(event) => onPromptChange(event.target.value)}
+              onBlur={onCommitTextEdits}
+              onPointerDown={stopPointer}
+              placeholder={promptSurface.placeholder}
+            />
+          )}
         </section>
 
         <section className={styles.modelPanel}>
-          <div className={styles.panelHeader}>
-            <strong>Model</strong>
+          <div className={cx(styles.panelHeader, styles.panelHeaderCentered)}>
+            <strong className={styles.panelTitle}>Model Settings</strong>
           </div>
-          <label className={styles.fieldLabel}>
-            <span>Variant</span>
-            <SearchableModelSelect
-              value={selectedVariantId}
-              options={activeEditor.modelCatalogVariants}
-              surface="canvas-overlay"
-              density="compact"
-              dismissKey={pickerDismissKey}
-              onChange={(variant) => onModelVariantChange(variant.id)}
-            />
-          </label>
+          <SearchableModelSelect
+            value={selectedVariantId}
+            options={activeEditor.modelCatalogVariants}
+            surface="canvas-overlay"
+            density="compact"
+            triggerTone="model-node"
+            dismissKey={pickerDismissKey}
+            onChange={(variant) => onModelVariantChange(variant.id)}
+          />
           <div className={styles.parameterGrid}>
-            {[...activeEditor.selectedCoreParameters, ...activeEditor.selectedAdvancedParameters].map((parameter) => (
+            {visibleParameters.map((parameter) => (
               <label key={parameter.key} className={styles.fieldLabel}>
-                <span>{parameter.label}</span>
+                <span className={styles.fieldLabelText}>{parameter.label}</span>
                 {renderParameterField(
                   parameter,
                   activeEditor.selectedNodeResolvedSettings[parameter.key],
@@ -909,17 +968,6 @@ function ModelEditorBody({
                   onCommitTextEdits
                 )}
               </label>
-            ))}
-          </div>
-        </section>
-
-        <section className={styles.modelPanel}>
-          <div className={styles.panelHeader}>
-            <strong>Output</strong>
-          </div>
-          <div className={styles.previewStack}>
-            {summaryLines.map((line) => (
-              <span key={line}>{line}</span>
             ))}
           </div>
         </section>
@@ -947,6 +995,7 @@ export function CanvasNodeContent({
   onAddListRow,
   onRemoveListRow,
   onClearInputs,
+  onDuplicateNode,
   onOpenAssetViewer,
   onDownloadAssets,
   onOpenQueueInspect,
@@ -1023,7 +1072,25 @@ export function CanvasNodeContent({
         onOpenQueueInspect(editor.selectedNodeSourceJobId);
       }
     },
+    duplicate: () => {
+      onDuplicateNode();
+    },
   };
+
+  const utilityActionDescriptors =
+    node.kind === "model"
+      ? actionDescriptors.filter((descriptor) => descriptor.id === "compact" || descriptor.id === "default")
+      : [];
+  const footerActionDescriptors =
+    node.kind === "model"
+      ? ([
+          {
+            id: "duplicate",
+            label: "Duplicate",
+            tone: "neutral",
+          } satisfies CanvasNodeActionDescriptor,
+        ] as CanvasNodeActionDescriptor[])
+      : actionDescriptors;
 
   const topUtility =
     isImageAssetNode && node.processingState ? (
@@ -1048,8 +1115,9 @@ export function CanvasNodeContent({
       node={node}
       activeEditor={editor}
       titleLabel={secondaryLabel}
-      actionDescriptors={actionDescriptors}
+      actionDescriptors={footerActionDescriptors}
       actionHandlers={actionHandlers}
+      leftUtility={utilityActionDescriptors.length > 0 ? <NodeUtilityPillRail descriptors={utilityActionDescriptors} handlers={actionHandlers} /> : null}
       topUtility={topUtility}
       footerCaption={footerCaption}
       footerAlign={isImageAssetNode ? "start" : "center"}

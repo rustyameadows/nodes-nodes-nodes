@@ -638,15 +638,18 @@ export function NodePlaygroundCanvas({
 
     const availableWidth = Math.max(200, bounds.width - 160);
     const availableHeight = Math.max(160, bounds.height - 128);
+    const nodeElement = surfaceElement.querySelector<HTMLElement>(`[data-node-id="${node.id}"]`);
+    const focusWidth = nodeElement?.offsetWidth || node.resolvedSize.width;
+    const focusHeight = nodeElement?.offsetHeight || node.resolvedSize.height;
     const fitZoom = Math.min(
-      availableWidth / node.resolvedSize.width,
-      availableHeight / node.resolvedSize.height
+      availableWidth / focusWidth,
+      availableHeight / focusHeight
     );
     const zoom = Math.min(1.5, Math.max(0.8, fitZoom));
     updateViewport({
       zoom,
-      x: bounds.width / 2 - (node.x + node.resolvedSize.width / 2) * zoom,
-      y: bounds.height / 2 - (node.y + node.resolvedSize.height / 2) * zoom,
+      x: bounds.width / 2 - (node.x + focusWidth / 2) * zoom,
+      y: bounds.height / 2 - (node.y + focusHeight / 2) * zoom,
     });
   }, [canvasNodes, updateViewport]);
 
@@ -780,6 +783,34 @@ export function NodePlaygroundCanvas({
             upstreamAssetIds: buildAssetRefsFromNodes([], allNodes),
           }))
         }
+        onDuplicateNode={() => {
+          const targetNode = nodesById[node.id];
+          if (!targetNode) {
+            return;
+          }
+
+          const duplicateId = `playground-copy-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+          setCanvasDoc((current) => ({
+            ...current,
+            workflow: {
+              nodes: [
+                ...current.workflow.nodes,
+                {
+                  ...targetNode,
+                  id: duplicateId,
+                  label: targetNode.label.endsWith(" Copy") ? targetNode.label : `${targetNode.label} Copy`,
+                  settings: JSON.parse(JSON.stringify(targetNode.settings || {})) as WorkflowNode["settings"],
+                  upstreamNodeIds: [...targetNode.upstreamNodeIds],
+                  upstreamAssetIds: [...targetNode.upstreamAssetIds],
+                  x: Math.round(targetNode.x + 44),
+                  y: Math.round(targetNode.y + 36),
+                },
+              ],
+            },
+          }));
+          setSelectedNodeIds([duplicateId]);
+          setSelectedConnection(null);
+        }}
         onEnterEditMode={() => enterNodeEditMode(node.id)}
         onExitEditMode={() => {
           if (activeFullNodeId === node.id) {

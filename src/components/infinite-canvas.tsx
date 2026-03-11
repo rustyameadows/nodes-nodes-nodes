@@ -137,6 +137,10 @@ function getOutputPortPoint(node: CanvasRenderNode, size: { width: number; heigh
   };
 }
 
+function usesContentHeight(node: CanvasRenderNode) {
+  return node.kind === "model" && (node.renderMode === "full" || node.renderMode === "resized");
+}
+
 function curvePath(startX: number, startY: number, endX: number, endY: number) {
   const controlOffset = Math.max(48, Math.abs(endX - startX) * 0.46);
   return `M ${startX} ${startY} C ${startX + controlOffset} ${startY}, ${endX - controlOffset} ${endY}, ${endX} ${endY}`;
@@ -499,16 +503,28 @@ export function InfiniteCanvas({
   const getNodeSize = useCallback(
     (nodeId: string) => {
       const resized = resizeDraftSizes?.[nodeId];
+      const node = nodesById[nodeId];
+      const measured = nodeSizes[nodeId];
       if (resized) {
+        if (node && usesContentHeight(node)) {
+          return {
+            width: resized.width,
+            height: measured?.height || node.resolvedSize.height,
+          };
+        }
         return resized;
       }
 
-      const node = nodesById[nodeId];
       if (node) {
+        if (usesContentHeight(node) && measured) {
+          return {
+            width: node.resolvedSize.width,
+            height: measured.height,
+          };
+        }
         return node.resolvedSize;
       }
 
-      const measured = nodeSizes[nodeId];
       if (measured) {
         return measured;
       }
@@ -1508,11 +1524,12 @@ export function InfiniteCanvas({
             node.kind,
             node.assetOrigin
           );
+          const autoHeight = usesContentHeight(node);
           const nodeStyle: CSSProperties = {
             left: `${node.x}px`,
             top: `${node.y}px`,
             width: `${getNodeSize(node.id).width}px`,
-            height: `${getNodeSize(node.id).height}px`,
+            height: autoHeight ? undefined : `${getNodeSize(node.id).height}px`,
             "--node-output-accent": outputColor,
             "--node-border-gradient": generatedBorderGradient,
             "--model-border-top": modelBorderLayers.top,

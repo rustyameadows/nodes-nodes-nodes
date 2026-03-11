@@ -200,6 +200,17 @@
 .nodeFullMode.nodeModel,
 .nodeResizedMode.nodeModel {
   max-width: none;
+  min-height: 0;
+  height: auto;
+}
+
+.nodeFullMode.nodeModel .nodeChrome,
+.nodeResizedMode.nodeModel .nodeChrome,
+.nodeFullMode.nodeModel .nodeViewport,
+.nodeResizedMode.nodeModel .nodeViewport,
+.nodeFullMode.nodeModel .modelShell,
+.nodeResizedMode.nodeModel .modelShell {
+  height: auto;
 }
 
 .assetNodeLayout {
@@ -341,28 +352,25 @@
 }
 
 .titleRail {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: calc(-1 * var(--node-rail-offset));
+  display: flex;
+  width: 100%;
   min-height: 28px;
+  align-items: flex-start;
+  justify-content: center;
   pointer-events: auto;
   cursor: grab;
 }
 
 .titleRailCopy {
-  position: absolute;
-  left: 50%;
-  top: 0;
-  transform: translateX(-50%);
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
   align-items: center;
   text-align: center;
+  justify-content: center;
   min-width: 0;
   width: max-content;
-  max-width: calc(100% - 112px);
+  max-width: 868px;
 }
 
 .titleLabel,
@@ -372,54 +380,142 @@
   border: 0;
   background: transparent;
   color: var(--node-surface-paper-raised);
-  font-size: var(--ds-font-size-sm);
-  font-weight: 700;
-  line-height: 1.1;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 110%;
+  font-family: system-ui, sans-serif;
   text-align: center;
-  text-shadow: 0 1px 3px color-mix(in srgb, var(--node-surface-ink) 60%, transparent);
+  text-shadow: none;
   outline: none;
 }
 
 .titleMeta {
   min-width: 0;
   color: color-mix(in srgb, var(--node-surface-paper-raised) 78%, transparent);
-  font-size: var(--ds-font-size-xs);
+  font-size: 11px;
+  line-height: 100%;
+  font-weight: 400;
+  font-family: system-ui, sans-serif;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+  text-align: center;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.topUtilities {
-  position: absolute;
-  top: calc(-1 * var(--node-rail-offset));
-  right: 0;
-  display: inline-flex;
+.titleMetaPill {
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: flex-end;
-  gap: var(--ds-space-2);
-  min-height: 28px;
+  justify-content: center;
+  gap: 0;
+  min-width: 0;
+  width: fit-content;
+  height: fit-content;
+  max-width: 100%;
+  padding: 4px 8px 3px;
+  background: #d8ff3e;
+  color: var(--node-surface-ink);
+  flex-shrink: 0;
+}
+
+.titleMetaPillRail {
+  display: flex;
+  width: 100%;
+  height: fit-content;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.titleMetaPillText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: inherit;
+  font-family: ui-monospace, "SFMono-Regular", "SF Mono", "Menlo", "Consolas", "Liberation Mono", monospace;
+  font-size: 8px;
+  font-weight: 400;
+  line-height: 100%;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  text-align: center;
+}
+
+.topBar {
+  position: absolute;
+  top: calc(-1 * (var(--node-rail-offset) + 12px));
+  left: 0;
+  width: 100%;
+  height: fit-content;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-start;
+  padding-bottom: 12px;
   pointer-events: auto;
   z-index: 3;
 }
 
-.dragPill {
+.topBarSection {
+  display: flex;
+  align-items: center;
+  min-height: 28px;
+  width: 30%;
+}
+
+.topBarSectionStart {
+  align-items: flex-end;
+  justify-content: flex-start;
+  gap: 8px;
+}
+
+.topBarSectionCenter {
+  width: 100%;
+  align-items: flex-start;
+  justify-content: center;
+}
+
+.topBarSectionEnd {
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.utilityPillRail {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dragPill,
+.utilityPillButton {
+  appearance: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   min-height: 20px;
   padding: 4px 9px;
-  border-radius: var(--ds-radius-round);
-  border: 1px solid color-mix(in srgb, var(--node-surface-paper-raised) 24%, transparent);
-  background: color-mix(in srgb, var(--node-surface-ink) 48%, transparent);
-  color: var(--node-surface-paper-raised);
+  border-radius: 999px;
+  border: 1px solid #ffffff3d;
+  background: #0000007a;
+  color: #fffffff0;
   font-size: 10px;
-  font-weight: 700;
+  font-weight: 400;
+  line-height: 12px;
+  font-family: system-ui, sans-serif;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  box-shadow: var(--node-shadow-rail);
+  box-shadow: none;
+}
+
+.dragPill {
   cursor: grab;
+}
+
+.utilityPillButton {
+  cursor: pointer;
 }
 
 .footerRail {
@@ -475,7 +571,7 @@
   background: color-mix(in srgb, var(--node-surface-paper-raised) 94%, transparent);
   color: var(--node-surface-ink);
   font: inherit;
-  box-shadow: var(--node-shadow-rail);
+  box-shadow: none;
 }
 
 .actionButton,
@@ -484,8 +580,18 @@
 .listUtilityButton {
   padding: 7px 11px;
   font-size: var(--ds-font-size-xs);
-  font-weight: 700;
   white-space: nowrap;
+}
+
+.actionButton {
+  font-weight: 400;
+  font-family: system-ui, sans-serif;
+}
+
+.subtleButton,
+.templateVariableButton,
+.listUtilityButton {
+  font-weight: 700;
 }
 
 .actionButtonAccent {
@@ -858,53 +964,127 @@
   width: 100%;
   height: 100%;
   min-height: 0;
-  overflow: auto;
+  overflow: hidden;
+  container: model-shell / inline-size;
+  font-family: system-ui, sans-serif;
 }
 
 .modelGrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: var(--ds-space-3);
-  padding: var(--ds-space-3);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 12px;
+  align-items: stretch;
 }
 
 .modelPanel {
   display: flex;
   flex-direction: column;
-  gap: var(--ds-space-3);
+  flex: 1 1 0;
+  gap: 12px;
+  min-width: 0;
   min-height: 0;
-  padding: var(--ds-space-3);
-  border: 1px solid var(--node-border-soft);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--node-surface-paper-raised) 98%, transparent), color-mix(in srgb, var(--node-surface-paper) 98%, transparent));
+  padding: 12px;
+  border: 1px solid #0000001f;
+  background: linear-gradient(180deg, rgb(255 255 255 / 98%) 0%, rgb(255 255 255 / 98.4%) 100%);
+  container: model-panel / inline-size;
 }
 
 .modelPromptPanel {
-  min-height: 260px;
-  grid-column: span 2;
+  min-width: min(100%, 320px);
 }
 
-.panelHeader strong,
-.fieldLabel span:first-child {
+.panelHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.panelHeaderWithAction {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+}
+
+.panelHeaderCentered {
+  justify-content: center;
+}
+
+.panelHeaderSpacer {
+  min-width: 0;
+}
+
+.panelTitle {
   color: var(--node-surface-ink);
-  font-size: var(--ds-font-size-xs);
-  font-weight: 700;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 11px;
+  font-family: system-ui, sans-serif;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+  text-align: center;
+}
+
+.panelHeaderAccent {
+  color: color-mix(in srgb, var(--node-accent-text) 78%, var(--node-surface-ink) 22%) !important;
+}
+
+.panelClearButton {
+  justify-self: end;
+  border: 1px solid #0000001f;
+  border-radius: 0;
+  background: #fffffff0;
+  color: var(--node-surface-ink);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 15px;
+  font-family: system-ui, sans-serif;
+  padding: 7px 11px;
+  box-shadow: none;
+  white-space: nowrap;
 }
 
 .fieldLabel {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  min-width: 0;
+}
+
+.fieldLabelText {
+  color: var(--node-surface-ink);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 11px;
+  font-family: system-ui, sans-serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-align: left;
 }
 
 .fieldControl {
-  border: 1px solid var(--node-border-soft);
-  background: color-mix(in srgb, var(--node-surface-paper-raised) 94%, transparent);
+  border: 1px solid #0000001f;
+  background: #fffffff0;
   padding: 8px 10px;
   color: var(--node-surface-ink);
-  font-size: var(--ds-font-size-sm);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 16px;
+  font-family: system-ui, sans-serif;
+}
+
+.fieldControl[data-control="select"] {
+  appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, #00000080 50%),
+    linear-gradient(135deg, #00000080 50%, transparent 50%);
+  background-position:
+    calc(100% - 18px) calc(50% - 2px),
+    calc(100% - 12px) calc(50% - 2px);
+  background-repeat: no-repeat;
+  background-size: 6px 6px;
+  padding-right: 34px;
 }
 
 .fieldControlTextarea {
@@ -913,23 +1093,49 @@
 
 .parameterGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: var(--ds-space-3);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
 }
 
 .modelPrompt {
   flex: 1 1 auto;
-  min-height: 220px;
+  min-height: 0;
   resize: none;
   padding: 12px 14px;
-  border: 1px solid var(--node-border-soft);
-  background: color-mix(in srgb, var(--node-surface-paper-raised) 96%, transparent);
-  font-size: 0.82rem;
+  border: 1px solid #0000001f;
+  background: #fffffff0;
+  font-size: 13px;
   line-height: 1.48;
+  overflow: auto;
+  white-space: pre-wrap;
 }
 
-@media (max-width: 760px) {
+.modelPromptReadOnly {
+  color: var(--node-surface-ink);
+}
+
+.modelPromptConnected {
+  border-width: 2px;
+  border-color: color-mix(in srgb, var(--node-accent-text) 88%, transparent);
+  background: color-mix(in srgb, var(--node-accent-text) 18%, var(--node-surface-paper-raised));
+}
+
+.modelPromptPlaceholder {
+  color: var(--node-surface-ink-muted);
+}
+
+@container model-shell (max-width: 640px) {
+  .modelGrid {
+    flex-direction: column;
+  }
+
   .modelPromptPanel {
-    grid-column: span 1;
+    min-width: 0;
+  }
+}
+
+@container model-panel (max-width: 420px) {
+  .parameterGrid {
+    grid-template-columns: 1fr;
   }
 }

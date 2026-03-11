@@ -3884,15 +3884,19 @@ export function CanvasView({ projectId }: Props) {
         return;
       }
 
+      const latestTargetElement = surfaceElement.querySelector<HTMLElement>(`[data-node-id="${latestTargetNode.id}"]`);
+      const focusWidth = latestTargetElement?.offsetWidth || latestTargetNode.resolvedSize.width;
+      const focusHeight = latestTargetElement?.offsetHeight || latestTargetNode.resolvedSize.height;
+
       const availableWidth = Math.max(220, bounds.width - NODE_FOCUS_ZOOM_PADDING_X * 2);
       const availableHeight = Math.max(180, bounds.height - NODE_FOCUS_ZOOM_PADDING_Y * 2);
       const fitZoom = Math.min(
-        availableWidth / latestTargetNode.resolvedSize.width,
-        availableHeight / latestTargetNode.resolvedSize.height
+        availableWidth / focusWidth,
+        availableHeight / focusHeight
       );
       const zoom = Math.min(NODE_FOCUS_MAX_ZOOM, Math.max(NODE_FOCUS_MIN_ZOOM, fitZoom));
-      const x = bounds.width / 2 - (latestTargetNode.x + latestTargetNode.resolvedSize.width / 2) * zoom;
-      const y = bounds.height / 2 - (latestTargetNode.y + latestTargetNode.resolvedSize.height / 2) * zoom;
+      const x = bounds.width / 2 - (latestTargetNode.x + focusWidth / 2) * zoom;
+      const y = bounds.height / 2 - (latestTargetNode.y + focusHeight / 2) * zoom;
 
       animateViewportTo({ x, y, zoom });
       setPendingViewportFocusNodeId((current) => (current === latestTargetNode.id ? null : current));
@@ -4588,6 +4592,7 @@ export function CanvasView({ projectId }: Props) {
         onAddListRow={addSelectedListRow}
         onRemoveListRow={removeSelectedListRow}
         onClearInputs={handleClearSelectedInputs}
+        onDuplicateNode={() => duplicateNode(node.id)}
         onOpenAssetViewer={openAssetViewer}
         onDownloadAssets={downloadAssets}
         onOpenQueueInspect={openQueueInspect}
@@ -4601,6 +4606,7 @@ export function CanvasView({ projectId }: Props) {
       canvasDoc.canvasViewport,
       commitPendingCoalescedHistory,
       downloadAssets,
+      duplicateNode,
       enterNodeEditMode,
       handleClearSelectedInputs,
       handleNodeDisplayModeChange,

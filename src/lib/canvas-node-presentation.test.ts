@@ -26,7 +26,7 @@ test("promotes the active full node into transient full mode without changing pe
   assert.equal(presentation.interactionPolicy, "model");
   assert.equal(presentation.isExpanded, true);
   assert.equal(presentation.showTitleRail, true);
-  assert.deepEqual(presentation.size, { width: 980, height: 420 });
+  assert.deepEqual(presentation.size, { width: 980, height: 385 });
 });
 
 test("keeps compact nodes compact when full mode is not active", () => {

@@ -88,19 +88,25 @@
   - resized nodes keep their custom size when re-opened
 - active-node behavior by kind:
   - image asset: the media surface stays visually pure; preview shows only the image, and active labels return to the shared top title rail while actions stay outside the frame
-  - model: single-select opens the full response-settings layout unless the node is explicitly in `compact`
+  - model: single-select opens a simplified full response-settings layout unless the node is explicitly in `compact`
   - text note: single-select reveals rails but keeps the sticky-note body visually unchanged
   - list: single-select keeps the spreadsheet look and reveals edit affordances in place
   - template: single-select stays in preview; `Edit` or double-click enters the larger editor
 - active nodes use external chrome slots instead of in-card overlays:
   - centered floating title rails for text, list, model, and template nodes
+  - model title rails include a citrus model-chip under the editable node title instead of plain metadata text
   - a top-right utility slot for node-specific controls like `Drag me` and `Add column`
   - footer caption/action stacks outside the node bounds so controls do not shift content
 - uploaded image asset nodes behave as first-class uploaded sources:
   - active title rails use uploaded-source labeling like `Uploaded Asset`, not fallback provider/model labels
   - default sizing and locked-aspect resizing use persisted upload width/height metadata when available
 - active node drag uses rail/hotspot affordances instead of visible drag indicators
-- model full mode is a responsive settings box that can collapse from multi-column to one-column as the node width changes
+- model full and resized modes use a simplified two-panel layout:
+  - left prompt surface, right model-settings surface at larger widths
+  - the outer node shell hugs the rendered panel content height instead of holding an extra fixed-height canvas body
+  - prompt sources connected from text notes swap the prompt editor for a same-size readonly preview of the upstream note text
+  - provider settings flow in two columns when space allows and collapse as the node width tightens
+  - compact/default mode changes move into the top-left utility-pill rail, while the footer rail is reserved for node actions like duplicate
 - list mode is a spreadsheet surface across preview, active, and resized states:
   - editable header row with no separate A/B/C letter strip
   - editable cell grid with tight spreadsheet density

@@ -20,12 +20,17 @@ import { formatModelVariantLabel, type NodeCatalogVariant } from "@/lib/node-cat
 import type { UiDensity, UiSurface } from "@/styles/design-system/contracts";
 import styles from "./searchable-model-select.module.css";
 
+function cx(...parts: Array<string | false | null | undefined>) {
+  return parts.filter(Boolean).join(" ");
+}
+
 type Props = {
   value: string | null;
   options: NodeCatalogVariant[];
   disabled?: boolean;
   surface?: UiSurface;
   density?: UiDensity;
+  triggerTone?: "default" | "model-node";
   dismissKey?: string | number | null;
   onOpenChange?: (open: boolean) => void;
   onChange: (variant: NodeCatalogVariant) => void;
@@ -54,6 +59,7 @@ export function SearchableModelSelect({
   disabled = false,
   surface,
   density,
+  triggerTone = "default",
   dismissKey,
   onOpenChange,
   onChange,
@@ -200,8 +206,8 @@ export function SearchableModelSelect({
         ref={triggerRef}
         surface={resolvedSurface}
         density={resolvedDensity}
-        variant="secondary"
-        className={styles.trigger}
+        variant={triggerTone === "model-node" ? "ghost" : "secondary"}
+        className={cx(styles.trigger, triggerTone === "model-node" && styles.triggerModelNode)}
         disabled={disabled}
         aria-haspopup="listbox"
         aria-expanded={open}
@@ -211,11 +217,13 @@ export function SearchableModelSelect({
           setOpen((current) => !current);
         }}
       >
-        <span className={styles.triggerLabel}>
+        <span className={cx(styles.triggerLabel, triggerTone === "model-node" && styles.triggerLabelModelNode)}>
           <strong>{selectedVariant ? formatModelVariantLabel(selectedVariant) : "Select a model"}</strong>
           <span>{selectedVariant ? `${selectedVariant.modelId} · ${selectedVariant.availabilityLabel}` : "No model available"}</span>
         </span>
-        <span className={styles.triggerCaret}>{open ? "▴" : "▾"}</span>
+        <span className={cx(styles.triggerCaret, triggerTone === "model-node" && styles.triggerCaretModelNode)}>
+          {open ? "▴" : "▾"}
+        </span>
       </Button>
 
       <AnchoredOverlay

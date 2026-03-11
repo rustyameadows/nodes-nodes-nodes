@@ -11,6 +11,33 @@
   padding-inline: var(--ds-space-4);
 }
 
+.triggerModelNode {
+  min-height: 38px;
+  border-radius: 0;
+  border: 1px solid #ffffff24;
+  outline: 1px solid #8da62e;
+  outline-offset: 0;
+  background: #d8ff3e !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  padding: 10px 12px;
+  font-family: system-ui, sans-serif;
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+
+.triggerModelNode:hover:not(:disabled),
+.triggerModelNode:active:not(:disabled) {
+  transform: none;
+  border-color: #ffffff24;
+  background: #d8ff3e;
+}
+
+.triggerModelNode:focus-visible {
+  box-shadow: none !important;
+}
+
 .triggerLabel {
   display: flex;
   flex-direction: column;
@@ -34,6 +61,34 @@
 .triggerCaret {
   font-size: 0.72rem;
   color: var(--ds-text-muted);
+}
+
+.triggerLabelModelNode {
+  gap: 4px;
+}
+
+.triggerLabelModelNode strong {
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 16px;
+  color: #000000;
+  font-family: system-ui, sans-serif;
+}
+
+.triggerLabelModelNode span {
+  font-size: 10px;
+  font-weight: 400;
+  line-height: 12px;
+  color: #000000;
+  font-family: system-ui, sans-serif;
+}
+
+.triggerCaretModelNode {
+  font-size: 30px;
+  line-height: 32px;
+  color: #8da62e;
+  font-family: system-ui, sans-serif;
+  font-weight: 400;
 }
 
 .overlay {
