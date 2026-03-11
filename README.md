@@ -1,7 +1,7 @@
 # Nodes Nodes Nodes
 
 <p align="center">
-  <img src="./docs/readme-hero.png" alt="Nodes Nodes Nodes canvas workspace on a pink background" width="1200" />
+  <img src="./docs/readme-hero-list.png" alt="Nodes Nodes Nodes canvas workspace on a pink background" width="1200" />
 </p>
 
 Local-first desktop app for node-based media workflows.
