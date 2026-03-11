@@ -902,10 +902,6 @@ function ModelEditorBody({
     prompt: activeEditor.selectedNode.prompt,
     promptSourceNode: activeEditor.selectedPromptSourceNode,
   });
-  const statusSummary =
-    activeEditor.selectedNodeRunPreview?.disabledReason ||
-    activeEditor.selectedNodeRunPreview?.readyMessage ||
-    "Not ready yet";
   const hasConnectedInputs =
     activeEditor.selectedInputNodes.length > 0 || Boolean(activeEditor.selectedPromptSourceNode);
   const visibleParameters = [...activeEditor.selectedCoreParameters, ...activeEditor.selectedAdvancedParameters];

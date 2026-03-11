@@ -134,10 +134,10 @@
 - multi-selection compare/download actions live in a floating selection strip near the current selection instead of the old bottom bar
 - the selection strip, copilot pill/panel, insert picker, asset picker, and bottom-bar popovers may be restyled as overlay chrome without changing node or connection rendering
 - the canvas also includes a bottom-right copilot surface:
-  - collapsed as a small fixed `Copilot` pill with the current text model label
+  - collapsed as a small fixed `NODE BOT` pill
   - expands into a session-only chat panel that grows upward/left from the pill
   - uses only runnable text-capable provider models
-  - keeps the composer focusable even when the selected model is blocked, and surfaces an explicit status notice explaining why `Send` is disabled
+  - keeps the composer focusable even when the selected model is blocked, and surfaces the runnable/blocked state inline near the composer footer and `Send` control instead of a dedicated status module under the model picker
   - supports one active copilot turn at a time
   - clears transcript history when the project canvas session reloads
 - canvas keyboard shortcuts when focus is not inside an input, textarea, select, or contenteditable surface:

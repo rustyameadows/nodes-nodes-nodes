@@ -1,10 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
-import { Badge, Button, Panel, Textarea } from "@/components/ui";
+import { useEffect, useRef } from "react";
 import { SearchableModelSelect } from "@/components/searchable-model-select";
 import type { CanvasCopilotMessage } from "@/lib/canvas-copilot";
-import { formatModelVariantLabel, type NodeCatalogVariant } from "@/lib/node-catalog";
+import type { NodeCatalogVariant } from "@/lib/node-catalog";
 import styles from "./canvas-copilot-widget.module.css";
 
 type Props = {
@@ -38,12 +37,9 @@ export function CanvasCopilotWidget({
 }: Props) {
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const transcriptRef = useRef<HTMLDivElement | null>(null);
-
-  const selectedVariant = useMemo(
-    () => modelOptions.find((option) => option.id === modelVariantId) || modelOptions[0] || null,
-    [modelOptions, modelVariantId]
-  );
   const statusTone = disabledReason ? "blocked" : readyMessage ? "ready" : "neutral";
+  const footerMessage =
+    disabledReason || readyMessage || "Select a runnable text model to enable Send.";
 
   useEffect(() => {
     if (!open) {
@@ -75,18 +71,13 @@ export function CanvasCopilotWidget({
         onFocus={() => onOpenChange(true)}
         onClick={() => onOpenChange(true)}
       >
-        <span className={styles.pillLabel}>Copilot</span>
-        <span className={styles.pillModel}>{selectedVariant ? formatModelVariantLabel(selectedVariant) : "No text model"}</span>
+        <span className={styles.pillLabel}>Node Bot</span>
       </button>
     );
   }
 
   return (
-    <Panel
-      as="aside"
-      surface="canvas-overlay"
-      density="compact"
-      variant="elevated"
+    <aside
       className={styles.panel}
       onKeyDown={(event) => {
         if (event.key === "Escape") {
@@ -95,22 +86,15 @@ export function CanvasCopilotWidget({
       }}
     >
       <div className={styles.header}>
-        <div className={styles.headerCopy}>
-          <span className={styles.eyebrow}>Canvas Copilot</span>
-          <strong>Generate notes, lists, and templates</strong>
-        </div>
+        <span className={styles.eyebrow}>Canvas Copilot</span>
         <div className={styles.headerActions}>
-          {isRunning ? <Badge surface="canvas-overlay" density="compact" variant="accent">Running</Badge> : null}
-          <Button
-            surface="canvas-overlay"
-            density="compact"
-            variant="ghost"
-            size="sm"
-            className={styles.collapseButton}
+          <button
+            type="button"
+            className={styles.minimizeButton}
             onClick={() => onOpenChange(false)}
           >
             Minimize
-          </Button>
+          </button>
         </div>
       </div>
 
@@ -118,7 +102,8 @@ export function CanvasCopilotWidget({
         <SearchableModelSelect
           surface="canvas-overlay"
           density="compact"
-          value={selectedVariant?.id || null}
+          triggerTone="model-node"
+          value={modelVariantId}
           options={modelOptions}
           disabled={modelOptions.length === 0 || isRunning}
           onChange={(variant) => {
@@ -127,61 +112,39 @@ export function CanvasCopilotWidget({
         />
       </div>
 
-      <div
-        className={`${styles.statusNotice} ${
-          statusTone === "blocked"
-            ? styles.statusNoticeBlocked
-            : statusTone === "ready"
-              ? styles.statusNoticeReady
-              : styles.statusNoticeNeutral
-        }`}
-      >
-        <strong className={styles.statusTitle}>
-          {disabledReason ? "Not runnable yet" : readyMessage ? "Ready to run" : "Choose a text model"}
-        </strong>
-        <span className={styles.statusText}>
-          {disabledReason ||
-            readyMessage ||
-            "Pick a text-capable model to generate notes, lists, and templates onto the canvas."}
-        </span>
-      </div>
-
       <div ref={transcriptRef} className={styles.transcript}>
-        {messages.length === 0 ? (
-          <div className={styles.emptyState}>
-            <strong>Start with a prompt.</strong>
-            <span>Ask for a note, a list, a template, or a small structured set of nodes to drop onto the canvas.</span>
-          </div>
-        ) : (
-          messages.map((message) => (
-            <div
-              key={message.id}
-              className={`${styles.message} ${message.role === "user" ? styles.messageUser : styles.messageSystem}`}
-            >
-              <span className={styles.messageMeta}>{message.role === "user" ? "You" : "Copilot"}</span>
+        {messages.length > 0
+          ? (
+            messages.map((message) => (
               <div
-                className={`${styles.messageBody} ${
-                  message.state === "error"
-                    ? styles.messageError
-                    : message.state === "success"
-                      ? styles.messageSuccess
-                      : message.state === "pending"
-                        ? styles.messagePending
-                        : ""
-                }`}
+                key={message.id}
+                className={`${styles.message} ${message.role === "user" ? styles.messageUser : styles.messageSystem}`}
               >
-                {message.text}
+                <span className={styles.messageMeta}>{message.role === "user" ? "You" : "Node Bot"}</span>
+                <div
+                  className={`${styles.messageBody} ${
+                    message.role === "user" ? styles.messageUserBody : styles.messageSystemBody
+                  } ${
+                    message.state === "error"
+                      ? styles.messageError
+                      : message.state === "success"
+                        ? styles.messageSuccess
+                        : message.state === "pending"
+                          ? styles.messagePending
+                          : ""
+                  }`}
+                >
+                  {message.text}
+                </div>
               </div>
-            </div>
-          ))
-        )}
+            ))
+          )
+          : null}
       </div>
 
       <div className={styles.composer}>
-        <Textarea
+        <textarea
           ref={composerRef}
-          surface="canvas-overlay"
-          density="compact"
           className={styles.input}
           rows={5}
           value={draft}
@@ -195,22 +158,29 @@ export function CanvasCopilotWidget({
             }
           }}
         />
-        <div className={styles.composerFooter}>
-          <span className={styles.composerHint}>
-            {disabledReason ? "You can still type here. Fix the model requirement above, then send." : readyMessage || "Shift+Enter for a newline."}
-          </span>
-          <Button
-            surface="canvas-overlay"
-            density="compact"
-            variant="accent"
-            size="sm"
-            disabled={isRunning || Boolean(disabledReason) || draft.trim().length === 0}
-            onClick={onSubmit}
-          >
-            Send
-          </Button>
-        </div>
       </div>
-    </Panel>
+
+      <div className={styles.composerFooter}>
+        <div
+          className={`${styles.footerStatus} ${
+            statusTone === "blocked"
+              ? styles.footerStatusBlocked
+              : statusTone === "ready"
+                ? styles.footerStatusReady
+                : styles.footerStatusNeutral
+          }`}
+        >
+          {footerMessage}
+        </div>
+        <button
+          type="button"
+          className={styles.sendButton}
+          disabled={isRunning || Boolean(disabledReason) || draft.trim().length === 0}
+          onClick={onSubmit}
+        >
+          Send
+        </button>
+      </div>
+    </aside>
   );
 }
