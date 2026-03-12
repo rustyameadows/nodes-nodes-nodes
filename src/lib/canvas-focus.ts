@@ -25,6 +25,20 @@ export type CanvasFocusViewport = {
   zoom: number;
 };
 
+export type CanvasFocusRequestAnchor = "available-center" | "camera-only";
+
+export type CanvasFocusRequest = {
+  nodeIds: string[];
+  predictedBoundsById?: Record<string, CanvasFocusBounds>;
+  anchor?: CanvasFocusRequestAnchor;
+  safeInsets?: Partial<CanvasFocusSafeInsets>;
+  modeChange?: {
+    nodeId: string;
+    predictedSize: WorkflowNodeSize;
+    targetCenter?: { x: number; y: number };
+  };
+};
+
 export const DEFAULT_CANVAS_FOCUS_ZOOM_LIMITS: CanvasFocusZoomLimits = {
   min: 0.35,
   max: 2.4,
@@ -32,6 +46,51 @@ export const DEFAULT_CANVAS_FOCUS_ZOOM_LIMITS: CanvasFocusZoomLimits = {
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
+}
+
+export function buildCanvasFocusAvailableRect(
+  surfaceSize: { width: number; height: number },
+  safeInsets?: Partial<CanvasFocusSafeInsets>
+) {
+  const resolvedSafeInsets: CanvasFocusSafeInsets = {
+    top: safeInsets?.top ?? 0,
+    right: safeInsets?.right ?? 0,
+    bottom: safeInsets?.bottom ?? 0,
+    left: safeInsets?.left ?? 0,
+  };
+
+  return {
+    safeInsets: resolvedSafeInsets,
+    rect: {
+      x: resolvedSafeInsets.left,
+      y: resolvedSafeInsets.top,
+      width: Math.max(1, surfaceSize.width - resolvedSafeInsets.left - resolvedSafeInsets.right),
+      height: Math.max(1, surfaceSize.height - resolvedSafeInsets.top - resolvedSafeInsets.bottom),
+    },
+  };
+}
+
+export function getCanvasFocusAvailableCenter(
+  surfaceSize: { width: number; height: number },
+  safeInsets?: Partial<CanvasFocusSafeInsets>
+) {
+  const available = buildCanvasFocusAvailableRect(surfaceSize, safeInsets).rect;
+  return {
+    x: available.x + available.width / 2,
+    y: available.y + available.height / 2,
+  };
+}
+
+export function getCanvasFocusWorldCenterAtAvailableCenter(input: {
+  viewport: CanvasFocusViewport;
+  surfaceSize: { width: number; height: number };
+  safeInsets?: Partial<CanvasFocusSafeInsets>;
+}) {
+  const availableCenter = getCanvasFocusAvailableCenter(input.surfaceSize, input.safeInsets);
+  return {
+    x: (availableCenter.x - input.viewport.x) / input.viewport.zoom,
+    y: (availableCenter.y - input.viewport.y) / input.viewport.zoom,
+  };
 }
 
 export function buildCanvasFocusBounds(
@@ -44,6 +103,30 @@ export function buildCanvasFocusBounds(
     width: Math.max(1, size.width),
     height: Math.max(1, size.height),
   };
+}
+
+export function positionCanvasFocusBoundsAroundCenter(
+  center: { x: number; y: number },
+  size: WorkflowNodeSize
+) {
+  return {
+    x: Math.round(center.x - size.width / 2),
+    y: Math.round(center.y - size.height / 2),
+  };
+}
+
+export function preserveCanvasFocusCenterPosition(
+  position: { x: number; y: number },
+  currentSize: WorkflowNodeSize,
+  nextSize: WorkflowNodeSize
+) {
+  return positionCanvasFocusBoundsAroundCenter(
+    {
+      x: position.x + currentSize.width / 2,
+      y: position.y + currentSize.height / 2,
+    },
+    nextSize
+  );
 }
 
 export function getCanvasFocusUnionBounds(bounds: CanvasFocusBounds[]): CanvasFocusBounds | null {
@@ -87,15 +170,10 @@ export function buildCanvasFocusViewport(input: {
     return null;
   }
 
-  const safeInsets: CanvasFocusSafeInsets = {
-    top: input.safeInsets?.top ?? 0,
-    right: input.safeInsets?.right ?? 0,
-    bottom: input.safeInsets?.bottom ?? 0,
-    left: input.safeInsets?.left ?? 0,
-  };
   const zoomLimits = input.zoomLimits ?? DEFAULT_CANVAS_FOCUS_ZOOM_LIMITS;
-  const availableWidth = Math.max(1, input.surfaceSize.width - safeInsets.left - safeInsets.right);
-  const availableHeight = Math.max(1, input.surfaceSize.height - safeInsets.top - safeInsets.bottom);
+  const availableRect = buildCanvasFocusAvailableRect(input.surfaceSize, input.safeInsets).rect;
+  const availableWidth = availableRect.width;
+  const availableHeight = availableRect.height;
   const fitZoom = Math.min(
     availableWidth / Math.max(1, unionBounds.width),
     availableHeight / Math.max(1, unionBounds.height)
@@ -104,12 +182,6 @@ export function buildCanvasFocusViewport(input: {
   const center = {
     x: unionBounds.x + unionBounds.width / 2,
     y: unionBounds.y + unionBounds.height / 2,
-  };
-  const availableRect = {
-    x: safeInsets.left,
-    y: safeInsets.top,
-    width: availableWidth,
-    height: availableHeight,
   };
 
   return {
@@ -122,4 +194,78 @@ export function buildCanvasFocusViewport(input: {
       y: availableRect.y + availableRect.height / 2 - center.y * zoom,
     },
   };
+}
+
+export function buildCanvasFocusTransitionLayout(input: {
+  currentViewport?: CanvasFocusViewport;
+  currentPosition: { x: number; y: number };
+  currentSize: WorkflowNodeSize;
+  nextSize: WorkflowNodeSize;
+  surfaceSize: { width: number; height: number };
+  safeInsets?: Partial<CanvasFocusSafeInsets>;
+  zoomLimits?: CanvasFocusZoomLimits;
+}) {
+  const targetCenter = input.currentViewport
+    ? getCanvasFocusWorldCenterAtAvailableCenter({
+        viewport: input.currentViewport,
+        surfaceSize: input.surfaceSize,
+        safeInsets: input.safeInsets,
+      })
+    : {
+        x: input.currentPosition.x + input.currentSize.width / 2,
+        y: input.currentPosition.y + input.currentSize.height / 2,
+      };
+  const nodePosition = positionCanvasFocusBoundsAroundCenter(targetCenter, input.nextSize);
+
+  return {
+    targetCenter,
+    nodePosition,
+    viewport:
+      buildCanvasFocusViewport({
+        targetBounds: [buildCanvasFocusBounds(nodePosition, input.nextSize)],
+        surfaceSize: input.surfaceSize,
+        safeInsets: input.safeInsets,
+        zoomLimits: input.zoomLimits ?? DEFAULT_CANVAS_FOCUS_ZOOM_LIMITS,
+      })?.viewport || {
+        zoom: 1,
+        x: 0,
+        y: 0,
+      },
+  };
+}
+
+export function buildCanvasFocusMeasuredCorrection(input: {
+  targetCenter: { x: number; y: number };
+  measuredSize: WorkflowNodeSize;
+  surfaceSize: { width: number; height: number };
+  safeInsets?: Partial<CanvasFocusSafeInsets>;
+  zoomLimits?: CanvasFocusZoomLimits;
+}) {
+  const nodePosition = positionCanvasFocusBoundsAroundCenter(input.targetCenter, input.measuredSize);
+
+  return {
+    nodePosition,
+    viewport:
+      buildCanvasFocusViewport({
+        targetBounds: [buildCanvasFocusBounds(nodePosition, input.measuredSize)],
+        surfaceSize: input.surfaceSize,
+        safeInsets: input.safeInsets,
+        zoomLimits: input.zoomLimits ?? DEFAULT_CANVAS_FOCUS_ZOOM_LIMITS,
+      })?.viewport || {
+        zoom: 1,
+        x: 0,
+        y: 0,
+      },
+  };
+}
+
+export function shouldCorrectCanvasFocusMeasuredSize(
+  predictedSize: WorkflowNodeSize,
+  measuredSize: WorkflowNodeSize,
+  tolerance = 1
+) {
+  return (
+    Math.abs(predictedSize.width - measuredSize.width) > tolerance ||
+    Math.abs(predictedSize.height - measuredSize.height) > tolerance
+  );
 }

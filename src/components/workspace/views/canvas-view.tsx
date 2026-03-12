@@ -146,9 +146,11 @@ import {
 } from "@/lib/canvas-node-presentation";
 import {
   buildCanvasFocusBounds,
+  buildCanvasFocusTransitionLayout,
   buildCanvasFocusViewport,
   DEFAULT_CANVAS_FOCUS_ZOOM_LIMITS,
   type CanvasFocusBounds,
+  type CanvasFocusRequest,
   type CanvasFocusSafeInsets,
 } from "@/lib/canvas-focus";
 import {
@@ -173,6 +175,8 @@ const COALESCED_HISTORY_DELAY_MS = 450;
 const NODE_FOCUS_ANIMATION_DURATION_MS = 165;
 const NODE_FOCUS_SETTLE_MAX_FRAMES = 18;
 const NODE_FOCUS_SETTLE_STABLE_FRAMES = 2;
+const NODE_LAYOUT_MOTION_MS = 240;
+const NODE_LAYOUT_MOTION_BUFFER_MS = 48;
 const INSERT_MENU_NODE_PREVIEW_SIZE = {
   width: 212,
   height: 72,
@@ -206,9 +210,13 @@ type PendingCenteredInsert = {
   anchor: { x: number; y: number };
 };
 
-type PendingViewportFocusRequest = {
-  nodeIds: string[];
-  predictedBoundsById?: Record<string, CanvasFocusBounds>;
+type PendingViewportFocusRequest = CanvasFocusRequest;
+
+type PredictedViewportFocusLayout = {
+  bounds: CanvasFocusBounds;
+  nodePosition: { x: number; y: number };
+  predictedSize: WorkflowNodeSize;
+  targetCenter: { x: number; y: number };
 };
 
 type CanvasHistoryStacks = {
@@ -824,6 +832,10 @@ export function CanvasView({ projectId }: Props) {
   const [activeFullNodeId, setActiveFullNodeId] = useState<string | null>(null);
   const [pinnedModelFullNodeId, setPinnedModelFullNodeId] = useState<string | null>(null);
   const [pendingViewportFocusRequest, setPendingViewportFocusRequest] = useState<PendingViewportFocusRequest | null>(null);
+  const [displayModeTransition, setDisplayModeTransition] = useState<{
+    nodeId: string;
+    predictedSize: WorkflowNodeSize;
+  } | null>(null);
   const [pendingCenteredInsert, setPendingCenteredInsert] = useState<PendingCenteredInsert | null>(null);
   const [copilotOpen, setCopilotOpen] = useState(false);
   const [copilotDraft, setCopilotDraft] = useState("");
@@ -1224,6 +1236,34 @@ export function CanvasView({ projectId }: Props) {
     },
     [activeNodeId]
   );
+
+  const getRenderedNodeSize = useCallback((nodeId: string): WorkflowNodeSize | null => {
+    const surfaceElement = canvasSurfaceRef.current;
+    const nodeElement = surfaceElement?.querySelector<HTMLElement>(`[data-node-id="${nodeId}"]`);
+    if (!nodeElement) {
+      return null;
+    }
+
+    const width = Math.round(nodeElement.offsetWidth);
+    const height = Math.round(nodeElement.offsetHeight);
+    if (width <= 0 || height <= 0) {
+      return null;
+    }
+
+    return { width, height };
+  }, []);
+
+  const getCanvasSurfaceSize = useCallback(() => {
+    const bounds = canvasSurfaceRef.current?.getBoundingClientRect();
+    if (!bounds || bounds.width < 120 || bounds.height < 120) {
+      return null;
+    }
+
+    return {
+      width: bounds.width,
+      height: bounds.height,
+    };
+  }, []);
 
   const selectedNodeIsList = selectedNode?.kind === "list";
   const selectedNodeIsTextTemplate = selectedNode?.kind === "text-template";
@@ -3223,7 +3263,7 @@ export function CanvasView({ projectId }: Props) {
   }, [canConnectNodePair, selectedNodeIds]);
 
   const canDuplicateSelected = selectedNodeIds.length === 1;
-  const buildPredictedViewportFocusBounds = useCallback(async (node: WorkflowNode): Promise<CanvasFocusBounds | null> => {
+  const buildPredictedViewportFocusLayout = useCallback(async (node: WorkflowNode): Promise<PredictedViewportFocusLayout | null> => {
     if (node.kind !== "text-template" && (node.kind !== "model" || node.displayMode === "resized")) {
       return null;
     }
@@ -3234,23 +3274,60 @@ export function CanvasView({ projectId }: Props) {
         activeNodeId: node.id,
         fullNodeId: node.id,
         forcedRenderMode: null,
-      })
+        })
     );
     const predictedSize = measuredSize || getWorkflowNodeDefaultSize(node.kind, "full", aspectRatio);
+    const surfaceSize = getCanvasSurfaceSize();
+    if (!surfaceSize) {
+      const targetCenter = {
+        x: node.x + predictedSize.width / 2,
+        y: node.y + predictedSize.height / 2,
+      };
+      return {
+        bounds: buildCanvasFocusBounds({ x: node.x, y: node.y }, predictedSize),
+        nodePosition: { x: node.x, y: node.y },
+        predictedSize,
+        targetCenter,
+      };
+    }
 
-    return buildCanvasFocusBounds({ x: node.x, y: node.y }, predictedSize);
-  }, [buildRenderNodeForMeasurement, measurePreflightNode]);
+    const transitionLayout = buildCanvasFocusTransitionLayout({
+      currentViewport: canvasDoc.canvasViewport,
+      currentPosition: { x: node.x, y: node.y },
+      currentSize: getRenderedNodeSize(node.id) || getWorkflowNodeDefaultSize(node.kind, node.displayMode, aspectRatio),
+      nextSize: predictedSize,
+      surfaceSize,
+      safeInsets: getWorkspaceFocusSafeInsets(surfaceSize),
+    });
+
+    return {
+      bounds: buildCanvasFocusBounds(transitionLayout.nodePosition, predictedSize),
+      nodePosition: transitionLayout.nodePosition,
+      predictedSize,
+      targetCenter: transitionLayout.targetCenter,
+    };
+  }, [
+    buildRenderNodeForMeasurement,
+    canvasDoc.canvasViewport,
+    getCanvasSurfaceSize,
+    getRenderedNodeSize,
+    getWorkspaceFocusSafeInsets,
+    measurePreflightNode,
+  ]);
 
   const requestViewportFocus = useCallback(
-    (nodeIds: string[], options?: { predictedBoundsById?: Record<string, CanvasFocusBounds> }) => {
-      if (nodeIds.length === 0) {
+    (request: CanvasFocusRequest | null) => {
+      if (!request || request.nodeIds.length === 0) {
         setPendingViewportFocusRequest(null);
         return;
       }
 
       setPendingViewportFocusRequest({
-        nodeIds: [...nodeIds],
-        predictedBoundsById: options?.predictedBoundsById,
+        nodeIds: [...request.nodeIds],
+        predictedBoundsById: request.predictedBoundsById,
+        anchor: request.anchor,
+        safeInsets: request.safeInsets,
+        modeChange: request.modeChange,
       });
     },
     []
@@ -3266,7 +3343,10 @@ export function CanvasView({ projectId }: Props) {
         return;
       }
 
-      requestViewportFocus(targetNodeIds);
+      requestViewportFocus({
+        nodeIds: targetNodeIds,
+        anchor: "camera-only",
+      });
     },
     [nodesById, requestViewportFocus]
   );
@@ -3312,7 +3392,7 @@ export function CanvasView({ projectId }: Props) {
 
       const actionToken = focusActionTokenRef.current + 1;
       focusActionTokenRef.current = actionToken;
-      const predictedBounds = options?.focusViewport ? await buildPredictedViewportFocusBounds(node) : null;
+      const predictedFocusLayout = options?.focusViewport ? await buildPredictedViewportFocusLayout(node) : null;
       if (focusActionTokenRef.current !== actionToken) {
         return;
       }
@@ -3322,7 +3402,24 @@ export function CanvasView({ projectId }: Props) {
       setTrackedSelectedConnection(null);
       setInsertMenu(null);
       setAssetPicker(null);
+      const focusSurfaceSize = options?.focusViewport ? getCanvasSurfaceSize() : null;
       if (node.kind === "text-template") {
+        if (predictedFocusLayout) {
+          updateNode(
+            nodeId,
+            {
+              x: predictedFocusLayout.nodePosition.x,
+              y: predictedFocusLayout.nodePosition.y,
+            },
+            {
+              historyMode: "immediate",
+            }
+          );
+          setDisplayModeTransition({
+            nodeId,
+            predictedSize: predictedFocusLayout.predictedSize,
+          });
+        }
         setActiveFullNodeId(nodeId);
         setPinnedModelFullNodeId(null);
       } else if (node.kind === "model" && node.displayMode !== "resized") {
@@ -3331,6 +3428,8 @@ export function CanvasView({ projectId }: Props) {
           {
             displayMode: "full",
             size: null,
+            x: predictedFocusLayout?.nodePosition.x ?? node.x,
+            y: predictedFocusLayout?.nodePosition.y ?? node.y,
           },
           {
             historyMode: "immediate",
@@ -3338,19 +3437,30 @@ export function CanvasView({ projectId }: Props) {
         );
         setActiveFullNodeId(null);
         setPinnedModelFullNodeId(null);
+        if (predictedFocusLayout) {
+          setDisplayModeTransition({
+            nodeId,
+            predictedSize: predictedFocusLayout.predictedSize,
+          });
+        }
       } else {
         setActiveFullNodeId(null);
         setPinnedModelFullNodeId(null);
       }
       if (options?.focusViewport) {
-        requestViewportFocus([nodeId], {
-          predictedBoundsById: predictedBounds ? { [nodeId]: predictedBounds } : undefined,
+        requestViewportFocus({
+          nodeIds: [nodeId],
+          predictedBoundsById: predictedFocusLayout ? { [nodeId]: predictedFocusLayout.bounds } : undefined,
+          anchor: "camera-only",
+          safeInsets: focusSurfaceSize ? getWorkspaceFocusSafeInsets(focusSurfaceSize) : undefined,
         });
       }
     },
     [
-      buildPredictedViewportFocusBounds,
+      buildPredictedViewportFocusLayout,
       commitPendingCoalescedHistory,
+      getCanvasSurfaceSize,
+      getWorkspaceFocusSafeInsets,
       nodesById,
       requestViewportFocus,
       setTrackedSelectedConnection,
@@ -3368,7 +3478,7 @@ export function CanvasView({ projectId }: Props) {
 
       const actionToken = focusActionTokenRef.current + 1;
       focusActionTokenRef.current = actionToken;
-      const predictedBounds = options?.focusViewport ? await buildPredictedViewportFocusBounds(node) : null;
+      const predictedFocusLayout = options?.focusViewport ? await buildPredictedViewportFocusLayout(node) : null;
       if (focusActionTokenRef.current !== actionToken) {
         return;
       }
@@ -3378,7 +3488,24 @@ export function CanvasView({ projectId }: Props) {
       setTrackedSelectedConnection(null);
       setInsertMenu(null);
       setAssetPicker(null);
+      const focusSurfaceSize = options?.focusViewport ? getCanvasSurfaceSize() : null;
       if (node.kind === "text-template") {
+        if (predictedFocusLayout) {
+          updateNode(
+            nodeId,
+            {
+              x: predictedFocusLayout.nodePosition.x,
+              y: predictedFocusLayout.nodePosition.y,
+            },
+            {
+              historyMode: "immediate",
+            }
+          );
+          setDisplayModeTransition({
+            nodeId,
+            predictedSize: predictedFocusLayout.predictedSize,
+          });
+        }
         setActiveFullNodeId(nodeId);
         setPinnedModelFullNodeId(null);
       } else if (node.kind === "model" && node.displayMode !== "resized") {
@@ -3387,6 +3514,8 @@ export function CanvasView({ projectId }: Props) {
           {
             displayMode: "full",
             size: null,
+            x: predictedFocusLayout?.nodePosition.x ?? node.x,
+            y: predictedFocusLayout?.nodePosition.y ?? node.y,
           },
           {
             historyMode: "immediate",
@@ -3394,19 +3523,30 @@ export function CanvasView({ projectId }: Props) {
         );
         setActiveFullNodeId(null);
         setPinnedModelFullNodeId(null);
+        if (predictedFocusLayout) {
+          setDisplayModeTransition({
+            nodeId,
+            predictedSize: predictedFocusLayout.predictedSize,
+          });
+        }
       } else {
         setActiveFullNodeId(null);
         setPinnedModelFullNodeId(null);
       }
       if (options?.focusViewport) {
-        requestViewportFocus([nodeId], {
-          predictedBoundsById: predictedBounds ? { [nodeId]: predictedBounds } : undefined,
+        requestViewportFocus({
+          nodeIds: [nodeId],
+          predictedBoundsById: predictedFocusLayout ? { [nodeId]: predictedFocusLayout.bounds } : undefined,
+          anchor: "camera-only",
+          safeInsets: focusSurfaceSize ? getWorkspaceFocusSafeInsets(focusSurfaceSize) : undefined,
         });
       }
     },
     [
-      buildPredictedViewportFocusBounds,
+      buildPredictedViewportFocusLayout,
       commitPendingCoalescedHistory,
+      getCanvasSurfaceSize,
+      getWorkspaceFocusSafeInsets,
       nodesById,
       requestViewportFocus,
       setTrackedSelectedConnection,
@@ -3435,7 +3575,10 @@ export function CanvasView({ projectId }: Props) {
       setTrackedSelectedConnection(null);
       setInsertMenu(null);
       setAssetPicker(null);
-      requestViewportFocus([nodeId]);
+      requestViewportFocus({
+        nodeIds: [nodeId],
+        anchor: "camera-only",
+      });
     },
     [commitPendingCoalescedHistory, nodesById, requestViewportFocus, setTrackedSelectedConnection, setTrackedSelectedNodeIds]
   );
@@ -4391,6 +4534,9 @@ export function CanvasView({ projectId }: Props) {
         return null;
       }
 
+      const resolvedSafeInsets =
+        request.safeInsets || getWorkspaceFocusSafeInsets({ width: bounds.width, height: bounds.height });
+
       const targetBounds = request.nodeIds
         .map((nodeId) => {
           const targetNode = canvasNodes.find((node) => node.id === nodeId);
@@ -4425,10 +4571,7 @@ export function CanvasView({ projectId }: Props) {
           width: bounds.width,
           height: bounds.height,
         },
-        safeInsets: getWorkspaceFocusSafeInsets({
-          width: bounds.width,
-          height: bounds.height,
-        }),
+        safeInsets: resolvedSafeInsets,
         zoomLimits: DEFAULT_CANVAS_FOCUS_ZOOM_LIMITS,
       });
     };
@@ -4516,8 +4659,25 @@ export function CanvasView({ projectId }: Props) {
     };
   }, [cancelViewportFocusAnimation]);
 
+  useEffect(() => {
+    if (!displayModeTransition) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setDisplayModeTransition((current) =>
+        current?.nodeId === displayModeTransition.nodeId ? null : current
+      );
+    }, NODE_LAYOUT_MOTION_MS + NODE_LAYOUT_MOTION_BUFFER_MS);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [displayModeTransition]);
+
   const handleViewportInteractionStart = useCallback(() => {
     cancelViewportFocusAnimation({ clearPending: true });
+    setDisplayModeTransition(null);
   }, [cancelViewportFocusAnimation]);
 
   const insertGeneratedOutputPlaceholder = useCallback(
@@ -5047,11 +5207,36 @@ export function CanvasView({ projectId }: Props) {
 
   const handleNodeDisplayModeChange = useCallback(
     (nodeId: string, mode: "preview" | "compact") => {
+      const node = nodesById[nodeId];
+      const renderNode = canvasNodes.find((candidate) => candidate.id === nodeId) || null;
+      if (!node) {
+        return;
+      }
+
+      const currentSize = getRenderedNodeSize(nodeId) || renderNode?.resolvedSize || null;
+      const aspectRatio = getUploadedAssetNodeAspectRatio(node) || 1;
+      const nextSize = getWorkflowNodeDefaultSize(node.kind, mode, aspectRatio);
+      const surfaceSize = getCanvasSurfaceSize();
+      const transitionLayout =
+        currentSize && surfaceSize
+          ? buildCanvasFocusTransitionLayout({
+              currentViewport: canvasDoc.canvasViewport,
+              currentPosition: { x: node.x, y: node.y },
+              currentSize,
+              nextSize,
+              surfaceSize,
+              safeInsets: getWorkspaceFocusSafeInsets(surfaceSize),
+            })
+          : null;
+      const nextPosition = transitionLayout?.nodePosition || { x: node.x, y: node.y };
+
       updateNode(
         nodeId,
         {
           displayMode: mode,
           size: null,
+          x: nextPosition.x,
+          y: nextPosition.y,
         },
         {
           historyMode: "immediate",
@@ -5064,8 +5249,34 @@ export function CanvasView({ projectId }: Props) {
       if (pinnedModelFullNodeIdRef.current === nodeId) {
         setPinnedModelFullNodeId(null);
       }
+      requestViewportFocus({
+        nodeIds: [nodeId],
+        predictedBoundsById: {
+          [nodeId]: buildCanvasFocusBounds(nextPosition, nextSize),
+        },
+        anchor: "available-center",
+        safeInsets: surfaceSize ? getWorkspaceFocusSafeInsets(surfaceSize) : undefined,
+        modeChange: {
+          nodeId,
+          predictedSize: nextSize,
+          targetCenter: transitionLayout?.targetCenter,
+        },
+      });
+      setDisplayModeTransition({
+        nodeId,
+        predictedSize: nextSize,
+      });
     },
-    [updateNode]
+    [
+      canvasDoc.canvasViewport,
+      canvasNodes,
+      getCanvasSurfaceSize,
+      getRenderedNodeSize,
+      getWorkspaceFocusSafeInsets,
+      nodesById,
+      requestViewportFocus,
+      updateNode,
+    ]
   );
 
   const handleNodeResizeStart = useCallback(
@@ -5581,6 +5792,12 @@ export function CanvasView({ projectId }: Props) {
                 }
               }}
               selectionActions={selectionActions}
+              programmaticMotionNodeIds={displayModeTransition ? [displayModeTransition.nodeId] : []}
+              programmaticMotionFrameSizes={
+                displayModeTransition
+                  ? { [displayModeTransition.nodeId]: displayModeTransition.predictedSize }
+                  : undefined
+              }
             />
           )}
           <CanvasFocusPreflightLayer

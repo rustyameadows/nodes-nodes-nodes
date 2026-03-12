@@ -87,6 +87,7 @@
   - the bottom row drives the fixture's primary node without auto-selecting it, and keeps that primary node centered through shell transitions
   - library mode changes animate the primary node shell position/size plus the viewport reframing as one motion; reduced-motion users keep the snap behavior
   - library load, bottom-row mode changes, and node-side edit/display-mode actions all use the shared canvas centering engine, which fit-zooms from the actual surface size, the primary node's outer shell bounds, and the visible bottom dock inset
+  - size-changing library actions re-anchor from the live available viewport center on every click instead of preserving the node's previous world-space center, so repeated `Compact` / `Preview` / `Edit` / `Resize` toggles do not accumulate drift
   - content-fit shells such as model `Edit` preflight-measure their target outer height in a hidden surface-level measurement layer before the visible transition starts, so shell growth and camera framing move together instead of snapping and then correcting
   - those transitions begin from predicted shell bounds and then correct once the measured outer shell settles, so repeated `Preview` / `Edit` / `Resize` switches do not drift into clipped framing
   - model detail uses a standalone model fixture rather than a fake upstream prompt note
@@ -120,6 +121,8 @@
   - resized nodes keep their custom size when re-opened
   - a single selected node exposes a bottom-center `Center` CTA, and multi-selection strips expose `Center Selection`; both use the same bounds-based fit/zoom engine as double-click and the Node Library
   - model and template double-click focus requests pre-compute target viewport bounds from predicted or preflight-measured outer shells before the visible transition begins, then validate against measured DOM bounds inside the same motion window
+  - top-rail `Default` and `Compact` mode pills use that same predictive fit/zoom flow, so the shell-size change and viewport reframe happen as one centered transition instead of a resize-first snap
+  - size-changing single-node transitions in both the workspace and the Node Library now place the target shell around the live available viewport center before fitting, rather than reusing the node's last stored world-space center
 - active-node behavior by kind:
   - image asset: the media surface stays visually pure; preview shows only the image, and active labels return to the shared top title rail while actions stay outside the frame
   - model: single-select keeps the node at its persisted `preview` or `compact` size, reveals the shared top/bottom rails, and keeps the external side run launcher visible; `Enter` or double-click switches the node into persisted `full`, the top-left rail immediately rehydrates to show `Default` and `Compact`, and that full shell stays open until `Default`, `Compact`, or resize mode takes over

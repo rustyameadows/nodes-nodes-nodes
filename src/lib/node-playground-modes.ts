@@ -2,8 +2,13 @@ import type { WorkflowNodeDisplayMode, WorkflowNodeSize } from "@/components/wor
 import type { CanvasNodeRenderMode } from "@/lib/canvas-node-presentation";
 import {
   buildCanvasFocusBounds,
+  buildCanvasFocusMeasuredCorrection,
+  buildCanvasFocusTransitionLayout,
   buildCanvasFocusViewport,
   DEFAULT_CANVAS_FOCUS_ZOOM_LIMITS,
+  positionCanvasFocusBoundsAroundCenter,
+  preserveCanvasFocusCenterPosition,
+  shouldCorrectCanvasFocusMeasuredSize,
   type CanvasFocusSafeInsets,
   type CanvasFocusZoomLimits,
 } from "@/lib/canvas-focus";
@@ -56,10 +61,7 @@ export function positionNodeAroundCenter(
   center: { x: number; y: number },
   size: WorkflowNodeSize
 ) {
-  return {
-    x: Math.round(center.x - size.width / 2),
-    y: Math.round(center.y - size.height / 2),
-  };
+  return positionCanvasFocusBoundsAroundCenter(center, size);
 }
 
 export function preserveNodeCenterPosition(
@@ -67,13 +69,7 @@ export function preserveNodeCenterPosition(
   currentSize: WorkflowNodeSize,
   nextSize: WorkflowNodeSize
 ) {
-  return positionNodeAroundCenter(
-    {
-      x: position.x + currentSize.width / 2,
-      y: position.y + currentSize.height / 2,
-    },
-    nextSize
-  );
+  return preserveCanvasFocusCenterPosition(position, currentSize, nextSize);
 }
 
 export function buildCenteredViewportForNode(input: {
@@ -123,6 +119,7 @@ export function buildFramedViewportForNode(input: {
 }
 
 export function buildNodePlaygroundTransitionLayout(input: {
+  currentViewport?: { x: number; y: number; zoom: number };
   currentPosition: { x: number; y: number };
   currentSize: WorkflowNodeSize;
   nextSize: WorkflowNodeSize;
@@ -130,23 +127,7 @@ export function buildNodePlaygroundTransitionLayout(input: {
   safeInsets?: Partial<CanvasFocusSafeInsets>;
   zoomLimits?: CanvasFocusZoomLimits;
 }) {
-  const targetCenter = {
-    x: input.currentPosition.x + input.currentSize.width / 2,
-    y: input.currentPosition.y + input.currentSize.height / 2,
-  };
-  const nodePosition = positionNodeAroundCenter(targetCenter, input.nextSize);
-
-  return {
-    targetCenter,
-    nodePosition,
-    viewport: buildFramedViewportForNode({
-      nodePosition,
-      nodeSize: input.nextSize,
-      surfaceSize: input.surfaceSize,
-      safeInsets: input.safeInsets,
-      zoomLimits: input.zoomLimits,
-    }),
-  };
+  return buildCanvasFocusTransitionLayout(input);
 }
 
 export function buildNodePlaygroundMeasuredCorrection(input: {
@@ -156,18 +137,7 @@ export function buildNodePlaygroundMeasuredCorrection(input: {
   safeInsets?: Partial<CanvasFocusSafeInsets>;
   zoomLimits?: CanvasFocusZoomLimits;
 }) {
-  const nodePosition = positionNodeAroundCenter(input.targetCenter, input.measuredSize);
-
-  return {
-    nodePosition,
-    viewport: buildFramedViewportForNode({
-      nodePosition,
-      nodeSize: input.measuredSize,
-      surfaceSize: input.surfaceSize,
-      safeInsets: input.safeInsets,
-      zoomLimits: input.zoomLimits,
-    }),
-  };
+  return buildCanvasFocusMeasuredCorrection(input);
 }
 
 export function shouldCorrectNodePlaygroundMeasuredSize(
@@ -175,8 +145,5 @@ export function shouldCorrectNodePlaygroundMeasuredSize(
   measuredSize: WorkflowNodeSize,
   tolerance = 1
 ) {
-  return (
-    Math.abs(predictedSize.width - measuredSize.width) > tolerance ||
-    Math.abs(predictedSize.height - measuredSize.height) > tolerance
-  );
+  return shouldCorrectCanvasFocusMeasuredSize(predictedSize, measuredSize, tolerance);
 }

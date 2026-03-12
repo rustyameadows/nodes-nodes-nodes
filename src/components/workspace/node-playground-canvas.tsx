@@ -35,7 +35,6 @@ import { getNodePlaygroundPreviewImageUrl } from "@/lib/node-playground-preview"
 import {
   buildNodePlaygroundMeasuredCorrection,
   buildNodePlaygroundTransitionLayout,
-  buildFramedViewportForNode,
   getActiveNodePlaygroundMode,
   getInitialNodePlaygroundMode,
   preserveNodeCenterPosition,
@@ -60,6 +59,12 @@ import {
   resolveProviderModelSettings,
 } from "@/lib/provider-model-helpers";
 import { getUploadedAssetNodeAspectRatio } from "@/lib/canvas-asset-nodes";
+import {
+  buildCanvasFocusBounds,
+  buildCanvasFocusViewport,
+  type CanvasFocusBounds,
+  type CanvasFocusRequest,
+} from "@/lib/canvas-focus";
 import styles from "./node-playground-canvas.module.css";
 
 type Props = {
@@ -338,6 +343,7 @@ export function NodePlaygroundCanvas({
   const [activeFullNodeId, setActiveFullNodeId] = useState<string | null>(null);
   const [pinnedModelFullNodeId, setPinnedModelFullNodeId] = useState<string | null>(null);
   const [libraryFullNodeId, setLibraryFullNodeId] = useState<string | null>(initialFullNodeId);
+  const [pendingViewportFocusRequest, setPendingViewportFocusRequest] = useState<CanvasFocusRequest | null>(null);
   const [primaryNodeTransition, setPrimaryNodeTransition] = useState<{
     nodeId: string;
     targetCenter: { x: number; y: number };
@@ -358,6 +364,7 @@ export function NodePlaygroundCanvas({
     setActiveFullNodeId(null);
     setPinnedModelFullNodeId(null);
     setLibraryFullNodeId(initialFullNodeId);
+    setPendingViewportFocusRequest(null);
     setPrimaryNodeTransition(null);
     setHasCenteredFixture(false);
   }, [fixture, initialFullNodeId]);
@@ -506,6 +513,10 @@ export function NodePlaygroundCanvas({
       ...current,
       canvasViewport: nextViewport,
     }));
+  }, []);
+
+  const requestViewportFocus = useCallback((request: CanvasFocusRequest | null) => {
+    setPendingViewportFocusRequest(request);
   }, []);
 
   const selectSingleNode = useCallback((nodeId: string | null) => {
@@ -922,47 +933,6 @@ export function NodePlaygroundCanvas({
     return "preview" as const;
   }, [initialFullNodeId, primaryRenderNode, primaryWorkflowNode]);
 
-  const centerPrimaryNodeInViewport = useCallback(async () => {
-    const surfaceSize = getCanvasSurfaceSize();
-    if (!surfaceSize || !primaryRenderNode) {
-      return;
-    }
-
-    const measuredSize =
-      getRenderedNodeSize(primaryRenderNode.id) ||
-      (await measurePreflightNode(
-        primaryWorkflowNode
-          ? buildRenderNodeForMeasurement(primaryWorkflowNode, {
-              activeNodeId,
-              fullNodeId: effectiveFullNodeId,
-              forcedRenderMode: libraryFullNodeId === primaryRenderNode.id ? "full" : null,
-            })
-          : null,
-      )) ||
-      primaryRenderNode.resolvedSize;
-
-    updateViewport(
-      buildFramedViewportForNode({
-        nodePosition: { x: primaryRenderNode.x, y: primaryRenderNode.y },
-        nodeSize: measuredSize,
-        surfaceSize,
-        safeInsets: getPlaygroundFocusSafeInsets(surfaceSize),
-      })
-    );
-  }, [
-    activeNodeId,
-    buildRenderNodeForMeasurement,
-    effectiveFullNodeId,
-    getCanvasSurfaceSize,
-    getPlaygroundFocusSafeInsets,
-    getRenderedNodeSize,
-    libraryFullNodeId,
-    measurePreflightNode,
-    primaryRenderNode,
-    primaryWorkflowNode,
-    updateViewport,
-  ]);
-
   async function transitionPrimaryNode(mode: NodePlaygroundMode) {
     const nodeId = primaryNodeId;
     const workflowNode = nodeId ? nodesById[nodeId] || null : null;
@@ -1021,6 +991,7 @@ export function NodePlaygroundCanvas({
 
     const transitionLayout = surfaceSize
       ? buildNodePlaygroundTransitionLayout({
+          currentViewport: canvasDoc.canvasViewport,
           currentPosition: { x: workflowNode.x, y: workflowNode.y },
           currentSize,
           nextSize: resolvedNextSize,
@@ -1047,7 +1018,6 @@ export function NodePlaygroundCanvas({
     setPinnedModelFullNodeId(null);
     setLibraryFullNodeId(nextForcedFullNodeId);
     if (transitionLayout) {
-      updateViewport(transitionLayout.viewport);
       setPrimaryNodeTransition(
         prefersReducedMotion
           ? null
@@ -1057,8 +1027,33 @@ export function NodePlaygroundCanvas({
               predictedSize: resolvedNextSize,
             }
       );
+      requestViewportFocus({
+        nodeIds: [nodeId],
+        predictedBoundsById: {
+          [nodeId]: buildCanvasFocusBounds(transitionLayout.nodePosition, resolvedNextSize),
+        },
+        anchor: "available-center",
+        safeInsets: focusSafeInsets,
+        modeChange: {
+          nodeId,
+          predictedSize: resolvedNextSize,
+          targetCenter: transitionLayout.targetCenter,
+        },
+      });
     } else {
       setPrimaryNodeTransition(null);
+      requestViewportFocus(
+        surfaceSize
+          ? {
+              nodeIds: [nodeId],
+              predictedBoundsById: {
+                [nodeId]: buildCanvasFocusBounds(nextPosition, resolvedNextSize),
+              },
+              anchor: "available-center",
+              safeInsets: focusSafeInsets,
+            }
+          : null
+      );
     }
   }
 
@@ -1068,114 +1063,243 @@ export function NodePlaygroundCanvas({
     }
 
     let cancelled = false;
-    const frameId = window.requestAnimationFrame(() => {
-      centerPrimaryNodeInViewport().finally(() => {
+    let frameId = 0;
+    const queueFocusRequest = () => {
+      const surfaceSize = getCanvasSurfaceSize();
+      if (!surfaceSize || cancelled) {
         if (!cancelled) {
-          setHasCenteredFixture(true);
+          frameId = window.requestAnimationFrame(queueFocusRequest);
         }
+        return;
+      }
+
+      requestViewportFocus({
+        nodeIds: [primaryRenderNode.id],
+        predictedBoundsById: {
+          [primaryRenderNode.id]: buildCanvasFocusBounds(
+            { x: primaryRenderNode.x, y: primaryRenderNode.y },
+            primaryRenderNode.resolvedSize
+          ),
+        },
+        anchor: "camera-only",
+        safeInsets: getPlaygroundFocusSafeInsets(surfaceSize),
       });
-    });
+      setHasCenteredFixture(true);
+    };
+
+    frameId = window.requestAnimationFrame(queueFocusRequest);
 
     return () => {
       cancelled = true;
       window.cancelAnimationFrame(frameId);
     };
-  }, [centerPrimaryNodeInViewport, hasCenteredFixture, primaryRenderNode]);
+  }, [
+    getCanvasSurfaceSize,
+    getPlaygroundFocusSafeInsets,
+    hasCenteredFixture,
+    primaryRenderNode,
+    requestViewportFocus,
+  ]);
+
+  useEffect(() => {
+    if (!pendingViewportFocusRequest || pendingViewportFocusRequest.nodeIds.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+    const request = pendingViewportFocusRequest;
+    const surfaceElement = canvasRef.current;
+    if (!surfaceElement) {
+      return;
+    }
+
+    if (request.modeChange && !prefersReducedMotion) {
+      setPrimaryNodeTransition({
+        nodeId: request.modeChange.nodeId,
+        targetCenter: request.modeChange.targetCenter || { x: 0, y: 0 },
+        predictedSize: request.modeChange.predictedSize,
+      });
+    }
+
+    const getFocusLayout = (preferMeasuredBounds: boolean) => {
+      const surfaceBounds = surfaceElement.getBoundingClientRect();
+      if (surfaceBounds.width < 160 || surfaceBounds.height < 120) {
+        return null;
+      }
+
+      const resolvedSafeInsets =
+        request.safeInsets || getPlaygroundFocusSafeInsets({ width: surfaceBounds.width, height: surfaceBounds.height });
+      const targetBounds = request.nodeIds
+        .map((nodeId) => {
+          const targetNode = canvasNodes.find((node) => node.id === nodeId);
+          if (!targetNode) {
+            return null;
+          }
+
+          const predictedBounds = request.predictedBoundsById?.[nodeId];
+          const targetElement = surfaceElement.querySelector<HTMLElement>(`[data-node-id="${nodeId}"]`);
+          const resolvedWidth = preferMeasuredBounds
+            ? targetElement?.offsetWidth || predictedBounds?.width || targetNode.resolvedSize.width
+            : predictedBounds?.width || targetElement?.offsetWidth || targetNode.resolvedSize.width;
+          const resolvedHeight = preferMeasuredBounds
+            ? targetElement?.offsetHeight || predictedBounds?.height || targetNode.resolvedSize.height
+            : predictedBounds?.height || targetElement?.offsetHeight || targetNode.resolvedSize.height;
+
+          return {
+            x: predictedBounds?.x ?? targetNode.x,
+            y: predictedBounds?.y ?? targetNode.y,
+            width: resolvedWidth,
+            height: resolvedHeight,
+          } satisfies CanvasFocusBounds;
+        })
+        .filter((bound): bound is CanvasFocusBounds => Boolean(bound));
+
+      if (targetBounds.length === 0) {
+        return null;
+      }
+
+      return buildCanvasFocusViewport({
+        targetBounds,
+        surfaceSize: {
+          width: surfaceBounds.width,
+          height: surfaceBounds.height,
+        },
+        safeInsets: resolvedSafeInsets,
+      });
+    };
+
+    const initialFocusLayout = getFocusLayout(false);
+    if (initialFocusLayout) {
+      updateViewport(initialFocusLayout.viewport);
+    }
+
+    let frameId = 0;
+    let previousSizes = new Map<string, { width: number; height: number }>();
+    let stableFrames = 0;
+    let sampleCount = 0;
+
+    const finalizeViewportFocus = () => {
+      if (cancelled) {
+        return;
+      }
+
+      const surfaceBounds = surfaceElement.getBoundingClientRect();
+      const safeInsets =
+        request.safeInsets || getPlaygroundFocusSafeInsets({ width: surfaceBounds.width, height: surfaceBounds.height });
+
+      if (request.modeChange?.targetCenter) {
+        const measuredSize = getRenderedNodeSize(request.modeChange.nodeId);
+        if (
+          measuredSize &&
+          shouldCorrectNodePlaygroundMeasuredSize(request.modeChange.predictedSize, measuredSize)
+        ) {
+          const correction = buildNodePlaygroundMeasuredCorrection({
+            targetCenter: request.modeChange.targetCenter,
+            measuredSize,
+            surfaceSize: {
+              width: surfaceBounds.width,
+              height: surfaceBounds.height,
+            },
+            safeInsets,
+          });
+
+          updateNode(request.modeChange.nodeId, (node) => ({
+            ...node,
+            x: correction.nodePosition.x,
+            y: correction.nodePosition.y,
+          }));
+          updateViewport(correction.viewport);
+          setPendingViewportFocusRequest((current) => (current === request ? null : current));
+          return;
+        }
+      }
+
+      const finalFocusLayout = getFocusLayout(true);
+      if (finalFocusLayout) {
+        updateViewport(finalFocusLayout.viewport);
+      }
+      setPendingViewportFocusRequest((current) => (current === request ? null : current));
+    };
+
+    const waitForNodeLayoutToSettle = () => {
+      if (cancelled) {
+        return;
+      }
+
+      const currentSizes = request.nodeIds.reduce<Map<string, { width: number; height: number }>>((acc, nodeId) => {
+        const nodeElement = surfaceElement.querySelector<HTMLElement>(`[data-node-id="${nodeId}"]`);
+        if (!nodeElement) {
+          return acc;
+        }
+
+        const rect = nodeElement.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) {
+          return acc;
+        }
+
+        acc.set(nodeId, {
+          width: rect.width,
+          height: rect.height,
+        });
+        return acc;
+      }, new Map());
+      const hasMeasuredSize = currentSizes.size > 0;
+      const isStable =
+        hasMeasuredSize &&
+        currentSizes.size === previousSizes.size &&
+        Array.from(currentSizes.entries()).every(([nodeId, size]) => {
+          const previousSize = previousSizes.get(nodeId);
+          return (
+            previousSize &&
+            Math.abs(size.width - previousSize.width) < 0.5 &&
+            Math.abs(size.height - previousSize.height) < 0.5
+          );
+        });
+      stableFrames = isStable ? stableFrames + 1 : 0;
+      previousSizes = currentSizes;
+      sampleCount += 1;
+
+      if ((hasMeasuredSize && stableFrames >= 2) || sampleCount >= 18) {
+        finalizeViewportFocus();
+        return;
+      }
+
+      frameId = window.requestAnimationFrame(waitForNodeLayoutToSettle);
+    };
+
+    frameId = window.requestAnimationFrame(waitForNodeLayoutToSettle);
+
+    return () => {
+      cancelled = true;
+      if (frameId) {
+        window.cancelAnimationFrame(frameId);
+      }
+    };
+  }, [
+    canvasNodes,
+    getPlaygroundFocusSafeInsets,
+    getRenderedNodeSize,
+    pendingViewportFocusRequest,
+    prefersReducedMotion,
+    updateNode,
+    updateViewport,
+  ]);
 
   useEffect(() => {
     if (!primaryNodeTransition || prefersReducedMotion) {
       return;
     }
 
-    let cancelled = false;
-    let observer: ResizeObserver | null = null;
-    let frameId = 0;
-    let corrected = false;
-    const applyMeasuredCorrection = (measuredSize: WorkflowNodeSize | null, options?: { force?: boolean }) => {
-      if (
-        cancelled ||
-        !measuredSize ||
-        (!options?.force &&
-          (corrected ||
-            !shouldCorrectNodePlaygroundMeasuredSize(primaryNodeTransition.predictedSize, measuredSize)))
-      ) {
-        return;
-      }
-
-      const surfaceSize = getCanvasSurfaceSize();
-      if (!surfaceSize) {
-        return;
-      }
-
-      corrected = true;
-      const correction = buildNodePlaygroundMeasuredCorrection({
-        targetCenter: primaryNodeTransition.targetCenter,
-        measuredSize,
-        surfaceSize,
-        safeInsets: getPlaygroundFocusSafeInsets(surfaceSize),
-      });
-
-      updateNode(primaryNodeTransition.nodeId, (node) => ({
-        ...node,
-        x: correction.nodePosition.x,
-        y: correction.nodePosition.y,
-      }));
-      updateViewport(correction.viewport);
-    };
-
     const timeoutId = window.setTimeout(() => {
-      applyMeasuredCorrection(getRenderedNodeSize(primaryNodeTransition.nodeId), { force: true });
       setPrimaryNodeTransition((current) =>
         current?.nodeId === primaryNodeTransition.nodeId ? null : current
       );
     }, PLAYGROUND_LAYOUT_MOTION_MS + PLAYGROUND_LAYOUT_MOTION_BUFFER_MS);
 
-    const attachObserver = () => {
-      if (cancelled) {
-        return;
-      }
-
-      const surfaceElement = canvasRef.current;
-      const nodeElement = surfaceElement?.querySelector<HTMLElement>(`[data-node-id="${primaryNodeTransition.nodeId}"]`);
-      if (!nodeElement) {
-        frameId = window.requestAnimationFrame(attachObserver);
-        return;
-      }
-
-      observer = new ResizeObserver((entries) => {
-        const entry = entries[0];
-        if (!entry) {
-          return;
-        }
-
-        applyMeasuredCorrection({
-          width: Math.round(entry.contentRect.width),
-          height: Math.round(entry.contentRect.height),
-        });
-      });
-      observer.observe(nodeElement);
-      applyMeasuredCorrection(getRenderedNodeSize(primaryNodeTransition.nodeId));
-    };
-
-    frameId = window.requestAnimationFrame(attachObserver);
-
     return () => {
-      cancelled = true;
-      observer?.disconnect();
-      if (frameId) {
-        window.cancelAnimationFrame(frameId);
-      }
       window.clearTimeout(timeoutId);
     };
-  }, [
-    getCanvasSurfaceSize,
-    getPlaygroundFocusSafeInsets,
-    getRenderedNodeSize,
-    prefersReducedMotion,
-    primaryNodeTransition,
-    updateNode,
-    updateViewport,
-  ]);
+  }, [prefersReducedMotion, primaryNodeTransition]);
 
   useEffect(() => {
     if (!prefersReducedMotion) {
@@ -1212,6 +1336,7 @@ export function NodePlaygroundCanvas({
         }
         const transitionLayout = surfaceSize
           ? buildNodePlaygroundTransitionLayout({
+              currentViewport: canvasDoc.canvasViewport,
               currentPosition: { x: node.x, y: node.y },
               currentSize,
               nextSize,
@@ -1232,7 +1357,6 @@ export function NodePlaygroundCanvas({
           y: nextPosition.y,
         }));
         if (transitionLayout) {
-          updateViewport(transitionLayout.viewport);
           setPrimaryNodeTransition(
             prefersReducedMotion
               ? null
@@ -1242,8 +1366,33 @@ export function NodePlaygroundCanvas({
                   predictedSize: nextSize,
                 }
           );
+          requestViewportFocus({
+            nodeIds: [nodeId],
+            predictedBoundsById: {
+              [nodeId]: buildCanvasFocusBounds(transitionLayout.nodePosition, nextSize),
+            },
+            anchor: "available-center",
+            safeInsets: focusSafeInsets,
+            modeChange: {
+              nodeId,
+              predictedSize: nextSize,
+              targetCenter: transitionLayout.targetCenter,
+            },
+          });
         } else {
           setPrimaryNodeTransition(null);
+          requestViewportFocus(
+            surfaceSize
+              ? {
+                  nodeIds: [nodeId],
+                  predictedBoundsById: {
+                    [nodeId]: buildCanvasFocusBounds(nextPosition, nextSize),
+                  },
+                  anchor: "available-center",
+                  safeInsets: focusSafeInsets,
+                }
+              : null
+          );
         }
       }
     }
@@ -1276,43 +1425,24 @@ export function NodePlaygroundCanvas({
     prefersReducedMotion,
     primaryNodeId,
     buildRenderNodeForMeasurement,
+    canvasDoc.canvasViewport,
+    requestViewportFocus,
     updateNode,
-    updateViewport,
   ]);
 
   const focusNodeViewport = useCallback((nodeId: string) => {
     const node = canvasNodes.find((candidate) => candidate.id === nodeId);
-    const surfaceElement = canvasRef.current;
-    if (!node || !surfaceElement) {
+    const surfaceSize = getCanvasSurfaceSize();
+    if (!node || !surfaceSize) {
       return;
     }
 
-    const bounds = surfaceElement.getBoundingClientRect();
-    if (bounds.width < 120 || bounds.height < 120) {
-      return;
-    }
-
-    const nodeElement = surfaceElement.querySelector<HTMLElement>(`[data-node-id="${node.id}"]`);
-    const focusWidth = nodeElement?.offsetWidth || node.resolvedSize.width;
-    const focusHeight = nodeElement?.offsetHeight || node.resolvedSize.height;
-    updateViewport(
-      buildFramedViewportForNode({
-        nodePosition: { x: node.x, y: node.y },
-        nodeSize: {
-          width: focusWidth,
-          height: focusHeight,
-        },
-        surfaceSize: {
-          width: bounds.width,
-          height: bounds.height,
-        },
-        safeInsets: getPlaygroundFocusSafeInsets({
-          width: bounds.width,
-          height: bounds.height,
-        }),
-      })
-    );
-  }, [canvasNodes, getPlaygroundFocusSafeInsets, updateViewport]);
+    requestViewportFocus({
+      nodeIds: [node.id],
+      anchor: "camera-only",
+      safeInsets: getPlaygroundFocusSafeInsets(surfaceSize),
+    });
+  }, [canvasNodes, getCanvasSurfaceSize, getPlaygroundFocusSafeInsets, requestViewportFocus]);
   const transitioningPrimaryNodeId = prefersReducedMotion ? null : primaryNodeTransition?.nodeId || null;
 
   const renderNodeContent = useCallback(

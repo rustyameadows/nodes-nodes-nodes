@@ -77,8 +77,9 @@ test("buildFramedViewportForNode fits and centers the node with playground paddi
   });
 });
 
-test("buildNodePlaygroundTransitionLayout keeps the node center stable while reframing the viewport", () => {
+test("buildNodePlaygroundTransitionLayout re-anchors around the live available viewport center", () => {
   const layout = buildNodePlaygroundTransitionLayout({
+    currentViewport: { x: 100, y: -30, zoom: 1.2 },
     currentPosition: { x: 120, y: 180 },
     currentSize: { width: 236, height: 84 },
     nextSize: { width: 640, height: 420 },
@@ -86,12 +87,12 @@ test("buildNodePlaygroundTransitionLayout keeps the node center stable while ref
     safeInsets: { top: 40, right: 40, bottom: 148, left: 40 },
   });
 
-  assert.deepEqual(layout.targetCenter, { x: 238, y: 222 });
-  assert.deepEqual(layout.nodePosition, { x: -82, y: 12 });
+  assert.deepEqual(layout.targetCenter, { x: 300, y: 375 });
+  assert.deepEqual(layout.nodePosition, { x: -20, y: 165 });
   assert.deepEqual(layout.viewport, {
     zoom: 1.3125,
-    x: 147.625,
-    y: 128.625,
+    x: 66.25,
+    y: -72.1875,
   });
 });
 
