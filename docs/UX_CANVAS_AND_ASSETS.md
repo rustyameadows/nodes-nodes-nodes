@@ -104,7 +104,7 @@
 - node presentation states:
   - `preview` is the default persisted state
   - `compact` is a persisted pill/tiny-node state
-  - `full` is transient and primarily used for model response settings plus template edit mode
+  - `full` is a persisted expanded model-editor state and remains transient only for template edit mode
   - `resized` is a persisted custom size for text notes, lists, templates, model nodes, and asset nodes
   - `resized` means the stored width and height are authoritative across focus changes; overflow stays inside the node instead of collapsing the shell back to content height
   - resized model nodes also keep their expanded chrome and editor layout after focus moves away; the inactive surface becomes read-only until the node is selected again
@@ -115,14 +115,15 @@
   - double-click zooms the viewport to fit the target node
   - if double-click also changes the node's presentation mode, the viewport refit starts from predicted expanded bounds and then corrects against the measured outer shell after the transition settles
   - image node double-click keeps the node in place and only reframes the viewport
-  - model node double-click opens the full response-settings editor while keeping the shared rails/run launcher behavior on single select
+  - model node double-click switches the node into persisted `full` and opens the full response-settings editor while keeping the shared rails/run launcher behavior on single select
   - template node double-click enters edit mode and then reframes to the expanded editor
   - resized nodes keep their custom size when re-opened
   - a single selected node exposes a bottom-center `Center` CTA, and multi-selection strips expose `Center Selection`; both use the same bounds-based fit/zoom engine as double-click and the Node Library
   - model and template double-click focus requests pre-compute target viewport bounds from predicted or preflight-measured outer shells before the visible transition begins, then validate against measured DOM bounds inside the same motion window
 - active-node behavior by kind:
   - image asset: the media surface stays visually pure; preview shows only the image, and active labels return to the shared top title rail while actions stay outside the frame
-  - model: single-select keeps the node at its persisted `preview` or `compact` size, reveals the shared top/bottom rails, and keeps the external side run launcher visible; `Enter` or double-click opens the simplified full response-settings layout, the top-left rail immediately rehydrates to show `Default` and `Compact`, and that full shell stays open until `Default`, `Compact`, or resize mode takes over
+  - model: single-select keeps the node at its persisted `preview` or `compact` size, reveals the shared top/bottom rails, and keeps the external side run launcher visible; `Enter` or double-click switches the node into persisted `full`, the top-left rail immediately rehydrates to show `Default` and `Compact`, and that full shell stays open until `Default`, `Compact`, or resize mode takes over
+  - model: persisted `full` is node-local, so multiple model nodes may remain open at once and opening another model does not collapse older full model shells
   - model: when a full or persisted `resized` shell loses focus, the large body stays open but the shared top/bottom rails and drag pill hide until the node is focused again
   - model: selected `preview`, `full`, and persisted `resized` shells expose the bottom-right resize handle; `compact` does not
   - text note: single-select reveals rails but keeps the sticky-note body visually unchanged
@@ -144,7 +145,8 @@
 - active node drag uses rail/hotspot affordances instead of visible drag indicators
 - model full and resized modes use a simplified two-panel layout:
   - left prompt surface, right model-settings surface at larger widths
-  - `full` mode lets the outer shell hug the rendered panel content height instead of holding an extra fixed-height canvas body
+  - persisted `full` mode lets the outer shell hug the rendered panel content height instead of holding an extra fixed-height canvas body
+  - persisted `full` mode survives deselection, opening another model node, and reload because the state is saved on the node instead of in a single global editor slot
   - resizing from `preview` or `full` immediately commits persisted `displayMode: "resized"` plus stored `size` at drag start, so the shell stops fitting to content before the resize drag settles
   - persisted `resized` mode honors the stored width and height and scrolls internally when the prompt/settings content is taller than the node
   - persisted `resized` mode keeps the same expanded layout when inactive instead of swapping back to the preview card

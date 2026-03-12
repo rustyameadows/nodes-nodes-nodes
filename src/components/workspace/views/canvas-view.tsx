@@ -2752,7 +2752,7 @@ export function CanvasView({ projectId }: Props) {
           x: nextPosition.x,
           y: nextPosition.y,
           zIndex,
-          displayMode: "preview",
+          displayMode: "full",
           size: null,
         };
 
@@ -2777,8 +2777,8 @@ export function CanvasView({ projectId }: Props) {
       }
       setInsertMenu(null);
       if (didMutate) {
-        setActiveFullNodeId(nodeId);
-        setPinnedModelFullNodeId(nodeId);
+        setActiveFullNodeId(null);
+        setPinnedModelFullNodeId(null);
       } else {
         setActiveFullNodeId(null);
         setPinnedModelFullNodeId(null);
@@ -3326,8 +3326,18 @@ export function CanvasView({ projectId }: Props) {
         setActiveFullNodeId(nodeId);
         setPinnedModelFullNodeId(null);
       } else if (node.kind === "model" && node.displayMode !== "resized") {
-        setActiveFullNodeId(nodeId);
-        setPinnedModelFullNodeId(nodeId);
+        updateNode(
+          nodeId,
+          {
+            displayMode: "full",
+            size: null,
+          },
+          {
+            historyMode: "immediate",
+          }
+        );
+        setActiveFullNodeId(null);
+        setPinnedModelFullNodeId(null);
       } else {
         setActiveFullNodeId(null);
         setPinnedModelFullNodeId(null);
@@ -3345,6 +3355,7 @@ export function CanvasView({ projectId }: Props) {
       requestViewportFocus,
       setTrackedSelectedConnection,
       setTrackedSelectedNodeIds,
+      updateNode,
     ]
   );
 
@@ -3371,8 +3382,18 @@ export function CanvasView({ projectId }: Props) {
         setActiveFullNodeId(nodeId);
         setPinnedModelFullNodeId(null);
       } else if (node.kind === "model" && node.displayMode !== "resized") {
-        setActiveFullNodeId(nodeId);
-        setPinnedModelFullNodeId(nodeId);
+        updateNode(
+          nodeId,
+          {
+            displayMode: "full",
+            size: null,
+          },
+          {
+            historyMode: "immediate",
+          }
+        );
+        setActiveFullNodeId(null);
+        setPinnedModelFullNodeId(null);
       } else {
         setActiveFullNodeId(null);
         setPinnedModelFullNodeId(null);
@@ -3390,6 +3411,7 @@ export function CanvasView({ projectId }: Props) {
       requestViewportFocus,
       setTrackedSelectedConnection,
       setTrackedSelectedNodeIds,
+      updateNode,
     ]
   );
 

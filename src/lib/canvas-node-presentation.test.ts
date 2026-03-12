@@ -53,6 +53,28 @@ test("keeps explicitly opened model nodes full even after selection moves away",
   assert.equal(presentation.showActionRail, false);
 });
 
+test("keeps persisted full model nodes full even when another node is selected", () => {
+  const presentation = resolveCanvasNodePresentation({
+    node: {
+      kind: "model",
+      outputType: "image",
+      displayMode: "full",
+      size: null,
+    },
+    activeNodeId: "other-node",
+    fullNodeId: null,
+    nodeId: "node-1",
+  });
+
+  assert.equal(presentation.persistedMode, "full");
+  assert.equal(presentation.renderMode, "full");
+  assert.equal(presentation.isExpanded, true);
+  assert.equal(presentation.showResizeHandle, false);
+  assert.equal(presentation.showTitleRail, false);
+  assert.equal(presentation.showActionRail, false);
+  assert.deepEqual(presentation.size, { width: 980, height: 385 });
+});
+
 test("keeps selected preview model nodes at preview size until full mode is explicitly opened", () => {
   const presentation = resolveCanvasNodePresentation({
     node: {
@@ -256,7 +278,7 @@ test("keeps resized model nodes expanded even after they are no longer active", 
   assert.equal(presentation.showActionRail, false);
 });
 
-test("only transient full models measure their content height", () => {
+test("model full shells measure their content height while resized shells do not", () => {
   assert.equal(
     shouldCanvasNodeMeasureContentHeight({
       kind: "model",

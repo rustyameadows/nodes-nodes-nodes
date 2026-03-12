@@ -130,7 +130,7 @@ TanStack Query owns persisted app data in the renderer and is invalidated from t
   - native macOS `Canvas` add menus use the same catalog/provider source
 - Canvas overlays use the `canvas-overlay` surface, while node cards use the dedicated canvas-node system.
 - `CanvasView` also mounts a renderer-local `CanvasCopilotWidget` in the overlay layer. It is not persisted in the canvas document and is not represented by a hidden model node.
-- `CanvasView` and `NodePlaygroundCanvas` derive node presentation from persisted node-local metadata (`displayMode`, `size`) plus transient active-node state through `resolveCanvasNodePresentation`.
+- `CanvasView` and `NodePlaygroundCanvas` derive node presentation from persisted node-local metadata (`displayMode`, `size`) plus transient active-node state through `resolveCanvasNodePresentation`; model nodes may now persist `full` directly on the node, while template edit/full remains transient renderer state.
 - `CanvasView` also listens for external same-project workspace mutations flagged as asset imports so menu bar uploads can refresh the live canvas without forcing a route remount.
 - `CanvasNodeContent` in `src/components/canvas-nodes/` renders shared rails plus mode-aware node bodies for model, text note, list, template, and asset nodes.
 - `InfiniteCanvas` renders live drag previews, resize handles, phantom previews, quick mode transitions, and the edge-mounted run launcher, but committed node movement is written back once per drag through `onCommitNodePositions`.

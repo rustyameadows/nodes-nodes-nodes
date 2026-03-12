@@ -73,7 +73,7 @@ What it does:
   - `C` connects exactly two selected nodes
   - `Enter` opens the selected node's inline full editor
   - single-click on a `preview` or `compact` model only selects it, keeps its size unchanged, and reveals the shared rails plus the external side run launcher
-  - node double-click opens the same primary inline editor mapping on `preview` / `compact` nodes, immediately shows the correct top-left mode pills for the new shell, keeps model full shells open after focus moves away, and fit-zooms from preflight-measured or predicted outer shell bounds without clipping or a follow-up camera chase
+  - node double-click opens the same primary inline editor mapping on `preview` / `compact` nodes, immediately shows the correct top-left mode pills for the new shell, keeps model full shells open after focus moves away, keeps previously opened full model shells open when a different model is opened next, and fit-zooms from preflight-measured or predicted outer shell bounds without clipping or a follow-up camera chase
   - unfocused model nodes that remain in `full` or persisted `resized` keep the large body visible but hide the shared top/bottom rails until refocused
   - double-click on a `resized` node keeps it resized and only focuses the viewport
   - selected model nodes in `preview`, `full`, and persisted `resized` show the bottom-right resize handle, and resize enters `displayMode: "resized"` at drag start and keeps it until `Default` or `Compact`
@@ -259,17 +259,18 @@ Run this when touching workflow or asset UX:
 14. Press `C` with exactly two selected nodes and confirm a connection is created.
 15. Press `Enter` on a single selected node and confirm the expected inline full editor opens.
 16. Double-click a `preview` or `compact` node and confirm it opens the same primary inline editor as `Enter` with a gentle viewport focus animation.
-17. Double-click a `resized` node and confirm it stays resized while the viewport focuses to it.
-18. Click into a prompt, note, list cell, or template textarea and confirm canvas shortcuts do not fire while typing.
-19. Resize a text/list/template/asset node and confirm the size persists after deselecting or reloading.
-20. Open a template node with a connected list and confirm variable chips, compatibility state, and merge preview render inline.
-21. Open a list node in full mode and confirm it behaves like an inline editable sheet instead of the old stacked field controls.
-22. Resize an asset node, then drag it directly from the media surface and confirm it still moves cleanly.
-23. Confirm phantom output previews appear only for the active node and disappear when you deselect or change selection.
-24. Use `Cmd/Ctrl+Z` and `Cmd/Ctrl+Shift+Z` to undo/redo one move, one connection, and one inline edit.
-25. If a generated child node exists, resize or edit it, wait through at least one jobs poll, reload, and confirm it does not revert.
-26. Delete a generated child node, reload, and confirm it does not respawn.
-27. Import an asset.
+17. Double-click a model node from `preview` or `compact`, click empty canvas, then double-click a second model node and confirm the first model still stays in `full`.
+18. Double-click a `resized` node and confirm it stays resized while the viewport focuses to it.
+19. Click into a prompt, note, list cell, or template textarea and confirm canvas shortcuts do not fire while typing.
+20. Resize a text/list/template/asset node and confirm the size persists after deselecting or reloading.
+21. Open a template node with a connected list and confirm variable chips, compatibility state, and merge preview render inline.
+22. Open a list node in full mode and confirm it behaves like an inline editable sheet instead of the old stacked field controls.
+23. Resize an asset node, then drag it directly from the media surface and confirm it still moves cleanly.
+24. Confirm phantom output previews appear only for the active node and disappear when you deselect or change selection.
+25. Use `Cmd/Ctrl+Z` and `Cmd/Ctrl+Shift+Z` to undo/redo one move, one connection, and one inline edit.
+26. If a generated child node exists, resize or edit it, wait through at least one jobs poll, reload, and confirm it does not revert.
+27. Delete a generated child node, reload, and confirm it does not respawn.
+28. Import an asset.
 28. Open the Assets view and confirm the imported asset appears.
 29. Open Project Settings and confirm the project metadata renders and provider credentials do not appear there.
 30. Open App Settings and confirm provider credentials render there.

@@ -41,7 +41,7 @@ export function normalizeWorkflowNodeDisplayMode(
   value: unknown,
   fallback: WorkflowNodeDisplayMode = "preview"
 ): WorkflowNodeDisplayMode {
-  if (value === "compact" || value === "resized" || value === "preview") {
+  if (value === "compact" || value === "full" || value === "resized" || value === "preview") {
     return value;
   }
 
@@ -269,7 +269,10 @@ export function resolveCanvasNodePresentation(input: {
   const isActive = input.activeNodeId === input.nodeId;
   const isEditing = input.fullNodeId === input.nodeId && interactionPolicy === "text-template";
   const isModelFullOpen =
-    input.fullNodeId === input.nodeId && interactionPolicy === "model" && persistedMode !== "resized";
+    input.fullNodeId === input.nodeId &&
+    interactionPolicy === "model" &&
+    persistedMode !== "resized" &&
+    persistedMode !== "full";
   let renderMode: CanvasNodeRenderMode = persistedMode;
 
   if (input.forcedRenderMode === "full") {
@@ -286,7 +289,7 @@ export function resolveCanvasNodePresentation(input: {
   const canResize = canResizeWorkflowNode(input.node);
   const defaultSize = getWorkflowNodeDefaultSize(input.node.kind, renderMode, input.aspectRatio);
   const keepsExpandedShellWhenInactive =
-    interactionPolicy === "model" && (isModelFullOpen || persistedMode === "resized");
+    interactionPolicy === "model" && (isModelFullOpen || persistedMode === "full" || persistedMode === "resized");
   const isExpanded = isActive || isEditing || keepsExpandedShellWhenInactive;
   const showModelChrome = interactionPolicy === "model" ? isActive : isExpanded;
   const showResizeHandle =

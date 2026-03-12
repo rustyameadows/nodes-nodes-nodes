@@ -96,6 +96,24 @@ test("transient full model actions keep compact available when the persisted mod
   );
 });
 
+test("persisted full model actions still expose default and compact", () => {
+  const actions = getCanvasNodeActionDescriptors({
+    interactionPolicy: "model",
+    persistedMode: "full",
+    renderMode: "full",
+    isEditing: false,
+  });
+
+  assert.deepEqual(
+    actions.map((action) => [action.id, action.slot]),
+    [
+      ["default", "top-left"],
+      ["compact", "top-left"],
+      ["duplicate", "bottom"],
+    ]
+  );
+});
+
 test("list actions place add column in the bottom rail", () => {
   const actions = getCanvasNodeActionDescriptors({
     interactionPolicy: "list",

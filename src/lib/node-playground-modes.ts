@@ -18,6 +18,10 @@ export function getInitialNodePlaygroundMode(
     return "edit";
   }
 
+  if (displayMode === "full") {
+    return "edit";
+  }
+
   if (displayMode === "compact") {
     return "compact";
   }

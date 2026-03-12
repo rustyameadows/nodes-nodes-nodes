@@ -15,6 +15,7 @@ import {
 test("initial node playground modes derive from persisted display mode unless the fixture opens in edit", () => {
   assert.equal(getInitialNodePlaygroundMode("preview"), "preview");
   assert.equal(getInitialNodePlaygroundMode("compact"), "compact");
+  assert.equal(getInitialNodePlaygroundMode("full"), "edit");
   assert.equal(getInitialNodePlaygroundMode("resized"), "resize");
   assert.equal(getInitialNodePlaygroundMode("preview", true), "edit");
 });

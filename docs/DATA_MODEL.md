@@ -41,7 +41,7 @@ type Canvas = {
   updatedAt: string;
 };
 
-type WorkflowNodeDisplayMode = "preview" | "compact" | "resized";
+type WorkflowNodeDisplayMode = "preview" | "compact" | "full" | "resized";
 
 type WorkflowNodeSize = {
   width: number;
@@ -153,7 +153,7 @@ type JobPreviewFrame = {
   - `displayMode`
   - `size`
 - the canvas JSON also persists `generatedOutputReceiptKeys`, which record completed generated job outputs that have already been materialized onto the canvas
-- transient full-mode state and phantom previews remain renderer-only and are not stored in SQLite
+- template edit/full state and phantom previews remain renderer-only; model `full` mode is stored directly on the node through `displayMode`
 
 ### `jobs`
 - one row per submitted provider run
@@ -277,10 +277,11 @@ The renderer never sees absolute paths; those refs are resolved only in main/wor
 - `WorkflowNode.displayMode`
   - `preview`: default persisted surface
   - `compact`: persisted pill/tiny-node surface
+  - `full`: persisted expanded model editor surface
   - `resized`: persisted custom width/height
 - `WorkflowNode.size`
   - stored only when the node is in `resized`
-  - used for text notes, lists, templates, and asset nodes
+  - used for model nodes, text notes, lists, templates, and asset nodes
 - uploaded asset-source nodes also persist lightweight upload metadata in `WorkflowNode.settings`:
   - `source: "uploaded"`
   - `assetName`
