@@ -28,6 +28,7 @@ import {
 } from "@/lib/canvas-node-presentation";
 import { getUploadedAssetNodeAspectRatio } from "@/lib/canvas-asset-nodes";
 import { sortCanvasNodesForDisplay } from "@/lib/canvas-layout";
+import { buildCanvasConnections } from "@/lib/canvas-connections";
 import {
   getCanvasNodeAccentColor,
   getCanvasNodeAccentGlow,
@@ -542,67 +543,24 @@ export function InfiniteCanvas({
   }, [displayNodes, selectedNodeIds]);
 
   const edges = useMemo(() => {
-    return displayNodes.flatMap((targetNode) => {
-      const connections: CanvasConnection[] = [
-        ...targetNode.upstreamNodeIds.map((sourceNodeId) => ({
-          id: `input:${sourceNodeId}->${targetNode.id}`,
-          kind: "input" as const,
-          sourceNodeId,
-          targetNodeId: targetNode.id,
-          semanticType: "image" as const,
-          lineStyle: "solid" as const,
-        })),
-        ...(targetNode.promptSourceNodeId
-          ? [
-              {
-                id: `prompt:${targetNode.promptSourceNodeId}->${targetNode.id}`,
-                kind: "prompt" as const,
-                sourceNodeId: targetNode.promptSourceNodeId,
-                targetNodeId: targetNode.id,
-                semanticType: "text" as const,
-                lineStyle: "solid" as const,
-              },
-            ]
-          : []),
-      ];
+    return buildCanvasConnections(displayNodes)
+      .map((connection) => {
+        const sourceNode = nodesById[connection.sourceNodeId];
+        const targetNode = nodesById[connection.targetNodeId];
+        if (!sourceNode || !targetNode) {
+          return null;
+        }
 
-      return connections
-        .map((connection) => {
-          const sourceNode = nodesById[connection.sourceNodeId];
-          if (!sourceNode) {
-            return null;
-          }
+        const start = getOutputPortPoint(sourceNode, getNodeBoundsSize(sourceNode.id));
+        const end = getInputPortPoint(targetNode, getNodeBoundsSize(targetNode.id));
 
-          const semanticType =
-            connection.kind === "prompt"
-              ? ("text" as const)
-              : sourceNode.kind === "model" && isGeneratedAssetNode(targetNode)
-                ? ("citrus" as const)
-                : getNodeOutputSemanticType(sourceNode);
-          const lineStyle =
-            connection.kind === "input" &&
-            isGeneratedAssetNode(targetNode) &&
-            (targetNode.processingState === "queued" || targetNode.processingState === "running")
-              ? ("dashed" as const)
-              : ("solid" as const);
-
-          const start = getOutputPortPoint(sourceNode, getNodeBoundsSize(sourceNode.id));
-          const end = getInputPortPoint(targetNode, getNodeBoundsSize(targetNode.id));
-
-          return {
-            ...connection,
-            semanticType,
-            lineStyle,
-            start,
-            end,
-          };
-        })
-        .filter(
-          (
-            edge
-          ): edge is NonNullable<typeof edge> => Boolean(edge)
-        );
-    });
+        return {
+          ...connection,
+          start,
+          end,
+        };
+      })
+      .filter((edge): edge is NonNullable<typeof edge> => Boolean(edge));
   }, [displayNodes, getNodeBoundsSize, nodesById]);
 
   useEffect(() => {

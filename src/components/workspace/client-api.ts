@@ -256,6 +256,14 @@ export async function dismissMenuBarDropState() {
   await window.nodeInterface.dismissMenuBarDropState();
 }
 
+export async function saveCanvasPngExport(request: {
+  suggestedName: string;
+  data: ArrayBuffer;
+  filePath?: string;
+}) {
+  return window.nodeInterface.saveCanvasPngExport(request);
+}
+
 export function getAssetFileUrl(assetId: string) {
   return `app-asset://asset/${assetId}`;
 }

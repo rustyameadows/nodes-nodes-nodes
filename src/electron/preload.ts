@@ -36,6 +36,7 @@ const nodeInterface: NodeInterface = {
   getMenuBarState: () => invoke("getMenuBarState"),
   dismissMenuBarDropState: () => invoke("dismissMenuBarDropState"),
   setMenuContext: (context) => invoke("setMenuContext", context),
+  saveCanvasPngExport: (request) => invoke("saveCanvasPngExport", request),
   subscribe: (eventName: AppEventName, listener: (payload: AppEventPayload) => void) => {
     const handler = (_event: unknown, payload: AppEventPayload) => {
       if (payload.event === eventName) {

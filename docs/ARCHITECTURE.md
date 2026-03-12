@@ -77,6 +77,7 @@ Available methods:
 - `listProviders`
 - `listProviderCredentials`, `saveProviderCredential`, `clearProviderCredential`
 - `refreshProviderAccess`
+- `saveCanvasPngExport`
 - `setMenuContext`
 - `subscribe(eventName, listener)`
 - `subscribeMenuCommand(listener)`
@@ -132,9 +133,12 @@ TanStack Query owns persisted app data in the renderer and is invalidated from t
 - `CanvasView` also mounts a renderer-local `CanvasCopilotWidget` in the overlay layer. It is not persisted in the canvas document and is not represented by a hidden model node.
 - `CanvasView` and `NodePlaygroundCanvas` derive node presentation from persisted node-local metadata (`displayMode`, `size`) plus transient active-node state through `resolveCanvasNodePresentation`; model nodes may now persist `full` directly on the node, while template edit/full remains transient renderer state.
 - `CanvasView` also listens for external same-project workspace mutations flagged as asset imports so menu bar uploads can refresh the live canvas without forcing a route remount.
+- Selected-node cleanup and selection PNG export both reuse a renderer-local plain-data graph layout module that computes deterministic left-to-right positions, disconnected component stacking, and export bounds without depending on DOM layout ownership.
 - `CanvasNodeContent` in `src/components/canvas-nodes/` renders shared rails plus mode-aware node bodies for model, text note, list, template, and asset nodes.
 - `InfiniteCanvas` renders live drag previews, resize handles, phantom previews, quick mode transitions, and the edge-mounted run launcher, but committed node movement is written back once per drag through `onCommitNodePositions`.
 - Multi-node drag uses the current selection as a batch and preserves relative spacing across the moved nodes.
+- `Clean Up Selection` mutates only the selected nodes and records one immediate canvas history entry.
+- `Capture PNG` builds an induced selected subgraph, lays it out in an ephemeral export scene, rasterizes the SVG in the renderer, and hands the encoded PNG bytes to the Electron main process for native save-dialog persistence.
 - Active node cards switch drag to floating rail/hotspot affordances so inline controls stay editable without causing content shift.
 - Double-click node focus is owned by `CanvasView`: it may first change the node's presentation state, then waits for the node shell to settle before animating the viewport fit.
 - Primary inline editor routing is resolved by node type:

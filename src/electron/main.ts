@@ -2,6 +2,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { fork, type ChildProcess } from "node:child_process";
 import { mkdirSync } from "node:fs";
+import { writeFile } from "node:fs/promises";
 import { eq } from "drizzle-orm";
 import { app, BrowserWindow, dialog, ipcMain, Menu, protocol, screen, Tray, type MenuItemConstructorOptions } from "electron";
 import type {
@@ -12,6 +13,7 @@ import type {
   MenuBarState,
   MenuCommand,
   MenuContext,
+  SaveCanvasPngExportRequest,
   ShowAppTarget,
 } from "@/lib/ipc-contract";
 import type { AssetFilterState } from "@/components/workspace/types";
@@ -837,6 +839,41 @@ function registerIpc() {
     dismissMenuBarDropState: async () => {
       clearMenuBarState();
       hideMenuBarWindow();
+    },
+    saveCanvasPngExport: async (request: SaveCanvasPngExportRequest) => {
+      const normalizedName = (request.suggestedName || "canvas-selection.png")
+        .trim()
+        .replace(/[<>:"/\\|?*\u0000-\u001F]/g, "-")
+        .replace(/\s+/g, " ");
+      const defaultFileName = normalizedName.toLowerCase().endsWith(".png") ? normalizedName : `${normalizedName}.png`;
+      const resolvedFilePath =
+        request.filePath ||
+        (
+          await dialog.showSaveDialog(mainWindow || undefined, {
+            title: "Save Canvas PNG",
+            defaultPath: path.join(app.getPath("downloads"), defaultFileName),
+            filters: [
+              {
+                name: "PNG Image",
+                extensions: ["png"],
+              },
+            ],
+            properties: ["createDirectory", "showOverwriteConfirmation"],
+          })
+        ).filePath;
+
+      if (!resolvedFilePath) {
+        return {
+          canceled: true,
+          filePath: null,
+        };
+      }
+
+      await writeFile(resolvedFilePath, Buffer.from(request.data));
+      return {
+        canceled: false,
+        filePath: resolvedFilePath,
+      };
     },
     setMenuContext: async (context: MenuContext, webContentsId?: number, targetWindow?: BrowserWindow | null) => {
       if (!webContentsId) {

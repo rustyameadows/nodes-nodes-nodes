@@ -78,6 +78,7 @@ import {
   normalizeNode,
   openProject,
   putCanvasWorkspace,
+  saveCanvasPngExport,
   subscribeToAppEvent,
   uid,
   uploadProjectAsset,
@@ -115,7 +116,18 @@ import {
   outputTypeFromAssetType,
 } from "@/lib/canvas-asset-nodes";
 import { centerCanvasInsertPosition } from "@/lib/canvas-layout";
+import { buildCanvasSelectionConnections } from "@/lib/canvas-connections";
 import { nextCanvasNodeZIndex } from "@/lib/canvas-document";
+import {
+  buildCanvasExportSvg,
+  type CanvasExportRenderableEdge,
+  type CanvasExportRenderableNode,
+} from "@/lib/canvas-export-svg";
+import {
+  getCanvasGraphBounds,
+  layoutCanvasGraph,
+  type CanvasGraphLayoutNode,
+} from "@/lib/canvas-graph-layout";
 import {
   buildProviderDebugRequest,
   getFallbackProviderModel,
@@ -180,11 +192,96 @@ const INSERT_MENU_NODE_PREVIEW_SIZE = {
   width: 212,
   height: 72,
 } as const;
+const DEFAULT_GRAPH_NODE_SIZE = {
+  width: 212,
+  height: 72,
+} as const;
+const SELECTION_LAYOUT_COLUMN_GAP = 120;
+const SELECTION_LAYOUT_ROW_GAP = 56;
+const SELECTION_LAYOUT_COMPONENT_GAP = 112;
+const CANVAS_EXPORT_PADDING = 56;
+const CANVAS_EXPORT_MAX_EDGE = 4096;
+const CANVAS_EXPORT_SCALE_CAP = 2;
+
+function sanitizeSelectionExportName(value: string) {
+  const cleaned = value
+    .trim()
+    .replace(/[<>:"/\\|?*\u0000-\u001F]/g, "-")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+  return cleaned || "canvas-selection";
+}
+
+function buildSelectionExportFileName(nodes: WorkflowNode[]) {
+  if (nodes.length === 1) {
+    return `${sanitizeSelectionExportName(nodes[0]?.label || "canvas-selection")}.png`;
+  }
+
+  const lead = nodes[0]?.label ? `${sanitizeSelectionExportName(nodes[0].label)}-` : "";
+  return `${lead}${nodes.length}-node-selection.png`;
+}
+
+function blobToDataUrl(blob: Blob) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error || new Error("Failed to read blob as data URL."));
+    reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function loadImageDataUrl(url: string) {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Failed to read export preview image: ${response.status}`);
+  }
+  return blobToDataUrl(await response.blob());
+}
+
+async function rasterizeSvgToPng(svg: string, width: number, height: number, scale: number) {
+  const svgBlob = new Blob([svg], {
+    type: "image/svg+xml;charset=utf-8",
+  });
+  const svgUrl = URL.createObjectURL(svgBlob);
+
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const nextImage = new Image();
+      nextImage.onload = () => resolve(nextImage);
+      nextImage.onerror = () => reject(new Error("Failed to load export SVG."));
+      nextImage.src = svgUrl;
+    });
+
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(width * scale));
+    canvas.height = Math.max(1, Math.round(height * scale));
+    const context = canvas.getContext("2d");
+    if (!context) {
+      throw new Error("Failed to create export canvas.");
+    }
+
+    context.scale(scale, scale);
+    context.drawImage(image, 0, 0, width, height);
+
+    const pngBlob = await new Promise<Blob | null>((resolve) => {
+      canvas.toBlob((blob) => resolve(blob), "image/png");
+    });
+    if (!pngBlob) {
+      throw new Error("Failed to encode export PNG.");
+    }
+
+    return pngBlob.arrayBuffer();
+  } finally {
+    URL.revokeObjectURL(svgUrl);
+  }
+}
 
 type CanvasSelectionRailAction = {
   id: string;
   label: string;
   onClick: () => void;
+  disabled?: boolean;
 };
 
 type Props = {
@@ -847,6 +944,7 @@ export function CanvasView({ projectId }: Props) {
   const [copilotMessages, setCopilotMessages] = useState<CanvasCopilotMessage[]>([]);
   const [copilotModelVariantId, setCopilotModelVariantId] = useState<string | null>(null);
   const [copilotActiveJobId, setCopilotActiveJobId] = useState<string | null>(null);
+  const [isCapturingSelectionPng, setIsCapturingSelectionPng] = useState(false);
   const [historyStacks, setHistoryStacks] = useState<CanvasHistoryStacks>({
     undo: [],
     redo: [],
@@ -855,6 +953,7 @@ export function CanvasView({ projectId }: Props) {
   const saveTimer = useRef<NodeJS.Timeout | null>(null);
   const hasLoadedCanvasRef = useRef(false);
   const pendingCanvasSaveRef = useRef<CanvasDocument | null>(null);
+  const canvasSaveFlushPromiseRef = useRef<Promise<void> | null>(null);
   const insertMenuRef = useRef<HTMLDivElement | null>(null);
   const assetPickerRef = useRef<HTMLDivElement | null>(null);
   const selectionRailRef = useRef<HTMLDivElement | null>(null);
@@ -938,6 +1037,38 @@ export function CanvasView({ projectId }: Props) {
     [projectId]
   );
 
+  const flushCanvasSaveQueue = useCallback(async () => {
+    if (!hasLoadedCanvasRef.current) {
+      return;
+    }
+
+    while (canvasSaveFlushPromiseRef.current) {
+      await canvasSaveFlushPromiseRef.current;
+      if (!hasLoadedCanvasRef.current || !pendingCanvasSaveRef.current) {
+        return;
+      }
+    }
+
+    const flushPromise = (async () => {
+      while (hasLoadedCanvasRef.current && pendingCanvasSaveRef.current) {
+        const nextDoc = pendingCanvasSaveRef.current;
+        pendingCanvasSaveRef.current = null;
+        await persistCanvas(nextDoc);
+      }
+    })()
+      .catch((error) => {
+        console.error("Failed to persist canvas", error);
+      })
+      .finally(() => {
+        if (canvasSaveFlushPromiseRef.current === flushPromise) {
+          canvasSaveFlushPromiseRef.current = null;
+        }
+      });
+
+    canvasSaveFlushPromiseRef.current = flushPromise;
+    await flushPromise;
+  }, [persistCanvas]);
+
   const queueCanvasSave = useCallback(
     (doc: CanvasDocument) => {
       if (!hasLoadedCanvasRef.current) {
@@ -950,12 +1081,11 @@ export function CanvasView({ projectId }: Props) {
       }
 
       saveTimer.current = setTimeout(() => {
-        persistCanvas(doc).catch((error) => {
-          console.error("Failed to persist canvas", error);
-        });
+        pendingCanvasSaveRef.current = doc;
+        void flushCanvasSaveQueue();
       }, 360);
     },
-    [persistCanvas]
+    [flushCanvasSaveQueue]
   );
 
   const persistCanvasImmediately = useCallback(
@@ -970,9 +1100,10 @@ export function CanvasView({ projectId }: Props) {
         saveTimer.current = null;
       }
 
-      await persistCanvas(doc);
+      pendingCanvasSaveRef.current = doc;
+      await flushCanvasSaveQueue();
     },
-    [persistCanvas]
+    [flushCanvasSaveQueue]
   );
 
   const setTrackedSelectedNodeIds = useCallback((nextSelectedNodeIds: string[]) => {
@@ -1517,6 +1648,12 @@ export function CanvasView({ projectId }: Props) {
     providerModelDisplayNames,
     startedJobNodeIds,
   ]);
+  const canvasNodesById = useMemo(() => {
+    return canvasNodes.reduce<Record<string, CanvasRenderNode>>((acc, node) => {
+      acc[node.id] = node;
+      return acc;
+    }, {});
+  }, [canvasNodes]);
 
   const buildRenderNodeForMeasurement = useCallback(
     (
@@ -1562,6 +1699,31 @@ export function CanvasView({ projectId }: Props) {
       } satisfies CanvasRenderNode;
     },
     [activeNodeId, canvasNodes, effectiveFullNodeId]
+  );
+  const resolveCanvasGraphNodeSize = useCallback(
+    (nodeId: string): WorkflowNodeSize => {
+      const measuredSize = getRenderedNodeSize(nodeId);
+      if (measuredSize) {
+        return measuredSize;
+      }
+
+      const renderNode = canvasNodesById[nodeId];
+      if (renderNode?.resolvedSize) {
+        return renderNode.resolvedSize;
+      }
+
+      const workflowNode = nodesById[nodeId];
+      if (workflowNode?.size) {
+        return workflowNode.size;
+      }
+
+      if (workflowNode) {
+        return getWorkflowNodeDefaultSize(workflowNode.kind, workflowNode.displayMode, getUploadedAssetNodeAspectRatio(workflowNode) || 1);
+      }
+
+      return DEFAULT_GRAPH_NODE_SIZE;
+    },
+    [canvasNodesById, getRenderedNodeSize, nodesById]
   );
 
   const resolveNodeImageAssetId = useCallback(
@@ -1724,11 +1886,9 @@ export function CanvasView({ projectId }: Props) {
     }
 
     if (pendingCanvasSaveRef.current) {
-      const pendingDoc = pendingCanvasSaveRef.current;
-      pendingCanvasSaveRef.current = null;
-      await persistCanvas(pendingDoc);
+      await flushCanvasSaveQueue();
     }
-  }, [persistCanvas, projectId, resetCanvasHistory, setTrackedSelectedConnection, setTrackedSelectedNodeIds]);
+  }, [flushCanvasSaveQueue, persistCanvas, projectId, resetCanvasHistory, setTrackedSelectedConnection, setTrackedSelectedNodeIds]);
 
   const fetchJobs = useCallback(async () => {
     const nextJobs = await getJobs(projectId);
@@ -2741,6 +2901,7 @@ export function CanvasView({ projectId }: Props) {
       if (saveTimer.current) {
         clearTimeout(saveTimer.current);
       }
+      canvasSaveFlushPromiseRef.current = null;
       hasLoadedCanvasRef.current = false;
       pendingCanvasSaveRef.current = null;
     };
@@ -3333,6 +3494,7 @@ export function CanvasView({ projectId }: Props) {
         predictedBoundsById: request.predictedBoundsById,
         anchor: request.anchor,
         safeInsets: request.safeInsets,
+        zoomLimits: request.zoomLimits,
         modeChange: request.modeChange,
       });
     },
@@ -3355,6 +3517,274 @@ export function CanvasView({ projectId }: Props) {
       });
     },
     [nodesById, requestViewportFocus]
+  );
+
+  const cleanUpSelectedNodes = useCallback(() => {
+    const targetNodeIds = selectedNodeIdsRef.current.filter((nodeId, index, allNodeIds) => {
+      return allNodeIds.indexOf(nodeId) === index && Boolean(nodesById[nodeId]);
+    });
+    if (targetNodeIds.length < 2) {
+      return false;
+    }
+
+    const layoutNodes: CanvasGraphLayoutNode[] = targetNodeIds
+      .map((nodeId, index) => {
+        const node = nodesById[nodeId];
+        if (!node) {
+          return null;
+        }
+
+        const size = resolveCanvasGraphNodeSize(nodeId);
+        return {
+          id: nodeId,
+          x: node.x,
+          y: node.y,
+          width: size.width,
+          height: size.height,
+          order: index,
+        } satisfies CanvasGraphLayoutNode;
+      })
+      .filter((node): node is CanvasGraphLayoutNode => Boolean(node));
+    if (layoutNodes.length < 2) {
+      return false;
+    }
+
+    const selectionBounds = getCanvasGraphBounds(layoutNodes);
+    const connections = buildCanvasSelectionConnections(canvasDocRef.current.workflow.nodes, targetNodeIds).map((connection) => ({
+      sourceNodeId: connection.sourceNodeId,
+      targetNodeId: connection.targetNodeId,
+    }));
+    const layout = layoutCanvasGraph(layoutNodes, connections, {
+      anchor: {
+        x: selectionBounds.x,
+        y: selectionBounds.y,
+      },
+      columnGap: SELECTION_LAYOUT_COLUMN_GAP,
+      rowGap: SELECTION_LAYOUT_ROW_GAP,
+      componentGap: SELECTION_LAYOUT_COMPONENT_GAP,
+    });
+
+    return runUserCanvasMutation(
+      (currentState) => {
+        let didChange = false;
+        const nextNodes = currentState.canvasDoc.workflow.nodes.map((node) => {
+          const nextPosition = layout.positions[node.id];
+          if (!nextPosition) {
+            return node;
+          }
+
+          if (node.x === nextPosition.x && node.y === nextPosition.y) {
+            return node;
+          }
+
+          didChange = true;
+          return {
+            ...node,
+            x: nextPosition.x,
+            y: nextPosition.y,
+          };
+        });
+
+        if (!didChange) {
+          return null;
+        }
+
+        return {
+          canvasDoc: {
+            ...currentState.canvasDoc,
+            workflow: {
+              nodes: nextNodes,
+            },
+          },
+          selectedNodeIds: targetNodeIds,
+          selectedConnection: null,
+        };
+      },
+      {
+        historyMode: "immediate",
+      }
+    );
+  }, [nodesById, resolveCanvasGraphNodeSize, runUserCanvasMutation]);
+
+  const captureSelectedNodesPng = useCallback(
+    async (options?: { filePath?: string }) => {
+      if (isCapturingSelectionPng) {
+        return {
+          canceled: true,
+          filePath: null,
+          exportedNodeIds: [] as string[],
+          exportedConnectionIds: [] as string[],
+          width: 0,
+          height: 0,
+        };
+      }
+
+      const targetNodeIds = selectedNodeIdsRef.current.filter((nodeId, index, allNodeIds) => {
+        return allNodeIds.indexOf(nodeId) === index && Boolean(nodesById[nodeId] && canvasNodesById[nodeId]);
+      });
+      if (targetNodeIds.length === 0) {
+        return {
+          canceled: true,
+          filePath: null,
+          exportedNodeIds: [] as string[],
+          exportedConnectionIds: [] as string[],
+          width: 0,
+          height: 0,
+        };
+      }
+
+      const workflowSelection = targetNodeIds
+        .map((nodeId) => nodesById[nodeId])
+        .filter((node): node is WorkflowNode => Boolean(node));
+      const renderSelection = targetNodeIds
+        .map((nodeId) => canvasNodesById[nodeId])
+        .filter((node): node is CanvasRenderNode => Boolean(node));
+      if (workflowSelection.length === 0 || renderSelection.length === 0) {
+        return {
+          canceled: true,
+          filePath: null,
+          exportedNodeIds: [] as string[],
+          exportedConnectionIds: [] as string[],
+          width: 0,
+          height: 0,
+        };
+      }
+
+      setIsCapturingSelectionPng(true);
+
+      try {
+        const layoutNodes: CanvasGraphLayoutNode[] = renderSelection.map((node, index) => {
+          const sourceNode = nodesById[node.id];
+          const size = resolveCanvasGraphNodeSize(node.id);
+          return {
+            id: node.id,
+            x: sourceNode?.x ?? node.x,
+            y: sourceNode?.y ?? node.y,
+            width: size.width,
+            height: size.height,
+            order: index,
+          };
+        });
+        const sizesById = layoutNodes.reduce<Record<string, WorkflowNodeSize>>((acc, node) => {
+          acc[node.id] = {
+            width: node.width,
+            height: node.height,
+          };
+          return acc;
+        }, {});
+        const connections = buildCanvasSelectionConnections(canvasDocRef.current.workflow.nodes, targetNodeIds);
+        const exportConnections = buildCanvasSelectionConnections(canvasNodes, targetNodeIds);
+        const layout = layoutCanvasGraph(
+          layoutNodes,
+          connections.map((connection) => ({
+            sourceNodeId: connection.sourceNodeId,
+            targetNodeId: connection.targetNodeId,
+          })),
+          {
+            anchor: {
+              x: CANVAS_EXPORT_PADDING,
+              y: CANVAS_EXPORT_PADDING,
+            },
+            columnGap: SELECTION_LAYOUT_COLUMN_GAP,
+            rowGap: SELECTION_LAYOUT_ROW_GAP,
+            componentGap: SELECTION_LAYOUT_COMPONENT_GAP,
+          }
+        );
+        const previewImageByNodeId = new Map<string, string | null>();
+        const previewTargets = renderSelection.map(async (node) => {
+          const imageUrl =
+            node.outputType === "image"
+              ? node.sourceAssetId
+                ? getAssetFileUrl(node.sourceAssetId)
+                : node.previewImageUrl || null
+              : null;
+          if (!imageUrl) {
+            previewImageByNodeId.set(node.id, null);
+            return;
+          }
+
+          try {
+            previewImageByNodeId.set(node.id, await loadImageDataUrl(imageUrl));
+          } catch (error) {
+            console.warn("Failed to load canvas export preview image", error);
+            previewImageByNodeId.set(node.id, null);
+          }
+        });
+        await Promise.all(previewTargets);
+
+        const connectedOutputNodeIds = new Set(exportConnections.map((connection) => connection.sourceNodeId));
+        const exportNodes: CanvasExportRenderableNode[] = renderSelection.map((node) => {
+          const position = layout.positions[node.id] || {
+            x: CANVAS_EXPORT_PADDING,
+            y: CANVAS_EXPORT_PADDING,
+          };
+          const size = sizesById[node.id] || DEFAULT_GRAPH_NODE_SIZE;
+          return {
+            node,
+            x: position.x,
+            y: position.y,
+            width: size.width,
+            height: size.height,
+            hasConnectedOutput: connectedOutputNodeIds.has(node.id),
+            previewImageDataUrl: previewImageByNodeId.get(node.id) || null,
+          };
+        });
+        const exportEdges: CanvasExportRenderableEdge[] = exportConnections
+          .map((connection) => {
+            const sourcePosition = layout.positions[connection.sourceNodeId];
+            const targetPosition = layout.positions[connection.targetNodeId];
+            const sourceSize = sizesById[connection.sourceNodeId];
+            const targetSize = sizesById[connection.targetNodeId];
+            if (!sourcePosition || !targetPosition || !sourceSize || !targetSize) {
+              return null;
+            }
+
+            return {
+              id: connection.id,
+              semanticType: connection.semanticType,
+              lineStyle: connection.lineStyle,
+              startX: sourcePosition.x + sourceSize.width,
+              startY: sourcePosition.y + sourceSize.height / 2,
+              endX: targetPosition.x,
+              endY: targetPosition.y + targetSize.height / 2,
+            } satisfies CanvasExportRenderableEdge;
+          })
+          .filter((edge): edge is CanvasExportRenderableEdge => Boolean(edge));
+        const sceneWidth = layout.bounds.width + CANVAS_EXPORT_PADDING * 2;
+        const sceneHeight = layout.bounds.height + CANVAS_EXPORT_PADDING * 2;
+        const svg = buildCanvasExportSvg({
+          width: sceneWidth,
+          height: sceneHeight,
+          nodes: exportNodes,
+          edges: exportEdges,
+        });
+        const exportScale = Math.max(
+          0.25,
+          Math.min(
+            window.devicePixelRatio || 1,
+            CANVAS_EXPORT_SCALE_CAP,
+            CANVAS_EXPORT_MAX_EDGE / Math.max(sceneWidth, sceneHeight)
+          )
+        );
+        const pngData = await rasterizeSvgToPng(svg, sceneWidth, sceneHeight, exportScale);
+
+        const saveResult = await saveCanvasPngExport({
+          suggestedName: buildSelectionExportFileName(workflowSelection),
+          data: pngData,
+          filePath: options?.filePath,
+        });
+        return {
+          ...saveResult,
+          exportedNodeIds: exportNodes.map((node) => node.node.id),
+          exportedConnectionIds: exportEdges.map((edge) => edge.id),
+          width: sceneWidth,
+          height: sceneHeight,
+        };
+      } finally {
+        setIsCapturingSelectionPng(false);
+      }
+    },
+    [canvasNodes, canvasNodesById, isCapturingSelectionPng, nodesById, resolveCanvasGraphNodeSize]
   );
 
   const undoCanvasChange = useCallback(() => {
@@ -3459,6 +3889,13 @@ export function CanvasView({ projectId }: Props) {
           predictedBoundsById: predictedFocusLayout ? { [nodeId]: predictedFocusLayout.bounds } : undefined,
           anchor: "camera-only",
           safeInsets: focusSurfaceSize ? getWorkspaceFocusSafeInsets(focusSurfaceSize) : undefined,
+          zoomLimits:
+            predictedFocusLayout === null
+              ? {
+                  min: DEFAULT_CANVAS_FOCUS_ZOOM_LIMITS.min,
+                  max: 1.1,
+                }
+              : undefined,
         });
       }
     },
@@ -3584,6 +4021,13 @@ export function CanvasView({ projectId }: Props) {
       requestViewportFocus({
         nodeIds: [nodeId],
         anchor: "camera-only",
+        zoomLimits:
+          node.displayMode === "resized"
+            ? {
+                min: DEFAULT_CANVAS_FOCUS_ZOOM_LIMITS.min,
+                max: 1.1,
+              }
+            : undefined,
       });
     },
     [commitPendingCoalescedHistory, nodesById, requestViewportFocus, setTrackedSelectedConnection, setTrackedSelectedNodeIds]
@@ -4578,7 +5022,7 @@ export function CanvasView({ projectId }: Props) {
           height: bounds.height,
         },
         safeInsets: resolvedSafeInsets,
-        zoomLimits: DEFAULT_CANVAS_FOCUS_ZOOM_LIMITS,
+        zoomLimits: request.zoomLimits ?? DEFAULT_CANVAS_FOCUS_ZOOM_LIMITS,
       });
     };
 
@@ -5592,11 +6036,26 @@ export function CanvasView({ projectId }: Props) {
       },
     ];
 
-    if (selectedNodeIds.length === 1) {
-      return actions;
+    if (selectedNodeIds.length >= 2) {
+      actions.push({
+        id: "clean-up-selection",
+        label: "Clean Up Selection",
+        onClick: () => {
+          cleanUpSelectedNodes();
+        },
+      });
     }
 
-    if (selectedImageAssetIds.length > 0) {
+    actions.push({
+      id: "capture-png",
+      label: "Capture PNG",
+      onClick: () => {
+        captureSelectedNodesPng().catch(console.error);
+      },
+      disabled: isCapturingSelectionPng,
+    });
+
+    if (selectedNodeIds.length > 1 && selectedImageAssetIds.length > 0) {
       actions.push({
         id: "download-assets",
         label: selectedImageAssetIds.length === 1 ? "Download Asset" : `Download ${selectedImageAssetIds.length}`,
@@ -5604,7 +6063,7 @@ export function CanvasView({ projectId }: Props) {
       });
     }
 
-    if (selectedImageAssetIds.length === 2) {
+    if (selectedNodeIds.length > 1 && selectedImageAssetIds.length === 2) {
       actions.push({
         id: "compare-2",
         label: "Compare 2-Up",
@@ -5612,7 +6071,7 @@ export function CanvasView({ projectId }: Props) {
       });
     }
 
-    if (selectedImageAssetIds.length === 4) {
+    if (selectedNodeIds.length > 1 && selectedImageAssetIds.length === 4) {
       actions.push({
         id: "compare-4",
         label: "Compare 4-Up",
@@ -5621,7 +6080,16 @@ export function CanvasView({ projectId }: Props) {
     }
 
     return actions;
-  }, [centerSelectedNodesInViewport, downloadAssets, openCompare, selectedImageAssetIds, selectedNodeIds]);
+  }, [
+    captureSelectedNodesPng,
+    centerSelectedNodesInViewport,
+    cleanUpSelectedNodes,
+    downloadAssets,
+    isCapturingSelectionPng,
+    openCompare,
+    selectedImageAssetIds,
+    selectedNodeIds,
+  ]);
 
   const insertMenuTargetNode =
     insertMenu?.mode === "model-input" && insertMenu.connectToNodeId ? nodesById[insertMenu.connectToNodeId] || null : null;
@@ -5666,6 +6134,29 @@ export function CanvasView({ projectId }: Props) {
         moveSelectedNodesBy: (deltaX: number, deltaY: number) => void;
         connectSelected: () => void;
         centerSelection: () => void;
+        undo: () => void;
+        redo: () => void;
+        cleanUpSelection: () => void;
+        captureSelectionPng: (filePath?: string) => Promise<{
+          canceled: boolean;
+          filePath: string | null;
+          exportedNodeIds: string[];
+          exportedConnectionIds: string[];
+          width: number;
+          height: number;
+        }>;
+        getNodes: () => Array<{
+          id: string;
+          label: string;
+          prompt: string;
+          sourceAssetId: string | null;
+          x: number;
+          y: number;
+          promptSourceNodeId: string | null;
+          upstreamNodeIds: string[];
+        }>;
+        resetHistory: () => void;
+        setNodePrompt: (nodeId: string, prompt: string) => void;
         openPrimaryEditor: (nodeId: string) => void;
         focusAndOpenNode: (nodeId: string) => void;
         setDisplayMode: (nodeId: string, mode: "preview" | "compact") => void;
@@ -5710,6 +6201,48 @@ export function CanvasView({ projectId }: Props) {
       centerSelection: () => {
         centerSelectedNodesInViewport();
       },
+      undo: () => {
+        undoCanvasChange();
+      },
+      redo: () => {
+        redoCanvasChange();
+      },
+      cleanUpSelection: () => {
+        cleanUpSelectedNodes();
+      },
+      captureSelectionPng: (filePath?: string) => {
+        return captureSelectedNodesPng({
+          filePath,
+        });
+      },
+      getNodes: () =>
+        canvasDocRef.current.workflow.nodes.map((node) => ({
+          id: node.id,
+          label: node.label,
+          prompt: node.prompt,
+          sourceAssetId: node.sourceAssetId,
+          x: node.x,
+          y: node.y,
+          promptSourceNodeId: node.promptSourceNodeId,
+          upstreamNodeIds: [...node.upstreamNodeIds],
+        })),
+      resetHistory: () => {
+        resetCanvasHistory();
+      },
+      setNodePrompt: (nodeId: string, prompt: string) => {
+        if (!canvasDocRef.current.workflow.nodes.some((node) => node.id === nodeId)) {
+          return;
+        }
+        updateNode(
+          nodeId,
+          { prompt },
+          {
+            historyMode: "coalesced",
+            historyKey: `node:${nodeId}:prompt`,
+          }
+        );
+        commitPendingCoalescedHistory();
+      },
       openPrimaryEditor: (nodeId: string) => {
         if (canvasDocRef.current.workflow.nodes.some((node) => node.id === nodeId)) {
           void openPrimaryEditorForNode(nodeId);
@@ -5749,6 +6282,8 @@ export function CanvasView({ projectId }: Props) {
   }, [
     commitNodePositions,
     commitPendingCoalescedHistory,
+    captureSelectedNodesPng,
+    cleanUpSelectedNodes,
     connectSelectedNodes,
     centerSelectedNodesInViewport,
     handleNodeDisplayModeChange,
@@ -5756,8 +6291,11 @@ export function CanvasView({ projectId }: Props) {
     handleNodeSizeCommit,
     focusAndOpenNode,
     openPrimaryEditorForNode,
+    redoCanvasChange,
     setTrackedSelectedConnection,
     setTrackedSelectedNodeIds,
+    undoCanvasChange,
+    updateNode,
   ]);
 
   return (
@@ -5824,6 +6362,7 @@ export function CanvasView({ projectId }: Props) {
                 key={action.id}
                 type="button"
                 className={styles.centerButton}
+                disabled={action.disabled}
                 onPointerDown={(event) => {
                   event.stopPropagation();
                 }}

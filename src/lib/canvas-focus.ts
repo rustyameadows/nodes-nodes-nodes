@@ -32,6 +32,7 @@ export type CanvasFocusRequest = {
   predictedBoundsById?: Record<string, CanvasFocusBounds>;
   anchor?: CanvasFocusRequestAnchor;
   safeInsets?: Partial<CanvasFocusSafeInsets>;
+  zoomLimits?: CanvasFocusZoomLimits;
   modeChange?: {
     nodeId: string;
     predictedSize: WorkflowNodeSize;

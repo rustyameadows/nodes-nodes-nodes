@@ -83,6 +83,17 @@ export type ImportAssetsToProjectCanvasResponse = {
   redirectedToCanvas: boolean;
 };
 
+export type SaveCanvasPngExportRequest = {
+  suggestedName: string;
+  data: ArrayBuffer;
+  filePath?: string;
+};
+
+export type SaveCanvasPngExportResponse = {
+  canceled: boolean;
+  filePath: string | null;
+};
+
 export type ShowAppTarget = {
   projectId?: string | null;
   view?: WorkspaceView | "home" | null;
@@ -166,6 +177,7 @@ export type NodeInterface = {
   getMenuBarState: () => Promise<MenuBarState>;
   dismissMenuBarDropState: () => Promise<void>;
   setMenuContext: (context: MenuContext) => Promise<void>;
+  saveCanvasPngExport: (request: SaveCanvasPngExportRequest) => Promise<SaveCanvasPngExportResponse>;
   subscribe: (event: AppEventName, listener: (payload: AppEventPayload) => void) => () => void;
   subscribeMenuCommand: (listener: (command: MenuCommand) => void) => () => void;
   subscribeMenuBarState: (listener: (state: MenuBarState) => void) => () => void;

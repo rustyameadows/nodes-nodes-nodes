@@ -167,6 +167,7 @@ async function main() {
   const nodeLibraryScreenshotPath = path.join(appDataRoot, "packaged-node-library.png");
   const nodeLibraryModelScreenshotPath = path.join(appDataRoot, "packaged-node-library-model.png");
   const nodeLibraryListScreenshotPath = path.join(appDataRoot, "packaged-node-library-list.png");
+  const selectionExportPath = path.join(appDataRoot, "packaged-selection-export.png");
   const assetsScreenshotPath = path.join(appDataRoot, "packaged-assets-smoke.png");
   const queueScreenshotPath = path.join(appDataRoot, "packaged-queue-smoke.png");
   const projectSettingsScreenshotPath = path.join(appDataRoot, "packaged-project-settings-smoke.png");
@@ -418,6 +419,53 @@ async function main() {
           })
         ),
       30_000
+    );
+
+    const selectionExportResult = await driver.executeScript((targetFilePath: string) => {
+      const api = (window as typeof window & {
+        __NND_CANVAS_TEST__?: {
+          selectNodes: (nodeIds: string[]) => void;
+          captureSelectionPng: (filePath?: string) => Promise<{
+            canceled: boolean;
+            filePath: string | null;
+            exportedNodeIds: string[];
+            exportedConnectionIds: string[];
+            width: number;
+            height: number;
+          }>;
+        };
+      }).__NND_CANVAS_TEST__;
+
+      api?.selectNodes(["smoke-text-note", "smoke-model-node"]);
+      return (
+        api?.captureSelectionPng(targetFilePath) || {
+          canceled: true,
+          filePath: null,
+          exportedNodeIds: [],
+          exportedConnectionIds: [],
+          width: 0,
+          height: 0,
+        }
+      );
+    }, selectionExportPath);
+    assert.equal(selectionExportResult.canceled, false, "Expected packaged selection PNG export to complete.");
+    assert.equal(selectionExportResult.filePath, selectionExportPath);
+    assert.deepEqual(
+      [...selectionExportResult.exportedNodeIds].sort(),
+      ["smoke-model-node", "smoke-text-note"].sort(),
+      "Expected packaged export to include only the selected nodes."
+    );
+    assert.deepEqual(
+      selectionExportResult.exportedConnectionIds,
+      ["prompt:smoke-text-note->smoke-model-node"],
+      "Expected packaged export to include only the internal prompt connection."
+    );
+    const selectionExportBytes = await readFile(selectionExportPath);
+    assert.ok(selectionExportBytes.length > 8, "Expected a non-empty packaged export PNG.");
+    assert.equal(
+      selectionExportBytes.subarray(0, 8).toString("hex"),
+      "89504e470d0a1a0a",
+      "Expected the packaged export output to be a PNG."
     );
 
     const viewportBeforeNodeFocus = await driver.executeScript(() => {

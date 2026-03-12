@@ -783,6 +783,9 @@ export function installBrowserNodeInterface() {
     },
     async dismissMenuBarDropState() {},
     async setMenuContext() {},
+    async saveCanvasPngExport() {
+      throw new Error("Browser preview mode does not support native PNG export.");
+    },
     subscribe(eventName, listener) {
       const handler = (event: Event) => {
         const payload = (event as CustomEvent<AppEventPayload>).detail;
