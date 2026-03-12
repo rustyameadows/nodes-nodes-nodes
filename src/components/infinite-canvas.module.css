@@ -858,7 +858,6 @@
 .inlineModeSwitch button,
 .inlineListEditorToolbar button,
 .inlineAssetActions button,
-.selectionActionStrip button,
 .edgeRunButton,
 .inlineVariableChip {
   border: 1px solid rgba(0, 0, 0, 0.16);
@@ -874,7 +873,6 @@
 
 .inlineModeSwitch button:hover,
 .inlineAssetActions button:hover,
-.selectionActionStrip button:hover,
 .inlineSheetChromeActions button:hover,
 .inlineVariableChip:hover {
   background: #fff;
@@ -1516,33 +1514,4 @@
 .edgeRunButton:disabled {
   cursor: not-allowed;
   opacity: 0.56;
-}
-
-.selectionActionStrip {
-  position: absolute;
-  z-index: 10;
-  display: flex;
-  gap: var(--ds-space-2);
-  padding: var(--ds-space-2);
-  border: 1px solid var(--ds-border-strong);
-  border-radius: var(--ds-radius-lg);
-  background:
-    linear-gradient(180deg, var(--ds-state-accent-bg) 0%, transparent 100%),
-    var(--ds-surface-overlay);
-  box-shadow: var(--ds-shadow-overlay);
-  backdrop-filter: blur(var(--ds-popover-blur));
-  transform: translate(-50%, -100%);
-}
-
-.selectionActionStrip button {
-  border-color: var(--ds-control-border);
-  background: var(--ds-control-bg);
-  color: var(--ds-text-primary);
-  border-radius: var(--ds-radius-sm);
-}
-
-.selectionActionStrip button:hover {
-  background:
-    linear-gradient(135deg, var(--ds-state-info-bg) 0%, transparent 100%),
-    var(--ds-control-bg-hover);
 }

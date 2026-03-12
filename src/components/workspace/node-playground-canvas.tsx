@@ -1838,7 +1838,6 @@ export function NodePlaygroundCanvas({
         renderNodeContent={renderNodeContent}
         activePhantomPreview={activePhantomPreview}
         onRunActiveNode={() => undefined}
-        selectionActions={[]}
         enableProgrammaticViewportMotion={!prefersReducedMotion}
         programmaticMotionNodeIds={transitioningPrimaryNodeId ? [transitioningPrimaryNodeId] : []}
         programmaticMotionFrameSizes={

@@ -79,7 +79,7 @@ What it does:
   - unfocused model nodes that remain in `full` or persisted `resized` keep the large body visible but hide the shared top/bottom rails until refocused
   - double-click on a `resized` node keeps it resized and only focuses the viewport
   - selected model nodes in `preview`, `full`, and persisted `resized` show the bottom-right resize handle, and resize enters `displayMode: "resized"` at drag start and keeps it until `Default` or `Compact`
-  - a single selected node exposes the bottom-center `Center` CTA, and multi-selection strips expose `Center Selection`; both fit the selected outer shell bounds without relying on image-only selection state
+  - a shared bottom-center selection rail shows `Center` for single selection and `Center Selection` for multi-selection; both fit the selected outer shell bounds without relying on image-only selection state
   - `Cmd/Ctrl+Z` and `Cmd/Ctrl+Shift+Z` undo/redo batch move, connection, inline edit, and node insertion
   - typing inside inline editors does not trigger canvas shortcuts
   - resized asset nodes can still be dragged after resize
@@ -276,7 +276,7 @@ Run this when touching workflow or asset UX:
 28. Open the Assets view and confirm the imported asset appears.
 29. Open Project Settings and confirm the project metadata renders and provider credentials do not appear there.
 30. Open App Settings and confirm provider credentials render there.
-31. Confirm the workspace menu, queue pill, insert picker, bottom-bar popovers, and selection compare/download strip all use the refreshed chrome without changing canvas node or connection rendering.
+31. Confirm the workspace menu, queue pill, insert picker, bottom-bar popovers, and bottom-center canvas selection rail all use the refreshed chrome without changing canvas node or connection rendering.
 32. Confirm focus-visible, disabled buttons, and compact-density tables/filters still read clearly on home, settings, queue, and assets.
 33. If testing on macOS, confirm:
    - `File`, `Project`, `Canvas`, `Edit`, `View`, and `Window` menus appear

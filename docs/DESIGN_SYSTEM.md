@@ -23,7 +23,7 @@ Allowed wrapper changes around protected areas:
 - page framing
 - shell/menu chrome
 - insert/context menus
-- compare/download selection strip
+- bottom-center canvas selection rail
 - Node Library detail rails and canvas frame
 
 Canvas node renderers are now part of the system:

@@ -20,7 +20,6 @@ import type {
   CanvasInsertRequest,
   CanvasPhantomPreview,
   CanvasRenderNode,
-  CanvasSelectionAction,
 } from "@/components/canvas-node-types";
 import {
   clampWorkflowNodeSize,
@@ -68,7 +67,6 @@ type Props = {
   renderNodeContent: (node: CanvasRenderNode) => ReactNode;
   activePhantomPreview?: CanvasPhantomPreview | null;
   onRunActiveNode?: (nodeId: string) => void;
-  selectionActions?: CanvasSelectionAction[];
   enableProgrammaticViewportMotion?: boolean;
   programmaticMotionNodeIds?: string[];
   programmaticMotionFrameSizes?: Record<string, WorkflowNodeSize>;
@@ -396,7 +394,6 @@ export function InfiniteCanvas({
   renderNodeContent,
   activePhantomPreview,
   onRunActiveNode,
-  selectionActions = [],
   enableProgrammaticViewportMotion = false,
   programmaticMotionNodeIds = [],
   programmaticMotionFrameSizes = {},
@@ -1283,33 +1280,6 @@ export function InfiniteCanvas({
     return ids;
   }, [connectionDraft?.nodeId, edges, selectedConnectionId]);
 
-  const floatingSelectionBounds = useMemo(() => {
-    if (selectedNodeIds.length < 2 || selectionActions.length === 0) {
-      return null;
-    }
-
-    const selectedNodes = displayNodes.filter((node) => selectedNodeIds.includes(node.id));
-    if (selectedNodes.length === 0) {
-      return null;
-    }
-
-    let minX = Number.POSITIVE_INFINITY;
-    let maxX = Number.NEGATIVE_INFINITY;
-    let minY = Number.POSITIVE_INFINITY;
-
-    for (const node of selectedNodes) {
-      const size = getNodeBoundsSize(node.id);
-      minX = Math.min(minX, node.x);
-      maxX = Math.max(maxX, node.x + size.width);
-      minY = Math.min(minY, node.y);
-    }
-
-    return {
-      x: Math.round((minX + maxX) / 2),
-      y: Math.round(minY - 24),
-    };
-  }, [displayNodes, getNodeBoundsSize, selectedNodeIds, selectionActions.length]);
-
   const phantomLayout = useMemo(() => {
     if (!activePhantomPreview) {
       return null;
@@ -1700,31 +1670,6 @@ export function InfiniteCanvas({
           >
             Run
           </button>
-        ) : null}
-
-        {floatingSelectionBounds ? (
-          <div
-            className={styles.selectionActionStrip}
-            style={{
-              left: `${floatingSelectionBounds.x}px`,
-              top: `${floatingSelectionBounds.y}px`,
-            }}
-          >
-            {selectionActions.map((action) => (
-              <button
-                key={action.id}
-                type="button"
-                disabled={action.disabled}
-                onPointerDown={(event) => event.stopPropagation()}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  action.onClick();
-                }}
-              >
-                {action.label}
-              </button>
-            ))}
-          </div>
         ) : null}
 
         {marqueeDraft ? (

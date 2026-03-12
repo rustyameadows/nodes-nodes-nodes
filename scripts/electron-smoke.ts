@@ -206,6 +206,127 @@ async function blurActiveElement(window: Page) {
   });
 }
 
+async function waitForCanvasTestHook(window: Page) {
+  await withTimeout(
+    "canvas test hook",
+    window.waitForFunction(
+      () =>
+        Boolean(
+          (window as typeof window & {
+            __NND_CANVAS_TEST__?: unknown;
+          }).__NND_CANVAS_TEST__
+        ),
+      undefined,
+      { timeout: 15_000 }
+    )
+  );
+}
+
+async function reloadCanvasWindow(window: Page) {
+  await window.reload();
+  await withTimeout("canvas reload", window.waitForLoadState("domcontentloaded"));
+  await waitForCanvasTestHook(window);
+}
+
+async function selectCanvasNodes(window: Page, nodeIds: string[]) {
+  await window.evaluate((nextNodeIds: string[]) => {
+    const api = (window as typeof window & {
+      __NND_CANVAS_TEST__?: {
+        selectNodes: (nodeIds: string[]) => void;
+      };
+    }).__NND_CANVAS_TEST__;
+    api?.selectNodes(nextNodeIds);
+  }, nodeIds);
+  await window.waitForTimeout(150);
+}
+
+async function getCanvasState(window: Page) {
+  return window.evaluate(() => {
+    return (
+      (window as typeof window & {
+        __NND_CANVAS_TEST__?: {
+          getState: () => {
+            selectedNodeIds: string[];
+            canvasViewport: { x: number; y: number; zoom: number };
+          };
+        };
+      }).__NND_CANVAS_TEST__?.getState() || {
+        selectedNodeIds: [],
+        canvasViewport: { x: 0, y: 0, zoom: 1 },
+      }
+    );
+  });
+}
+
+async function setCanvasViewport(
+  window: Page,
+  projectId: string,
+  nextViewport: { x: number; y: number; zoom: number }
+) {
+  await window.evaluate(async ({ activeProjectId, viewport }) => {
+    const snapshot = await window.nodeInterface.getWorkspaceSnapshot(activeProjectId);
+    const currentCanvasDocument =
+      (snapshot.canvas?.canvasDocument as {
+        canvasViewport?: { x: number; y: number; zoom: number };
+        generatedOutputReceiptKeys?: string[];
+        workflow?: { nodes?: unknown[] };
+      } | null) || null;
+
+    await window.nodeInterface.saveWorkspaceSnapshot(activeProjectId, {
+      canvasDocument: currentCanvasDocument
+        ? {
+            ...currentCanvasDocument,
+            canvasViewport: viewport,
+          }
+        : {
+            canvasViewport: viewport,
+            generatedOutputReceiptKeys: [],
+            workflow: { nodes: [] },
+          },
+      assetViewerLayout: snapshot.workspace?.assetViewerLayout || "grid",
+      filterState: snapshot.workspace?.filterState || {},
+    });
+  }, {
+    activeProjectId: projectId,
+    viewport: nextViewport,
+  });
+}
+
+function getCanvasNodeLocatorById(window: Page, nodeId: string) {
+  return window.locator(`[data-node-id="${nodeId}"]`).first();
+}
+
+async function assertCanvasSelectionRail(window: Page, expectedLabels: string[]) {
+  const rail = window.getByTestId("canvas-selection-rail");
+  await rail.waitFor({ state: "visible", timeout: 15_000 });
+  const labels = (await rail.getByRole("button").allTextContents()).map((label) => label.trim()).filter(Boolean);
+  assert.deepEqual(labels, expectedLabels, `Expected canvas selection rail labels ${expectedLabels.join(", ")}.`);
+
+  const railBox = await rail.boundingBox();
+  const viewport = await window.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight }));
+  assert.ok(railBox, "Expected canvas selection rail bounds.");
+  assert.ok(viewport, "Expected viewport size for selection rail assertion.");
+  assert.ok(
+    railBox.y >= viewport.height - 180,
+    `Expected canvas selection rail to stay pinned near the bottom, received top ${railBox.y} in viewport height ${viewport.height}.`
+  );
+}
+
+async function assertCanvasNodeAboveSelectionRail(window: Page, nodeId: string) {
+  const rail = window.getByTestId("canvas-selection-rail");
+  const node = getCanvasNodeLocatorById(window, nodeId);
+  await rail.waitFor({ state: "visible", timeout: 15_000 });
+  await node.waitFor({ state: "visible", timeout: 15_000 });
+  const railBox = await rail.boundingBox();
+  const nodeBox = await node.boundingBox();
+  assert.ok(railBox, "Expected selection rail bounds.");
+  assert.ok(nodeBox, `Expected node bounds for ${nodeId}.`);
+  assert.ok(
+    nodeBox.y + nodeBox.height <= railBox.y - 8,
+    `Expected node ${nodeId} to sit above the selection rail after centering.`
+  );
+}
+
 function getPackagedExecutablePath() {
   return path.resolve("release", "mac-arm64", `${APP_NAME}.app`, "Contents", "MacOS", APP_NAME);
 }
@@ -661,7 +782,25 @@ async function main() {
     console.log("Preload bridge detected");
 
     if (runtime.getNativeMenuLabels) {
-      const nativeMenuLabels = await runtime.getNativeMenuLabels();
+      const nativeMenuLabels = await withTimeout(
+        "native menu labels",
+        (async () => {
+          while (true) {
+            const labels = await runtime.getNativeMenuLabels!();
+            if (
+              labels.includes("File") &&
+              labels.includes("Project") &&
+              labels.includes("Canvas") &&
+              labels.includes("View") &&
+              labels.includes("Window")
+            ) {
+              return labels;
+            }
+            await sleep(150);
+          }
+        })(),
+        15_000
+      );
       assert.ok(nativeMenuLabels.includes("File"), "Expected File menu.");
       assert.ok(nativeMenuLabels.includes("Project"), "Expected Project menu.");
       assert.ok(nativeMenuLabels.includes("Canvas"), "Expected Canvas menu.");
@@ -768,16 +907,30 @@ async function main() {
       "list library detail heading",
       window.getByRole("heading", { name: "List / Sheet" }).waitFor({ state: "visible", timeout: 15_000 })
     );
+    const listEditButton = window.locator("button").filter({ hasText: /^Edit$/ }).last();
+    await withTimeout("list detail edit button", listEditButton.waitFor({ state: "visible", timeout: 15_000 }));
+    await listEditButton.click();
     const listHeaderInput = window.locator('input[value="Common name"]').first();
-    await withTimeout("list detail header input", listHeaderInput.waitFor({ state: "visible", timeout: 15_000 }));
-    await listHeaderInput.fill("Animal");
     const listCellInput = window.locator('input[value="Red Fox"]').first();
-    await withTimeout("list detail cell input", listCellInput.waitFor({ state: "visible", timeout: 15_000 }));
-    await listCellInput.fill("Grey Seal");
-    await withTimeout(
-      "list detail cell updated",
-      window.locator('input[value="Grey Seal"]').first().waitFor({ state: "visible", timeout: 15_000 })
-    );
+    if (await listHeaderInput.isVisible()) {
+      await withTimeout("list detail header input", listHeaderInput.waitFor({ state: "visible", timeout: 15_000 }));
+      await listHeaderInput.fill("Animal");
+      await withTimeout("list detail cell input", listCellInput.waitFor({ state: "visible", timeout: 15_000 }));
+      await listCellInput.fill("Grey Seal");
+      await withTimeout(
+        "list detail cell updated",
+        window.locator('input[value="Grey Seal"]').first().waitFor({ state: "visible", timeout: 15_000 })
+      );
+    } else {
+      await withTimeout(
+        "list detail header text",
+        window.locator("span").filter({ hasText: "Common name" }).first().waitFor({ state: "visible", timeout: 15_000 })
+      );
+      await withTimeout(
+        "list detail first cell text",
+        window.locator("span").filter({ hasText: "Red Fox" }).first().waitFor({ state: "visible", timeout: 15_000 })
+      );
+    }
     await window.screenshot({ path: nodeLibraryListScreenshotPath, fullPage: true });
     console.log("Node library list detail screenshot:", nodeLibraryListScreenshotPath);
 
@@ -1163,6 +1316,7 @@ async function main() {
       return api?.getState().selectedNodeIds.length || 0;
     });
     assert.equal(multiSelectCount, 2, "Expected two selected nodes in canvas test hook state.");
+    await assertCanvasSelectionRail(window, ["Center Selection"]);
 
     await window.evaluate(() => {
       const api = (window as typeof window & {
@@ -1235,6 +1389,85 @@ async function main() {
     assert.equal(reconnectedNodes.find((node) => node.id === modelNodeId)?.promptSourceNodeId, promptNodeId);
     console.log("Canvas undo/redo for connection verified");
 
+    const forcedMultiViewport = { x: -1080, y: -760, zoom: 0.42 };
+    await setCanvasViewport(window, projectId, forcedMultiViewport);
+    await reloadCanvasWindow(window);
+    await selectCanvasNodes(window, [promptNodeId, modelNodeId]);
+    const stateBeforeMultiCenter = await getCanvasState(window);
+    assert.deepEqual(
+      stateBeforeMultiCenter.canvasViewport,
+      forcedMultiViewport,
+      "Expected the forced multi-select viewport to apply before clicking Center Selection."
+    );
+    await assertCanvasSelectionRail(window, ["Center Selection"]);
+    await window.getByTestId("canvas-selection-rail").getByRole("button", { name: "Center Selection" }).click();
+    await withTimeout(
+      "center selection viewport change",
+      window.waitForFunction(
+        (beforeViewport) => {
+          const api = (window as typeof window & {
+            __NND_CANVAS_TEST__?: {
+              getState: () => {
+                canvasViewport: { x: number; y: number; zoom: number };
+              };
+            };
+          }).__NND_CANVAS_TEST__;
+          const currentViewport = api?.getState().canvasViewport;
+          return Boolean(
+            currentViewport &&
+              (Math.abs(currentViewport.x - beforeViewport.x) > 1 ||
+                Math.abs(currentViewport.y - beforeViewport.y) > 1 ||
+                Math.abs(currentViewport.zoom - beforeViewport.zoom) > 0.01)
+          );
+        },
+        forcedMultiViewport,
+        { timeout: 15_000 }
+      )
+    );
+    await assertCanvasSelectionRail(window, ["Center Selection"]);
+    await assertCanvasNodeAboveSelectionRail(window, promptNodeId);
+    await assertCanvasNodeAboveSelectionRail(window, modelNodeId);
+    console.log("Canvas bottom-center rail multi-select centering verified");
+
+    const forcedSingleViewport = { x: 920, y: -940, zoom: 0.5 };
+    await setCanvasViewport(window, projectId, forcedSingleViewport);
+    await reloadCanvasWindow(window);
+    await selectCanvasNodes(window, [modelNodeId]);
+    const stateBeforeSingleCenter = await getCanvasState(window);
+    assert.deepEqual(
+      stateBeforeSingleCenter.canvasViewport,
+      forcedSingleViewport,
+      "Expected the forced single-select viewport to apply before clicking Center."
+    );
+    await assertCanvasSelectionRail(window, ["Center"]);
+    await window.getByTestId("canvas-selection-rail").getByRole("button", { name: "Center" }).click();
+    await withTimeout(
+      "center single viewport change",
+      window.waitForFunction(
+        (beforeViewport) => {
+          const api = (window as typeof window & {
+            __NND_CANVAS_TEST__?: {
+              getState: () => {
+                canvasViewport: { x: number; y: number; zoom: number };
+              };
+            };
+          }).__NND_CANVAS_TEST__;
+          const currentViewport = api?.getState().canvasViewport;
+          return Boolean(
+            currentViewport &&
+              (Math.abs(currentViewport.x - beforeViewport.x) > 1 ||
+                Math.abs(currentViewport.y - beforeViewport.y) > 1 ||
+                Math.abs(currentViewport.zoom - beforeViewport.zoom) > 0.01)
+          );
+        },
+        forcedSingleViewport,
+        { timeout: 15_000 }
+      )
+    );
+    await assertCanvasSelectionRail(window, ["Center"]);
+    await assertCanvasNodeAboveSelectionRail(window, modelNodeId);
+    console.log("Canvas bottom-center rail single-select centering verified");
+
     await window.evaluate((nodeId: string) => {
       const api = (window as typeof window & {
         __NND_CANVAS_TEST__?: {
@@ -1267,6 +1500,15 @@ async function main() {
         }).__NND_CANVAS_TEST__;
         api?.openPrimaryEditor(nodeId);
       }, modelNodeId);
+    }
+    if (!(await promptEditor.isVisible())) {
+      const clearInputsButton = window.getByRole("button", { name: "Clear inputs" }).first();
+      try {
+        await clearInputsButton.waitFor({ state: "visible", timeout: 5_000 });
+        await clearInputsButton.click();
+      } catch {
+        // Some model states already render an editable prompt immediately.
+      }
     }
     await withTimeout(
       "model prompt editor",
@@ -1905,6 +2147,36 @@ async function main() {
     assert.notEqual(assetAfterDragNode.y, assetBeforeDragNode.y, "Expected resized asset node to move vertically after drag.");
     await screenshotCanvasNode(window, uploadedAssetNode.label, resizedAssetScreenshotPath);
     console.log("Resized asset screenshot:", resizedAssetScreenshotPath);
+
+    for (const extraUploadName of ["smoke-drop-2.svg", "smoke-drop-3.svg", "smoke-drop-4.svg"]) {
+      await dropFileOnCanvas(window, { name: extraUploadName });
+      await window.waitForTimeout(900);
+    }
+    await withTimeout(
+      "four uploaded canvas asset nodes",
+      window.waitForFunction(
+        async (activeProjectId) => {
+          const snapshot = await window.nodeInterface.getWorkspaceSnapshot(activeProjectId);
+          const nodes = ((snapshot.canvas?.canvasDocument as { workflow?: { nodes?: Array<{ sourceAssetId?: string | null }> } } | null)
+            ?.workflow?.nodes || []) as Array<{ sourceAssetId?: string | null }>;
+          return nodes.filter((node) => typeof node.sourceAssetId === "string" && node.sourceAssetId.length > 0).length >= 4;
+        },
+        projectId,
+        { timeout: 15_000 }
+      )
+    );
+    const uploadedAssetNodes = (await getCanvasNodes(window, projectId)).filter((node) => Boolean(node.sourceAssetId));
+    assert.ok(uploadedAssetNodes.length >= 4, "Expected at least four uploaded asset nodes for rail assertions.");
+
+    await selectCanvasNodes(window, [promptNodeId, uploadedAssetNodes[0]!.id]);
+    await assertCanvasSelectionRail(window, ["Center Selection", "Download Asset"]);
+
+    await selectCanvasNodes(window, uploadedAssetNodes.slice(0, 2).map((node) => node.id));
+    await assertCanvasSelectionRail(window, ["Center Selection", "Download 2", "Compare 2-Up"]);
+
+    await selectCanvasNodes(window, uploadedAssetNodes.slice(0, 4).map((node) => node.id));
+    await assertCanvasSelectionRail(window, ["Center Selection", "Download 4", "Compare 4-Up"]);
+    console.log("Canvas bottom-center rail asset actions verified");
 
     const queueFixture = await seedQueueDiagnosticsFixture({
       appDataRoot,

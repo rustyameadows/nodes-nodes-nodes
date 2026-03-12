@@ -119,7 +119,7 @@
   - model node double-click switches the node into persisted `full` and opens the full response-settings editor while keeping the shared rails/run launcher behavior on single select
   - template node double-click enters edit mode and then reframes to the expanded editor
   - resized nodes keep their custom size when re-opened
-  - a single selected node exposes a bottom-center `Center` CTA, and multi-selection strips expose `Center Selection`; both use the same bounds-based fit/zoom engine as double-click and the Node Library
+  - a shared bottom-center selection rail pins to the viewport: single selection shows `Center`, and multi-selection shows `Center Selection`; both use the same bounds-based fit/zoom engine as double-click and the Node Library
   - model and template double-click focus requests pre-compute target viewport bounds from predicted or preflight-measured outer shells before the visible transition begins, then validate against measured DOM bounds inside the same motion window
   - top-rail `Default` and `Compact` mode pills use that same predictive fit/zoom flow, so the shell-size change and viewport reframe happen as one centered transition instead of a resize-first snap
   - size-changing single-node transitions in both the workspace and the Node Library now place the target shell around the live available viewport center before fitting, rather than reusing the node's last stored world-space center
@@ -178,8 +178,8 @@
   - use dotted/low-opacity output connections
   - pin the run launcher near the source output edge
 - active template nodes suppress external phantom row cards while they are in edit mode
-- multi-selection compare/download actions live in a floating selection strip near the current selection instead of the old bottom bar
-- the selection strip, copilot pill/panel, insert picker, asset picker, and bottom-bar popovers may be restyled as overlay chrome without changing node or connection rendering
+- multi-selection compare/download actions live in the same bottom-center selection rail as `Center Selection`, not in a floating strip near the selected nodes
+- the selection rail, copilot pill/panel, insert picker, asset picker, and bottom-bar popovers may be restyled as overlay chrome without changing node or connection rendering
 - the canvas also includes a bottom-right copilot surface:
   - collapsed as a small fixed `NODE BOT` pill
   - expands into a session-only chat panel that grows upward/left from the pill

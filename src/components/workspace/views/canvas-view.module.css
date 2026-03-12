@@ -16,6 +16,12 @@
   left: 50%;
   bottom: var(--ds-space-4);
   z-index: 39;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ds-space-2);
+  max-width: calc(100% - (var(--ds-space-4) * 2));
+  flex-wrap: wrap;
   transform: translateX(-50%);
   pointer-events: none;
 }

@@ -26,7 +26,6 @@ import type {
   CanvasNodeGeneratedProvenance,
   CanvasPhantomPreview,
   CanvasRenderNode,
-  CanvasSelectionAction,
 } from "@/components/canvas-node-types";
 import { WorkspaceShell } from "@/components/workspace/workspace-shell";
 import { isModelParameterVisible } from "@/lib/model-parameters";
@@ -181,6 +180,12 @@ const INSERT_MENU_NODE_PREVIEW_SIZE = {
   width: 212,
   height: 72,
 } as const;
+
+type CanvasSelectionRailAction = {
+  id: string;
+  label: string;
+  onClick: () => void;
+};
 
 type Props = {
   projectId: string;
@@ -852,7 +857,7 @@ export function CanvasView({ projectId }: Props) {
   const pendingCanvasSaveRef = useRef<CanvasDocument | null>(null);
   const insertMenuRef = useRef<HTMLDivElement | null>(null);
   const assetPickerRef = useRef<HTMLDivElement | null>(null);
-  const singleCenterActionRef = useRef<HTMLDivElement | null>(null);
+  const selectionRailRef = useRef<HTMLDivElement | null>(null);
   const pendingUploadAnchorRef = useRef<{ x: number; y: number; connectToModelNodeId?: string } | null>(null);
   const canvasSurfaceRef = useRef<HTMLDivElement | null>(null);
   const nativeMenuInsertCountRef = useRef(0);
@@ -1221,20 +1226,21 @@ export function CanvasView({ projectId }: Props) {
     () => (activeNodeId ? canvasDoc.workflow.nodes.find((node) => node.id === activeNodeId) || null : null),
     [activeNodeId, canvasDoc.workflow.nodes]
   );
+  const showSelectionRail = !isLoading && selectedNodeIds.length > 0 && !insertMenu && !assetPicker;
   const getWorkspaceFocusSafeInsets = useCallback(
     (surfaceSize: { width: number; height: number }): CanvasFocusSafeInsets => {
-      const singleCenterActionHeight = activeNodeId ? singleCenterActionRef.current?.offsetHeight || 0 : 0;
+      const selectionRailHeight = showSelectionRail ? selectionRailRef.current?.offsetHeight || 0 : 0;
       return {
         top: Math.min(96, Math.max(32, Math.round(surfaceSize.height * 0.06))),
         right: Math.min(104, Math.max(32, Math.round(surfaceSize.width * 0.05))),
         bottom:
           Math.min(128, Math.max(40, Math.round(surfaceSize.height * 0.085))) +
-          singleCenterActionHeight +
-          (singleCenterActionHeight > 0 ? 18 : 0),
+          selectionRailHeight +
+          (selectionRailHeight > 0 ? 18 : 0),
         left: Math.min(104, Math.max(32, Math.round(surfaceSize.width * 0.05))),
       };
     },
-    [activeNodeId]
+    [showSelectionRail]
   );
 
   const getRenderedNodeSize = useCallback((nodeId: string): WorkflowNodeSize | null => {
@@ -5573,15 +5579,21 @@ export function CanvasView({ projectId }: Props) {
     };
   }, [activeFullNodeId, activeSelectedNode, selectedNodeResolvedSettings.textOutputTarget, selectedNodeRunPreview, selectedTemplatePreview]);
 
-  const selectionActions = useMemo<CanvasSelectionAction[]>(() => {
-    const actions: CanvasSelectionAction[] = [];
+  const selectionRailActions = useMemo<CanvasSelectionRailAction[]>(() => {
+    if (selectedNodeIds.length === 0) {
+      return [];
+    }
 
-    if (selectedNodeIds.length >= 2) {
-      actions.push({
+    const actions: CanvasSelectionRailAction[] = [
+      {
         id: "center-selection",
-        label: "Center Selection",
+        label: selectedNodeIds.length === 1 ? "Center" : "Center Selection",
         onClick: () => centerSelectedNodesInViewport(selectedNodeIds),
-      });
+      },
+    ];
+
+    if (selectedNodeIds.length === 1) {
+      return actions;
     }
 
     if (selectedImageAssetIds.length > 0) {
@@ -5630,7 +5642,6 @@ export function CanvasView({ projectId }: Props) {
   );
   const canUndo = historyStacks.undo.length > 0;
   const canRedo = historyStacks.redo.length > 0;
-  const showSingleCenterAction = !isLoading && Boolean(activeSelectedNode) && !insertMenu && !assetPicker;
 
   useEffect(() => {
     publishCanvasMenuState({
@@ -5791,7 +5802,6 @@ export function CanvasView({ projectId }: Props) {
                   runNode(node).catch(console.error);
                 }
               }}
-              selectionActions={selectionActions}
               programmaticMotionNodeIds={displayModeTransition ? [displayModeTransition.nodeId] : []}
               programmaticMotionFrameSizes={
                 displayModeTransition
@@ -5807,20 +5817,21 @@ export function CanvasView({ projectId }: Props) {
           />
         </div>
 
-        {showSingleCenterAction ? (
-          <div ref={singleCenterActionRef} className={styles.centerDock}>
-            <button
-              type="button"
-              className={styles.centerButton}
-              onPointerDown={(event) => {
-                event.stopPropagation();
-              }}
-              onClick={() => {
-                centerSelectedNodesInViewport(activeSelectedNode ? [activeSelectedNode.id] : undefined);
-              }}
-            >
-              Center
-            </button>
+        {showSelectionRail && selectionRailActions.length > 0 ? (
+          <div ref={selectionRailRef} className={styles.centerDock} data-testid="canvas-selection-rail">
+            {selectionRailActions.map((action) => (
+              <button
+                key={action.id}
+                type="button"
+                className={styles.centerButton}
+                onPointerDown={(event) => {
+                  event.stopPropagation();
+                }}
+                onClick={action.onClick}
+              >
+                {action.label}
+              </button>
+            ))}
           </div>
         ) : null}
 

@@ -90,10 +90,3 @@ export type CanvasPhantomPreview = {
   overflowCount: number;
   runDisabledReason: string | null;
 };
-
-export type CanvasSelectionAction = {
-  id: string;
-  label: string;
-  disabled?: boolean;
-  onClick: () => void;
-};

@@ -26,7 +26,7 @@
   - workspace menu shell
   - insert picker and asset picker
   - bottom-bar popovers
-  - selection compare/download strip
+  - bottom-center canvas selection rail
   - Node Library detail framing around the playground canvas
 
 ## Process Boundaries
