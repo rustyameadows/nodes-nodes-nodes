@@ -101,6 +101,7 @@ type Props = {
   onOpenAssetViewer: (assetId: string) => void;
   onDownloadAssets: (assetIds: string[]) => void;
   onOpenCompare: (mode: "compare_2" | "compare_4", count: number) => void;
+  onCenterSelection?: () => void;
   onOpenQueueInspect: (jobId: string) => void;
   openPopoverId?: CanvasBottomBarPopoverId | null;
   onOpenPopoverChange?: (id: CanvasBottomBarPopoverId | null) => void;
@@ -536,6 +537,7 @@ export function CanvasBottomBar({
   onOpenAssetViewer,
   onDownloadAssets,
   onOpenCompare,
+  onCenterSelection,
   onOpenQueueInspect,
   openPopoverId: controlledOpenPopoverId,
   onOpenPopoverChange: controlledSetOpenPopoverId,
@@ -1331,6 +1333,16 @@ export function CanvasBottomBar({
       </div>
 
       <div className={styles.actionLane}>
+        {selectedNodeIds.length > 0 && onCenterSelection ? (
+          <button
+            type="button"
+            className={styles.actionButton}
+            onClick={onCenterSelection}
+          >
+            {selectedNodeIds.length === 1 ? "Center" : "Center Selection"}
+          </button>
+        ) : null}
+
         {selectedNode &&
         selectedNodeIds.length === 1 &&
         selectedNodeSourceJobId &&

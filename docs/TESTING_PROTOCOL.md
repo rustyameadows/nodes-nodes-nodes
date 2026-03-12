@@ -58,6 +58,7 @@ What it does:
 - verifies the bottom row changes the primary demo node mode without auto-selecting it
 - verifies mode switches keep the primary demo node centered in the playground
 - verifies those mode switches feel like one motion instead of a resize snap followed by a second recenter jump
+- verifies repeated `Preview -> Edit -> Resize -> Edit` switches keep the primary node fit-framed instead of clipping the expanded shell
 - verifies the model detail fixture has no upstream prompt note
 - verifies uploaded/generated asset detail fixtures render placeholder previews instead of broken images
 - verifies generated asset detail keeps the visible model-to-asset connection
@@ -71,10 +72,11 @@ What it does:
   - `C` connects exactly two selected nodes
   - `Enter` opens the selected node's inline full editor
   - single-click on a `preview` or `compact` model only selects it, keeps its size unchanged, and reveals the shared rails plus the external side run launcher
-  - node double-click opens the same primary inline editor mapping on `preview` / `compact` nodes, immediately shows the correct top-left mode pills for the new shell, keeps model full shells open after focus moves away, and gently animates the viewport focus
+  - node double-click opens the same primary inline editor mapping on `preview` / `compact` nodes, immediately shows the correct top-left mode pills for the new shell, keeps model full shells open after focus moves away, and fit-zooms from predicted then measured outer shell bounds without clipping
   - unfocused model nodes that remain in `full` or persisted `resized` keep the large body visible but hide the shared top/bottom rails until refocused
   - double-click on a `resized` node keeps it resized and only focuses the viewport
   - selected model nodes in `preview`, `full`, and persisted `resized` show the bottom-right resize handle, and resize enters `displayMode: "resized"` at drag start and keeps it until `Default` or `Compact`
+  - a single selected node exposes the bottom-center `Center` CTA, and multi-selection strips expose `Center Selection`; both fit the selected outer shell bounds without relying on image-only selection state
   - `Cmd/Ctrl+Z` and `Cmd/Ctrl+Shift+Z` undo/redo batch move, connection, inline edit, and node insertion
   - typing inside inline editors does not trigger canvas shortcuts
   - resized asset nodes can still be dragged after resize

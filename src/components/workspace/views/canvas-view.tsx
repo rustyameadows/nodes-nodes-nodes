@@ -137,8 +137,16 @@ import {
   type CanvasHistoryState,
 } from "@/lib/canvas-history";
 import {
+  getWorkflowNodeDefaultSize,
   resolveCanvasNodePresentation,
 } from "@/lib/canvas-node-presentation";
+import {
+  buildCanvasFocusBounds,
+  buildCanvasFocusViewport,
+  DEFAULT_CANVAS_FOCUS_ZOOM_LIMITS,
+  type CanvasFocusBounds,
+  type CanvasFocusSafeInsets,
+} from "@/lib/canvas-focus";
 import {
   getCanvasGeneratedOutputReceiptKeys,
   getGeneratedOutputReceiptKey,
@@ -158,10 +166,6 @@ const copilotGeneratedNodeOffsetY = 152;
 const copilotGeneratedNodeColumnOffsetX = 48;
 const CANVAS_HISTORY_LIMIT = 100;
 const COALESCED_HISTORY_DELAY_MS = 450;
-const NODE_FOCUS_ZOOM_PADDING_X = 96;
-const NODE_FOCUS_ZOOM_PADDING_Y = 84;
-const NODE_FOCUS_MIN_ZOOM = 0.42;
-const NODE_FOCUS_MAX_ZOOM = 1.08;
 const NODE_FOCUS_ANIMATION_DURATION_MS = 165;
 const NODE_FOCUS_SETTLE_MAX_FRAMES = 18;
 const NODE_FOCUS_SETTLE_STABLE_FRAMES = 2;
@@ -196,6 +200,11 @@ const canvasSemanticTypeOrder: CanvasSemanticType[] = ["text", "image", "video",
 type PendingCenteredInsert = {
   nodeId: string;
   anchor: { x: number; y: number };
+};
+
+type PendingViewportFocusRequest = {
+  nodeIds: string[];
+  predictedBoundsById?: Record<string, CanvasFocusBounds>;
 };
 
 type CanvasHistoryStacks = {
@@ -810,7 +819,7 @@ export function CanvasView({ projectId }: Props) {
   const [selectedConnection, setSelectedConnection] = useState<CanvasConnection | null>(null);
   const [activeFullNodeId, setActiveFullNodeId] = useState<string | null>(null);
   const [pinnedModelFullNodeId, setPinnedModelFullNodeId] = useState<string | null>(null);
-  const [pendingViewportFocusNodeId, setPendingViewportFocusNodeId] = useState<string | null>(null);
+  const [pendingViewportFocusRequest, setPendingViewportFocusRequest] = useState<PendingViewportFocusRequest | null>(null);
   const [pendingCenteredInsert, setPendingCenteredInsert] = useState<PendingCenteredInsert | null>(null);
   const [copilotOpen, setCopilotOpen] = useState(false);
   const [copilotDraft, setCopilotDraft] = useState("");
@@ -827,6 +836,7 @@ export function CanvasView({ projectId }: Props) {
   const pendingCanvasSaveRef = useRef<CanvasDocument | null>(null);
   const insertMenuRef = useRef<HTMLDivElement | null>(null);
   const assetPickerRef = useRef<HTMLDivElement | null>(null);
+  const singleCenterActionRef = useRef<HTMLDivElement | null>(null);
   const pendingUploadAnchorRef = useRef<{ x: number; y: number; connectToModelNodeId?: string } | null>(null);
   const canvasSurfaceRef = useRef<HTMLDivElement | null>(null);
   const nativeMenuInsertCountRef = useRef(0);
@@ -882,7 +892,7 @@ export function CanvasView({ projectId }: Props) {
         viewportFocusAnimationFrameRef.current = null;
       }
       if (options?.clearPending) {
-        setPendingViewportFocusNodeId(null);
+        setPendingViewportFocusRequest(null);
       }
     },
     [clearViewportFocusSetupFrames]
@@ -1188,6 +1198,21 @@ export function CanvasView({ projectId }: Props) {
   const activeSelectedNode = useMemo(
     () => (activeNodeId ? canvasDoc.workflow.nodes.find((node) => node.id === activeNodeId) || null : null),
     [activeNodeId, canvasDoc.workflow.nodes]
+  );
+  const getWorkspaceFocusSafeInsets = useCallback(
+    (surfaceSize: { width: number; height: number }): CanvasFocusSafeInsets => {
+      const singleCenterActionHeight = activeNodeId ? singleCenterActionRef.current?.offsetHeight || 0 : 0;
+      return {
+        top: Math.min(96, Math.max(32, Math.round(surfaceSize.height * 0.06))),
+        right: Math.min(104, Math.max(32, Math.round(surfaceSize.width * 0.05))),
+        bottom:
+          Math.min(128, Math.max(40, Math.round(surfaceSize.height * 0.085))) +
+          singleCenterActionHeight +
+          (singleCenterActionHeight > 0 ? 18 : 0),
+        left: Math.min(104, Math.max(32, Math.round(surfaceSize.width * 0.05))),
+      };
+    },
+    [activeNodeId]
   );
 
   const selectedNodeIsList = selectedNode?.kind === "list";
@@ -3142,6 +3167,49 @@ export function CanvasView({ projectId }: Props) {
   }, [canConnectNodePair, selectedNodeIds]);
 
   const canDuplicateSelected = selectedNodeIds.length === 1;
+  const buildPredictedViewportFocusBounds = useCallback((node: WorkflowNode): CanvasFocusBounds | null => {
+    const aspectRatio = getUploadedAssetNodeAspectRatio(node) || 1;
+
+    if (node.kind === "text-template") {
+      return buildCanvasFocusBounds({ x: node.x, y: node.y }, getWorkflowNodeDefaultSize(node.kind, "full", aspectRatio));
+    }
+
+    if (node.kind === "model" && node.displayMode !== "resized") {
+      return buildCanvasFocusBounds({ x: node.x, y: node.y }, getWorkflowNodeDefaultSize(node.kind, "full", aspectRatio));
+    }
+
+    return null;
+  }, []);
+
+  const requestViewportFocus = useCallback(
+    (nodeIds: string[], options?: { predictedBoundsById?: Record<string, CanvasFocusBounds> }) => {
+      if (nodeIds.length === 0) {
+        setPendingViewportFocusRequest(null);
+        return;
+      }
+
+      setPendingViewportFocusRequest({
+        nodeIds: [...nodeIds],
+        predictedBoundsById: options?.predictedBoundsById,
+      });
+    },
+    []
+  );
+
+  const centerSelectedNodesInViewport = useCallback(
+    (nodeIds?: string[]) => {
+      const targetNodeIds = (nodeIds || selectedNodeIdsRef.current).filter((nodeId, index, allNodeIds) => {
+        return allNodeIds.indexOf(nodeId) === index && Boolean(nodesById[nodeId]);
+      });
+
+      if (targetNodeIds.length === 0) {
+        return;
+      }
+
+      requestViewportFocus(targetNodeIds);
+    },
+    [nodesById, requestViewportFocus]
+  );
 
   const undoCanvasChange = useCallback(() => {
     commitPendingCoalescedHistory();
@@ -3198,10 +3266,20 @@ export function CanvasView({ projectId }: Props) {
         setPinnedModelFullNodeId(null);
       }
       if (options?.focusViewport) {
-        setPendingViewportFocusNodeId(nodeId);
+        const predictedBounds = buildPredictedViewportFocusBounds(node);
+        requestViewportFocus([nodeId], {
+          predictedBoundsById: predictedBounds ? { [nodeId]: predictedBounds } : undefined,
+        });
       }
     },
-    [commitPendingCoalescedHistory, nodesById, setTrackedSelectedConnection, setTrackedSelectedNodeIds]
+    [
+      buildPredictedViewportFocusBounds,
+      commitPendingCoalescedHistory,
+      nodesById,
+      requestViewportFocus,
+      setTrackedSelectedConnection,
+      setTrackedSelectedNodeIds,
+    ]
   );
 
   const enterNodeEditMode = useCallback(
@@ -3227,10 +3305,20 @@ export function CanvasView({ projectId }: Props) {
         setPinnedModelFullNodeId(null);
       }
       if (options?.focusViewport) {
-        setPendingViewportFocusNodeId(nodeId);
+        const predictedBounds = buildPredictedViewportFocusBounds(node);
+        requestViewportFocus([nodeId], {
+          predictedBoundsById: predictedBounds ? { [nodeId]: predictedBounds } : undefined,
+        });
       }
     },
-    [commitPendingCoalescedHistory, nodesById, setTrackedSelectedConnection, setTrackedSelectedNodeIds]
+    [
+      buildPredictedViewportFocusBounds,
+      commitPendingCoalescedHistory,
+      nodesById,
+      requestViewportFocus,
+      setTrackedSelectedConnection,
+      setTrackedSelectedNodeIds,
+    ]
   );
 
   const openPrimaryEditorForSelection = useCallback(() => {
@@ -3252,9 +3340,9 @@ export function CanvasView({ projectId }: Props) {
       setTrackedSelectedConnection(null);
       setInsertMenu(null);
       setAssetPicker(null);
-      setPendingViewportFocusNodeId(nodeId);
+      requestViewportFocus([nodeId]);
     },
-    [commitPendingCoalescedHistory, nodesById, setTrackedSelectedConnection, setTrackedSelectedNodeIds]
+    [commitPendingCoalescedHistory, nodesById, requestViewportFocus, setTrackedSelectedConnection, setTrackedSelectedNodeIds]
   );
 
   const focusAndOpenNode = useCallback(
@@ -4173,7 +4261,7 @@ export function CanvasView({ projectId }: Props) {
   }, [canvasDoc.workflow.nodes, pendingCenteredInsert, runUserCanvasMutation]);
 
   useEffect(() => {
-    if (!pendingViewportFocusNodeId) {
+    if (!pendingViewportFocusRequest || pendingViewportFocusRequest.nodeIds.length === 0) {
       return;
     }
 
@@ -4182,9 +4270,12 @@ export function CanvasView({ projectId }: Props) {
       return;
     }
 
-    const targetNode = canvasNodes.find((node) => node.id === pendingViewportFocusNodeId);
-    if (!targetNode) {
-      setPendingViewportFocusNodeId(null);
+    const request = pendingViewportFocusRequest;
+    const targetNodes = request.nodeIds
+      .map((nodeId) => canvasNodes.find((node) => node.id === nodeId) || null)
+      .filter((node): node is (typeof canvasNodes)[number] => Boolean(node));
+    if (targetNodes.length === 0) {
+      setPendingViewportFocusRequest(null);
       return;
     }
 
@@ -4199,61 +4290,106 @@ export function CanvasView({ projectId }: Props) {
       viewportFocusSetupFrameIdsRef.current.push(frameId);
     };
 
-    const finalizeViewportFocus = () => {
-      const latestTargetNode = canvasNodes.find((node) => node.id === pendingViewportFocusNodeId);
-      if (!latestTargetNode) {
-        setPendingViewportFocusNodeId(null);
-        return;
-      }
-
+    const getFocusLayout = (preferMeasuredBounds: boolean) => {
       const bounds = surfaceElement.getBoundingClientRect();
       if (bounds.width < 160 || bounds.height < 120) {
-        setPendingViewportFocusNodeId(null);
-        return;
+        return null;
       }
 
-      const latestTargetElement = surfaceElement.querySelector<HTMLElement>(`[data-node-id="${latestTargetNode.id}"]`);
-      const focusWidth = latestTargetElement?.offsetWidth || latestTargetNode.resolvedSize.width;
-      const focusHeight = latestTargetElement?.offsetHeight || latestTargetNode.resolvedSize.height;
+      const targetBounds = request.nodeIds
+        .map((nodeId) => {
+          const targetNode = canvasNodes.find((node) => node.id === nodeId);
+          if (!targetNode) {
+            return null;
+          }
 
-      const availableWidth = Math.max(220, bounds.width - NODE_FOCUS_ZOOM_PADDING_X * 2);
-      const availableHeight = Math.max(180, bounds.height - NODE_FOCUS_ZOOM_PADDING_Y * 2);
-      const fitZoom = Math.min(
-        availableWidth / focusWidth,
-        availableHeight / focusHeight
-      );
-      const zoom = Math.min(NODE_FOCUS_MAX_ZOOM, Math.max(NODE_FOCUS_MIN_ZOOM, fitZoom));
-      const x = bounds.width / 2 - (latestTargetNode.x + focusWidth / 2) * zoom;
-      const y = bounds.height / 2 - (latestTargetNode.y + focusHeight / 2) * zoom;
+          const predictedBounds = request.predictedBoundsById?.[nodeId];
+          const targetElement = surfaceElement.querySelector<HTMLElement>(`[data-node-id="${nodeId}"]`);
+          const resolvedWidth = preferMeasuredBounds
+            ? targetElement?.offsetWidth || predictedBounds?.width || targetNode.resolvedSize.width
+            : predictedBounds?.width || targetElement?.offsetWidth || targetNode.resolvedSize.width;
+          const resolvedHeight = preferMeasuredBounds
+            ? targetElement?.offsetHeight || predictedBounds?.height || targetNode.resolvedSize.height
+            : predictedBounds?.height || targetElement?.offsetHeight || targetNode.resolvedSize.height;
+          return {
+            x: predictedBounds?.x ?? targetNode.x,
+            y: predictedBounds?.y ?? targetNode.y,
+            width: resolvedWidth,
+            height: resolvedHeight,
+          };
+        })
+        .filter((bound): bound is CanvasFocusBounds => Boolean(bound));
 
-      animateViewportTo({ x, y, zoom });
-      setPendingViewportFocusNodeId((current) => (current === latestTargetNode.id ? null : current));
+      if (targetBounds.length === 0) {
+        return null;
+      }
+
+      return buildCanvasFocusViewport({
+        targetBounds,
+        surfaceSize: {
+          width: bounds.width,
+          height: bounds.height,
+        },
+        safeInsets: getWorkspaceFocusSafeInsets({
+          width: bounds.width,
+          height: bounds.height,
+        }),
+        zoomLimits: DEFAULT_CANVAS_FOCUS_ZOOM_LIMITS,
+      });
     };
 
-    let previousWidth = -1;
-    let previousHeight = -1;
+    const initialFocusLayout = getFocusLayout(false);
+    if (initialFocusLayout) {
+      animateViewportTo(initialFocusLayout.viewport);
+    }
+
+    const finalizeViewportFocus = () => {
+      const finalFocusLayout = getFocusLayout(true);
+      if (finalFocusLayout) {
+        animateViewportTo(finalFocusLayout.viewport);
+      }
+      setPendingViewportFocusRequest((current) => (current === request ? null : current));
+    };
+
+    let previousSizes = new Map<string, { width: number; height: number }>();
     let stableFrames = 0;
     let sampleCount = 0;
 
     const waitForNodeLayoutToSettle = () => {
-      const nodeElement = surfaceElement.querySelector<HTMLElement>(`[data-node-id="${pendingViewportFocusNodeId}"]`);
-      if (!nodeElement) {
-        finalizeViewportFocus();
-        return;
-      }
+      const currentSizes = request.nodeIds.reduce<Map<string, { width: number; height: number }>>((acc, nodeId) => {
+        const nodeElement = surfaceElement.querySelector<HTMLElement>(`[data-node-id="${nodeId}"]`);
+        if (!nodeElement) {
+          return acc;
+        }
 
-      const rect = nodeElement.getBoundingClientRect();
-      const hasSize = rect.width > 0 && rect.height > 0;
-      if (hasSize && Math.abs(rect.width - previousWidth) < 0.5 && Math.abs(rect.height - previousHeight) < 0.5) {
-        stableFrames += 1;
-      } else {
-        stableFrames = 0;
-      }
-      previousWidth = rect.width;
-      previousHeight = rect.height;
+        const rect = nodeElement.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) {
+          return acc;
+        }
+
+        acc.set(nodeId, {
+          width: rect.width,
+          height: rect.height,
+        });
+        return acc;
+      }, new Map());
+      const hasMeasuredSize = currentSizes.size > 0;
+      const isStable =
+        hasMeasuredSize &&
+        currentSizes.size === previousSizes.size &&
+        Array.from(currentSizes.entries()).every(([nodeId, size]) => {
+          const previousSize = previousSizes.get(nodeId);
+          return (
+            previousSize &&
+            Math.abs(size.width - previousSize.width) < 0.5 &&
+            Math.abs(size.height - previousSize.height) < 0.5
+          );
+        });
+      stableFrames = isStable ? stableFrames + 1 : 0;
+      previousSizes = currentSizes;
       sampleCount += 1;
 
-      if ((hasSize && stableFrames >= NODE_FOCUS_SETTLE_STABLE_FRAMES) || sampleCount >= NODE_FOCUS_SETTLE_MAX_FRAMES) {
+      if ((hasMeasuredSize && stableFrames >= NODE_FOCUS_SETTLE_STABLE_FRAMES) || sampleCount >= NODE_FOCUS_SETTLE_MAX_FRAMES) {
         finalizeViewportFocus();
         return;
       }
@@ -4275,7 +4411,8 @@ export function CanvasView({ projectId }: Props) {
     cancelViewportFocusAnimation,
     canvasNodes,
     clearViewportFocusSetupFrames,
-    pendingViewportFocusNodeId,
+    getWorkspaceFocusSafeInsets,
+    pendingViewportFocusRequest,
   ]);
 
   useEffect(() => {
@@ -5131,6 +5268,14 @@ export function CanvasView({ projectId }: Props) {
   const selectionActions = useMemo<CanvasSelectionAction[]>(() => {
     const actions: CanvasSelectionAction[] = [];
 
+    if (selectedNodeIds.length >= 2) {
+      actions.push({
+        id: "center-selection",
+        label: "Center Selection",
+        onClick: () => centerSelectedNodesInViewport(selectedNodeIds),
+      });
+    }
+
     if (selectedImageAssetIds.length > 0) {
       actions.push({
         id: "download-assets",
@@ -5156,7 +5301,7 @@ export function CanvasView({ projectId }: Props) {
     }
 
     return actions;
-  }, [downloadAssets, openCompare, selectedImageAssetIds]);
+  }, [centerSelectedNodesInViewport, downloadAssets, openCompare, selectedImageAssetIds, selectedNodeIds]);
 
   const insertMenuTargetNode =
     insertMenu?.mode === "model-input" && insertMenu.connectToNodeId ? nodesById[insertMenu.connectToNodeId] || null : null;
@@ -5177,6 +5322,7 @@ export function CanvasView({ projectId }: Props) {
   );
   const canUndo = historyStacks.undo.length > 0;
   const canRedo = historyStacks.redo.length > 0;
+  const showSingleCenterAction = !isLoading && Boolean(activeSelectedNode) && !insertMenu && !assetPicker;
 
   useEffect(() => {
     publishCanvasMenuState({
@@ -5200,6 +5346,7 @@ export function CanvasView({ projectId }: Props) {
         selectNodes: (nodeIds: string[]) => void;
         moveSelectedNodesBy: (deltaX: number, deltaY: number) => void;
         connectSelected: () => void;
+        centerSelection: () => void;
         openPrimaryEditor: (nodeId: string) => void;
         focusAndOpenNode: (nodeId: string) => void;
         setDisplayMode: (nodeId: string, mode: "preview" | "compact") => void;
@@ -5241,6 +5388,9 @@ export function CanvasView({ projectId }: Props) {
       connectSelected: () => {
         connectSelectedNodes();
       },
+      centerSelection: () => {
+        centerSelectedNodesInViewport();
+      },
       openPrimaryEditor: (nodeId: string) => {
         if (canvasDocRef.current.workflow.nodes.some((node) => node.id === nodeId)) {
           openPrimaryEditorForNode(nodeId);
@@ -5281,6 +5431,7 @@ export function CanvasView({ projectId }: Props) {
     commitNodePositions,
     commitPendingCoalescedHistory,
     connectSelectedNodes,
+    centerSelectedNodesInViewport,
     handleNodeDisplayModeChange,
     handleNodeResizeStart,
     handleNodeSizeCommit,
@@ -5334,6 +5485,23 @@ export function CanvasView({ projectId }: Props) {
             />
           )}
         </div>
+
+        {showSingleCenterAction ? (
+          <div ref={singleCenterActionRef} className={styles.centerDock}>
+            <button
+              type="button"
+              className={styles.centerButton}
+              onPointerDown={(event) => {
+                event.stopPropagation();
+              }}
+              onClick={() => {
+                centerSelectedNodesInViewport(activeSelectedNode ? [activeSelectedNode.id] : undefined);
+              }}
+            >
+              Center
+            </button>
+          </div>
+        ) : null}
 
         {!isLoading ? (
           <CanvasCopilotWidget

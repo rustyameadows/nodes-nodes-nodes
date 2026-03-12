@@ -11,6 +11,47 @@
   inset: 0;
 }
 
+.centerDock {
+  position: absolute;
+  left: 50%;
+  bottom: var(--ds-space-4);
+  z-index: 39;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.centerButton {
+  pointer-events: auto;
+  min-height: var(--ds-control-height-sm);
+  padding: 0 var(--ds-space-4);
+  border: 1px solid var(--ds-border-strong);
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, var(--ds-state-accent-bg) 0%, transparent 100%),
+    var(--ds-surface-overlay);
+  color: var(--ds-text-primary);
+  font: inherit;
+  font-size: var(--ds-font-size-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  box-shadow: var(--ds-shadow-overlay);
+  backdrop-filter: blur(var(--ds-popover-blur));
+  cursor: pointer;
+  transition:
+    border-color var(--ds-motion-micro) var(--ds-ease-standard),
+    background var(--ds-motion-micro) var(--ds-ease-standard),
+    transform var(--ds-motion-micro) var(--ds-ease-standard);
+}
+
+.centerButton:hover {
+  border-color: var(--ds-border-contrast);
+  background:
+    linear-gradient(135deg, var(--ds-state-info-bg) 0%, transparent 100%),
+    var(--ds-control-bg-hover);
+  transform: translateY(-1px);
+}
+
 .loading {
   position: absolute;
   inset: 0;

@@ -184,3 +184,8 @@
 - Decision: move Node Library detail display-mode switching out of the metadata rail and into a bottom-centered canvas overlay that controls one explicit primary fixture node.
 - Rationale: the old left-rail badges described modes but did not let users compare shells quickly, while the library needs a fast, unfocused way to flip the real renderer between compact, preview, edit/full, and resized states.
 - Consequence: every Node Library detail fixture now declares a `primaryNodeId` plus a curated resized preset, the right-side playground renders a bottom mode row with `Compact`, `Preview`, `Edit`, and `Resize`, the row drives library-only full-mode overrides without changing real canvas behavior, and primary demo nodes stay centered as their shell sizes change; those library-only mode changes now animate node shell layout and viewport reframing together instead of using a delayed recenter correction.
+
+## 2026-03-11 - Canvas Focus Uses Shared Bounds-Based Fit Zoom
+- Decision: replace the separate real-canvas and Node Library focus math with one shared centering engine that fit-zooms from outer rendered node bounds, current surface size, and caller-provided safe insets.
+- Rationale: fixed per-surface focus padding and duplicate framing logic made repeated mode transitions drift into clipped or over-zoomed views, especially after switching a library node back into larger shells.
+- Consequence: Node Library load and mode switches, workspace double-click focus, the single-node `Center` CTA, and multi-node `Center Selection` now share one union-bounds viewport target calculation; predicted shell bounds can start the transition immediately, and measured outer shell bounds perform the final correction once layout settles.

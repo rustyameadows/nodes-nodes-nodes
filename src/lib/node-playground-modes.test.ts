@@ -51,12 +51,13 @@ test("buildCenteredViewportForNode centers the node inside the available surface
     nodePosition: { x: 180, y: 120 },
     nodeSize: { width: 760, height: 460 },
     surfaceSize: { width: 960, height: 720 },
+    safeInsets: { top: 44, right: 52, bottom: 108, left: 52 },
   });
 
   assert.deepEqual(viewport, {
     zoom: 0.8,
     x: 32,
-    y: 80,
+    y: 48,
   });
 });
 
@@ -65,12 +66,13 @@ test("buildFramedViewportForNode fits and centers the node with playground paddi
     nodePosition: { x: 180, y: 120 },
     nodeSize: { width: 760, height: 460 },
     surfaceSize: { width: 960, height: 720 },
+    safeInsets: { top: 44, right: 52, bottom: 108, left: 52 },
   });
 
   assert.deepEqual(viewport, {
-    zoom: 1.0526315789473684,
-    x: -109,
-    y: -8,
+    zoom: 1.1263157894736842,
+    x: -150.73684210526312,
+    y: -66.21052631578948,
   });
 });
 
@@ -80,14 +82,15 @@ test("buildNodePlaygroundTransitionLayout keeps the node center stable while ref
     currentSize: { width: 236, height: 84 },
     nextSize: { width: 640, height: 420 },
     surfaceSize: { width: 920, height: 948 },
+    safeInsets: { top: 40, right: 40, bottom: 148, left: 40 },
   });
 
   assert.deepEqual(layout.targetCenter, { x: 238, y: 222 });
   assert.deepEqual(layout.nodePosition, { x: -82, y: 12 });
   assert.deepEqual(layout.viewport, {
-    zoom: 1.1875,
-    x: 177,
-    y: 210,
+    zoom: 1.3125,
+    x: 147.625,
+    y: 128.625,
   });
 });
 
@@ -96,13 +99,14 @@ test("buildNodePlaygroundMeasuredCorrection recenters measured size drift withou
     targetCenter: { x: 238, y: 222 },
     measuredSize: { width: 612, height: 392 },
     surfaceSize: { width: 920, height: 948 },
+    safeInsets: { top: 40, right: 40, bottom: 148, left: 40 },
   });
 
   assert.deepEqual(correction.nodePosition, { x: -68, y: 26 });
   assert.deepEqual(correction.viewport, {
-    zoom: 1.2418300653594772,
-    x: 164,
-    y: 198,
+    zoom: 1.3725490196078431,
+    x: 133.33333333333331,
+    y: 115.29411764705884,
   });
 });
 

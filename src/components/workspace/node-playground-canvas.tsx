@@ -75,6 +75,10 @@ const PLAYGROUND_MODE_OPTIONS: Array<{ id: NodePlaygroundMode; label: string }> 
 const PLAYGROUND_LAYOUT_MOTION_MS = 240;
 const PLAYGROUND_LAYOUT_MOTION_BUFFER_MS = 48;
 
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
 function cloneFixtureDoc(fixture: NodePlaygroundFixture): CanvasDocument {
   return {
     canvasViewport: fixture.viewport || {
@@ -321,6 +325,8 @@ export function NodePlaygroundCanvas({
   initialFullNodeId = null,
 }: Props) {
   const canvasRef = useRef<HTMLDivElement | null>(null);
+  const playgroundModeDockRef = useRef<HTMLDivElement | null>(null);
+  const primaryNodeId = fixture.primaryNodeId;
   const [canvasDoc, setCanvasDoc] = useState<CanvasDocument>(() => cloneFixtureDoc(fixture));
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
   const [selectedConnection, setSelectedConnection] = useState<CanvasConnection | null>(null);
@@ -363,6 +369,19 @@ export function NodePlaygroundCanvas({
     };
   }, []);
 
+  const getPlaygroundFocusSafeInsets = useCallback(
+    (surfaceSize: { width: number; height: number }) => {
+      const dockHeight = primaryNodeId ? playgroundModeDockRef.current?.offsetHeight || 0 : 0;
+      return {
+        top: clamp(Math.round(surfaceSize.height * 0.055), 24, 76),
+        right: clamp(Math.round(surfaceSize.width * 0.045), 24, 72),
+        bottom: clamp(Math.round(surfaceSize.height * 0.065), 28, 88) + dockHeight + (dockHeight > 0 ? 18 : 0),
+        left: clamp(Math.round(surfaceSize.width * 0.045), 24, 72),
+      };
+    },
+    [primaryNodeId]
+  );
+
   const modelCatalogVariants = useMemo(() => getModelCatalogVariants(providerModels), [providerModels]);
 
   const nodesById = useMemo(() => {
@@ -375,7 +394,6 @@ export function NodePlaygroundCanvas({
   const activeNodeId = selectedNodeIds.length === 1 ? selectedNodeIds[0] || null : null;
   const selectedNode = useMemo(() => (activeNodeId ? nodesById[activeNodeId] || null : null), [activeNodeId, nodesById]);
   const effectiveFullNodeId = activeFullNodeId || pinnedModelFullNodeId;
-  const primaryNodeId = fixture.primaryNodeId;
   const selectedModel = useMemo(
     () =>
       selectedNode?.kind === "model"
@@ -858,9 +876,10 @@ export function NodePlaygroundCanvas({
         nodePosition: { x: primaryRenderNode.x, y: primaryRenderNode.y },
         nodeSize: measuredSize,
         surfaceSize,
+        safeInsets: getPlaygroundFocusSafeInsets(surfaceSize),
       })
     );
-  }, [getCanvasSurfaceSize, getRenderedNodeSize, primaryRenderNode, updateViewport]);
+  }, [getCanvasSurfaceSize, getPlaygroundFocusSafeInsets, getRenderedNodeSize, primaryRenderNode, updateViewport]);
 
   function transitionPrimaryNode(mode: NodePlaygroundMode) {
     const nodeId = primaryNodeId;
@@ -873,6 +892,7 @@ export function NodePlaygroundCanvas({
     const currentSize = getRenderedNodeSize(nodeId) || renderNode.resolvedSize;
     const aspectRatio = getUploadedAssetNodeAspectRatio(workflowNode) || 1;
     const surfaceSize = getCanvasSurfaceSize();
+    const focusSafeInsets = surfaceSize ? getPlaygroundFocusSafeInsets(surfaceSize) : undefined;
 
     let nextDisplayMode = workflowNode.displayMode;
     let nextSize: WorkflowNodeSize | null = workflowNode.size;
@@ -903,6 +923,7 @@ export function NodePlaygroundCanvas({
           currentSize,
           nextSize: resolvedNextSize,
           surfaceSize,
+          safeInsets: focusSafeInsets,
         })
       : null;
     const nextPosition = transitionLayout
@@ -963,18 +984,13 @@ export function NodePlaygroundCanvas({
     let observer: ResizeObserver | null = null;
     let frameId = 0;
     let corrected = false;
-    const timeoutId = window.setTimeout(() => {
-      setPrimaryNodeTransition((current) =>
-        current?.nodeId === primaryNodeTransition.nodeId ? null : current
-      );
-    }, PLAYGROUND_LAYOUT_MOTION_MS + PLAYGROUND_LAYOUT_MOTION_BUFFER_MS);
-
-    const maybeCorrectMeasuredSize = (measuredSize: WorkflowNodeSize | null) => {
+    const applyMeasuredCorrection = (measuredSize: WorkflowNodeSize | null, options?: { force?: boolean }) => {
       if (
         cancelled ||
-        corrected ||
         !measuredSize ||
-        !shouldCorrectNodePlaygroundMeasuredSize(primaryNodeTransition.predictedSize, measuredSize)
+        (!options?.force &&
+          (corrected ||
+            !shouldCorrectNodePlaygroundMeasuredSize(primaryNodeTransition.predictedSize, measuredSize)))
       ) {
         return;
       }
@@ -989,6 +1005,7 @@ export function NodePlaygroundCanvas({
         targetCenter: primaryNodeTransition.targetCenter,
         measuredSize,
         surfaceSize,
+        safeInsets: getPlaygroundFocusSafeInsets(surfaceSize),
       });
 
       updateNode(primaryNodeTransition.nodeId, (node) => ({
@@ -998,6 +1015,13 @@ export function NodePlaygroundCanvas({
       }));
       updateViewport(correction.viewport);
     };
+
+    const timeoutId = window.setTimeout(() => {
+      applyMeasuredCorrection(getRenderedNodeSize(primaryNodeTransition.nodeId), { force: true });
+      setPrimaryNodeTransition((current) =>
+        current?.nodeId === primaryNodeTransition.nodeId ? null : current
+      );
+    }, PLAYGROUND_LAYOUT_MOTION_MS + PLAYGROUND_LAYOUT_MOTION_BUFFER_MS);
 
     const attachObserver = () => {
       if (cancelled) {
@@ -1017,13 +1041,13 @@ export function NodePlaygroundCanvas({
           return;
         }
 
-        maybeCorrectMeasuredSize({
+        applyMeasuredCorrection({
           width: Math.round(entry.contentRect.width),
           height: Math.round(entry.contentRect.height),
         });
       });
       observer.observe(nodeElement);
-      maybeCorrectMeasuredSize(getRenderedNodeSize(primaryNodeTransition.nodeId));
+      applyMeasuredCorrection(getRenderedNodeSize(primaryNodeTransition.nodeId));
     };
 
     frameId = window.requestAnimationFrame(attachObserver);
@@ -1038,6 +1062,7 @@ export function NodePlaygroundCanvas({
     };
   }, [
     getCanvasSurfaceSize,
+    getPlaygroundFocusSafeInsets,
     getRenderedNodeSize,
     prefersReducedMotion,
     primaryNodeTransition,
@@ -1062,6 +1087,7 @@ export function NodePlaygroundCanvas({
       const renderNode = canvasNodes.find((candidate) => candidate.id === nodeId) || null;
       const currentSize = getRenderedNodeSize(nodeId) || renderNode?.resolvedSize;
       const surfaceSize = getCanvasSurfaceSize();
+      const focusSafeInsets = surfaceSize ? getPlaygroundFocusSafeInsets(surfaceSize) : undefined;
       if (currentSize) {
         const aspectRatio = getUploadedAssetNodeAspectRatio(node) || 1;
         const nextSize = getWorkflowNodeDefaultSize(node.kind, "full", aspectRatio);
@@ -1071,6 +1097,7 @@ export function NodePlaygroundCanvas({
               currentSize,
               nextSize,
               surfaceSize,
+              safeInsets: focusSafeInsets,
             })
           : null;
         const nextPosition = transitionLayout
@@ -1122,6 +1149,7 @@ export function NodePlaygroundCanvas({
   }, [
     canvasNodes,
     getCanvasSurfaceSize,
+    getPlaygroundFocusSafeInsets,
     getRenderedNodeSize,
     libraryFullNodeId,
     nodesById,
@@ -1157,9 +1185,13 @@ export function NodePlaygroundCanvas({
           width: bounds.width,
           height: bounds.height,
         },
+        safeInsets: getPlaygroundFocusSafeInsets({
+          width: bounds.width,
+          height: bounds.height,
+        }),
       })
     );
-  }, [canvasNodes, updateViewport]);
+  }, [canvasNodes, getPlaygroundFocusSafeInsets, updateViewport]);
   const transitioningPrimaryNodeId = prefersReducedMotion ? null : primaryNodeTransition?.nodeId || null;
 
   const renderNodeContent = useCallback(
@@ -1557,7 +1589,7 @@ export function NodePlaygroundCanvas({
       />
       {primaryWorkflowNode ? (
         <div className={styles.playgroundModeDock}>
-          <div className={styles.playgroundModeRail}>
+          <div ref={playgroundModeDockRef} className={styles.playgroundModeRail}>
             {PLAYGROUND_MODE_OPTIONS.map((option) => (
               <button
                 key={option.id}

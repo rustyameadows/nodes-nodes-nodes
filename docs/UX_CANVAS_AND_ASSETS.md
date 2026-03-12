@@ -86,6 +86,8 @@
   - display-mode switching moved out of the left rail and into a bottom-centered canvas overlay row with `Compact`, `Preview`, `Edit`, and `Resize`
   - the bottom row drives the fixture's primary node without auto-selecting it, and keeps that primary node centered through shell transitions
   - library mode changes animate the primary node shell position/size plus the viewport reframing as one motion; reduced-motion users keep the snap behavior
+  - library load, bottom-row mode changes, and node-side edit/display-mode actions all use the shared canvas centering engine, which fit-zooms from the actual surface size, the primary node's outer shell bounds, and the visible bottom dock inset
+  - those transitions begin from predicted shell bounds and then correct once the measured outer shell settles, so repeated `Preview` / `Edit` / `Resize` switches do not drift into clipped framing
   - model detail uses a standalone model fixture rather than a fake upstream prompt note
   - uploaded and generated image asset demos use a local placeholder preview when no real asset file exists
   - generated asset demos keep their visible source-model connection line
@@ -110,11 +112,12 @@
   - newly inserted model nodes land with the full response-settings shell already open
   - `Enter` activates the selected node's primary mode
   - double-click zooms the viewport to fit the target node
-  - if double-click also changes the node's presentation mode, the viewport refit waits for the node size transition to settle first
+  - if double-click also changes the node's presentation mode, the viewport refit starts from predicted expanded bounds and then corrects against the measured outer shell after the transition settles
   - image node double-click keeps the node in place and only reframes the viewport
   - model node double-click opens the full response-settings editor while keeping the shared rails/run launcher behavior on single select
   - template node double-click enters edit mode and then reframes to the expanded editor
   - resized nodes keep their custom size when re-opened
+  - a single selected node exposes a bottom-center `Center` CTA, and multi-selection strips expose `Center Selection`; both use the same bounds-based fit/zoom engine as double-click and the Node Library
 - active-node behavior by kind:
   - image asset: the media surface stays visually pure; preview shows only the image, and active labels return to the shared top title rail while actions stay outside the frame
   - model: single-select keeps the node at its persisted `preview` or `compact` size, reveals the shared top/bottom rails, and keeps the external side run launcher visible; `Enter` or double-click opens the simplified full response-settings layout, the top-left rail immediately rehydrates to show `Default` and `Compact`, and that full shell stays open until `Default`, `Compact`, or resize mode takes over

@@ -1,5 +1,12 @@
 import type { WorkflowNodeDisplayMode, WorkflowNodeSize } from "@/components/workspace/types";
 import type { CanvasNodeRenderMode } from "@/lib/canvas-node-presentation";
+import {
+  buildCanvasFocusBounds,
+  buildCanvasFocusViewport,
+  DEFAULT_CANVAS_FOCUS_ZOOM_LIMITS,
+  type CanvasFocusSafeInsets,
+  type CanvasFocusZoomLimits,
+} from "@/lib/canvas-focus";
 
 export type NodePlaygroundMode = "compact" | "preview" | "edit" | "resize";
 
@@ -70,15 +77,23 @@ export function buildCenteredViewportForNode(input: {
   nodePosition: { x: number; y: number };
   nodeSize: WorkflowNodeSize;
   surfaceSize: { width: number; height: number };
+  safeInsets?: Partial<CanvasFocusSafeInsets>;
 }) {
-  const zoom = input.zoom;
+  const safeInsets = {
+    top: input.safeInsets?.top ?? 0,
+    right: input.safeInsets?.right ?? 0,
+    bottom: input.safeInsets?.bottom ?? 0,
+    left: input.safeInsets?.left ?? 0,
+  };
+  const availableWidth = Math.max(1, input.surfaceSize.width - safeInsets.left - safeInsets.right);
+  const availableHeight = Math.max(1, input.surfaceSize.height - safeInsets.top - safeInsets.bottom);
   const nodeCenterX = input.nodePosition.x + input.nodeSize.width / 2;
   const nodeCenterY = input.nodePosition.y + input.nodeSize.height / 2;
 
   return {
-    zoom,
-    x: Math.round(input.surfaceSize.width / 2 - nodeCenterX * zoom),
-    y: Math.round(input.surfaceSize.height / 2 - nodeCenterY * zoom),
+    zoom: input.zoom,
+    x: safeInsets.left + availableWidth / 2 - nodeCenterX * input.zoom,
+    y: safeInsets.top + availableHeight / 2 - nodeCenterY * input.zoom,
   };
 }
 
@@ -86,21 +101,21 @@ export function buildFramedViewportForNode(input: {
   nodePosition: { x: number; y: number };
   nodeSize: WorkflowNodeSize;
   surfaceSize: { width: number; height: number };
+  safeInsets?: Partial<CanvasFocusSafeInsets>;
+  zoomLimits?: CanvasFocusZoomLimits;
 }) {
-  const availableWidth = Math.max(200, input.surfaceSize.width - 160);
-  const availableHeight = Math.max(160, input.surfaceSize.height - 128);
-  const fitZoom = Math.min(
-    availableWidth / input.nodeSize.width,
-    availableHeight / input.nodeSize.height
+  return (
+    buildCanvasFocusViewport({
+      targetBounds: [buildCanvasFocusBounds(input.nodePosition, input.nodeSize)],
+      surfaceSize: input.surfaceSize,
+      safeInsets: input.safeInsets,
+      zoomLimits: input.zoomLimits ?? DEFAULT_CANVAS_FOCUS_ZOOM_LIMITS,
+    })?.viewport || {
+      zoom: 1,
+      x: 0,
+      y: 0,
+    }
   );
-  const zoom = Math.min(1.5, Math.max(0.8, fitZoom));
-
-  return buildCenteredViewportForNode({
-    zoom,
-    nodePosition: input.nodePosition,
-    nodeSize: input.nodeSize,
-    surfaceSize: input.surfaceSize,
-  });
 }
 
 export function buildNodePlaygroundTransitionLayout(input: {
@@ -108,6 +123,8 @@ export function buildNodePlaygroundTransitionLayout(input: {
   currentSize: WorkflowNodeSize;
   nextSize: WorkflowNodeSize;
   surfaceSize: { width: number; height: number };
+  safeInsets?: Partial<CanvasFocusSafeInsets>;
+  zoomLimits?: CanvasFocusZoomLimits;
 }) {
   const targetCenter = {
     x: input.currentPosition.x + input.currentSize.width / 2,
@@ -122,6 +139,8 @@ export function buildNodePlaygroundTransitionLayout(input: {
       nodePosition,
       nodeSize: input.nextSize,
       surfaceSize: input.surfaceSize,
+      safeInsets: input.safeInsets,
+      zoomLimits: input.zoomLimits,
     }),
   };
 }
@@ -130,6 +149,8 @@ export function buildNodePlaygroundMeasuredCorrection(input: {
   targetCenter: { x: number; y: number };
   measuredSize: WorkflowNodeSize;
   surfaceSize: { width: number; height: number };
+  safeInsets?: Partial<CanvasFocusSafeInsets>;
+  zoomLimits?: CanvasFocusZoomLimits;
 }) {
   const nodePosition = positionNodeAroundCenter(input.targetCenter, input.measuredSize);
 
@@ -139,6 +160,8 @@ export function buildNodePlaygroundMeasuredCorrection(input: {
       nodePosition,
       nodeSize: input.measuredSize,
       surfaceSize: input.surfaceSize,
+      safeInsets: input.safeInsets,
+      zoomLimits: input.zoomLimits,
     }),
   };
 }
