@@ -71,6 +71,7 @@ type Props = {
   selectionActions?: CanvasSelectionAction[];
   enableProgrammaticViewportMotion?: boolean;
   programmaticMotionNodeIds?: string[];
+  programmaticMotionFrameSizes?: Record<string, WorkflowNodeSize>;
 };
 
 type InteractionState =
@@ -398,6 +399,7 @@ export function InfiniteCanvas({
   selectionActions = [],
   enableProgrammaticViewportMotion = false,
   programmaticMotionNodeIds = [],
+  programmaticMotionFrameSizes = {},
 }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const nodeElementRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -469,12 +471,16 @@ export function InfiniteCanvas({
   const getNodeSize = useCallback(
     (nodeId: string) => {
       const resized = resizeDraftSizes?.[nodeId];
+      const programmaticFrameSize = programmaticMotionFrameSizes[nodeId];
       const node = nodesById[nodeId];
       const measured = nodeSizes[nodeId];
 
       if (!node) {
         if (resized) {
           return resized;
+        }
+        if (programmaticFrameSize) {
+          return programmaticFrameSize;
         }
         if (measured) {
           return measured;
@@ -485,13 +491,13 @@ export function InfiniteCanvas({
       return resolveCanvasNodeFrameSize({
         kind: node.kind,
         renderMode: node.renderMode,
-        resolvedSize: node.resolvedSize,
-        measuredSize: measured,
+        resolvedSize: programmaticFrameSize || node.resolvedSize,
+        measuredSize: programmaticFrameSize ? null : measured,
         resizeDraftSize: resized,
         fallbackSize: { width: DEFAULT_NODE_WIDTH, height: DEFAULT_NODE_HEIGHT },
       });
     },
-    [nodeSizes, nodesById, resizeDraftSizes]
+    [nodeSizes, nodesById, programmaticMotionFrameSizes, resizeDraftSizes]
   );
 
   const getNodeBoundsSize = useCallback(
@@ -1490,7 +1496,8 @@ export function InfiniteCanvas({
             normalizedLeftAccentTypes,
             borderSemantics.rightAccentType
           );
-          const autoHeight = usesContentHeight(node);
+          const programmaticFrameSize = programmaticMotionFrameSizes[node.id];
+          const autoHeight = usesContentHeight(node) && !programmaticFrameSize;
           const nodeStyle: CSSProperties = {
             left: `${node.x}px`,
             top: `${node.y}px`,

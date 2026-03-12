@@ -19,6 +19,23 @@
     #060606;
 }
 
+.preflightLayer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  visibility: hidden;
+  pointer-events: none;
+  z-index: -1;
+}
+
+.preflightNodeHost {
+  position: absolute;
+  left: -20000px;
+  top: -20000px;
+  transform: none;
+  pointer-events: none;
+}
+
 .canvasMarqueeActive,
 .canvasMarqueeActive * {
   user-select: none;

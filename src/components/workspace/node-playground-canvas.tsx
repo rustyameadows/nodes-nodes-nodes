@@ -6,6 +6,10 @@ import {
   type ActiveCanvasNodeEditorState,
   type CanvasModelEditorState,
 } from "@/components/canvas-nodes";
+import {
+  CanvasFocusPreflightLayer,
+  useCanvasFocusPreflightMeasurement,
+} from "@/components/canvas-focus-preflight";
 import { InfiniteCanvas } from "@/components/infinite-canvas";
 import type {
   CanvasConnection,
@@ -326,6 +330,7 @@ export function NodePlaygroundCanvas({
 }: Props) {
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const playgroundModeDockRef = useRef<HTMLDivElement | null>(null);
+  const primaryTransitionTokenRef = useRef(0);
   const primaryNodeId = fixture.primaryNodeId;
   const [canvasDoc, setCanvasDoc] = useState<CanvasDocument>(() => cloneFixtureDoc(fixture));
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
@@ -340,6 +345,11 @@ export function NodePlaygroundCanvas({
   } | null>(null);
   const [hasCenteredFixture, setHasCenteredFixture] = useState(false);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
+  const {
+    request: preflightRequest,
+    measureNode: measurePreflightNode,
+    resolveMeasurement: resolvePreflightMeasurement,
+  } = useCanvasFocusPreflightMeasurement();
 
   useEffect(() => {
     setCanvasDoc(cloneFixtureDoc(fixture));
@@ -514,7 +524,7 @@ export function NodePlaygroundCanvas({
 
   const handleNodeDisplayModeChange = useCallback((nodeId: string, mode: "preview" | "compact") => {
     if (nodeId === primaryNodeId) {
-      transitionPrimaryNode(mode);
+      void transitionPrimaryNode(mode);
       return;
     }
 
@@ -841,6 +851,54 @@ export function NodePlaygroundCanvas({
     });
   }, [activeNodeId, canvasDoc.workflow.nodes, effectiveFullNodeId, libraryFullNodeId, nodesById, providerModels]);
 
+  const buildRenderNodeForMeasurement = useCallback(
+    (
+      candidateNode: WorkflowNode,
+      options?: {
+        activeNodeId?: string | null;
+        fullNodeId?: string | null;
+        forcedRenderMode?: "full" | "resized" | null;
+      }
+    ) => {
+      const baseNode = canvasNodes.find((node) => node.id === candidateNode.id) || null;
+      if (!baseNode) {
+        return null;
+      }
+
+      const uploadedAssetAspectRatio = getUploadedAssetNodeAspectRatio(candidateNode) || undefined;
+      const presentation = resolveCanvasNodePresentation({
+        node: candidateNode,
+        activeNodeId:
+          options && Object.prototype.hasOwnProperty.call(options, "activeNodeId")
+            ? options.activeNodeId ?? null
+            : activeNodeId,
+        fullNodeId:
+          options && Object.prototype.hasOwnProperty.call(options, "fullNodeId")
+            ? options.fullNodeId ?? null
+            : effectiveFullNodeId,
+        nodeId: candidateNode.id,
+        aspectRatio: uploadedAssetAspectRatio,
+        forcedRenderMode:
+          options && Object.prototype.hasOwnProperty.call(options, "forcedRenderMode")
+            ? options.forcedRenderMode ?? null
+            : libraryFullNodeId === candidateNode.id
+              ? "full"
+              : null,
+      });
+
+      return {
+        ...baseNode,
+        ...candidateNode,
+        presentation,
+        renderMode: presentation.renderMode,
+        canResize: presentation.canResize,
+        lockAspectRatio: presentation.lockAspectRatio,
+        resolvedSize: presentation.size,
+      } satisfies CanvasRenderNode;
+    },
+    [activeNodeId, canvasNodes, effectiveFullNodeId, libraryFullNodeId]
+  );
+
   const primaryRenderNode = useMemo(
     () => canvasNodes.find((node) => node.id === primaryNodeId) || null,
     [canvasNodes, primaryNodeId]
@@ -864,13 +922,25 @@ export function NodePlaygroundCanvas({
     return "preview" as const;
   }, [initialFullNodeId, primaryRenderNode, primaryWorkflowNode]);
 
-  const centerPrimaryNodeInViewport = useCallback(() => {
+  const centerPrimaryNodeInViewport = useCallback(async () => {
     const surfaceSize = getCanvasSurfaceSize();
     if (!surfaceSize || !primaryRenderNode) {
       return;
     }
 
-    const measuredSize = getRenderedNodeSize(primaryRenderNode.id) || primaryRenderNode.resolvedSize;
+    const measuredSize =
+      getRenderedNodeSize(primaryRenderNode.id) ||
+      (await measurePreflightNode(
+        primaryWorkflowNode
+          ? buildRenderNodeForMeasurement(primaryWorkflowNode, {
+              activeNodeId,
+              fullNodeId: effectiveFullNodeId,
+              forcedRenderMode: libraryFullNodeId === primaryRenderNode.id ? "full" : null,
+            })
+          : null,
+      )) ||
+      primaryRenderNode.resolvedSize;
+
     updateViewport(
       buildFramedViewportForNode({
         nodePosition: { x: primaryRenderNode.x, y: primaryRenderNode.y },
@@ -879,15 +949,30 @@ export function NodePlaygroundCanvas({
         safeInsets: getPlaygroundFocusSafeInsets(surfaceSize),
       })
     );
-  }, [getCanvasSurfaceSize, getPlaygroundFocusSafeInsets, getRenderedNodeSize, primaryRenderNode, updateViewport]);
+  }, [
+    activeNodeId,
+    buildRenderNodeForMeasurement,
+    effectiveFullNodeId,
+    getCanvasSurfaceSize,
+    getPlaygroundFocusSafeInsets,
+    getRenderedNodeSize,
+    libraryFullNodeId,
+    measurePreflightNode,
+    primaryRenderNode,
+    primaryWorkflowNode,
+    updateViewport,
+  ]);
 
-  function transitionPrimaryNode(mode: NodePlaygroundMode) {
+  async function transitionPrimaryNode(mode: NodePlaygroundMode) {
     const nodeId = primaryNodeId;
     const workflowNode = nodeId ? nodesById[nodeId] || null : null;
     const renderNode = nodeId ? canvasNodes.find((node) => node.id === nodeId) || null : null;
     if (!workflowNode || !renderNode) {
       return;
     }
+
+    const transitionToken = primaryTransitionTokenRef.current + 1;
+    primaryTransitionTokenRef.current = transitionToken;
 
     const currentSize = getRenderedNodeSize(nodeId) || renderNode.resolvedSize;
     const aspectRatio = getUploadedAssetNodeAspectRatio(workflowNode) || 1;
@@ -913,10 +998,27 @@ export function NodePlaygroundCanvas({
       nextSize = fixture.resizePresetSize;
     }
 
+    const nextWorkflowNode: WorkflowNode = {
+      ...workflowNode,
+      displayMode: nextDisplayMode,
+      size: nextSize,
+    };
     const resolvedNextSize =
-      mode === "resize"
+      (await measurePreflightNode(
+        buildRenderNodeForMeasurement(nextWorkflowNode, {
+          activeNodeId: null,
+          fullNodeId: null,
+          forcedRenderMode: nextForcedFullNodeId === nodeId ? "full" : null,
+        })
+      )) ||
+      (mode === "resize"
         ? fixture.resizePresetSize
-        : getWorkflowNodeDefaultSize(workflowNode.kind, mode === "edit" ? "full" : nextDisplayMode, aspectRatio);
+        : getWorkflowNodeDefaultSize(workflowNode.kind, mode === "edit" ? "full" : nextDisplayMode, aspectRatio));
+
+    if (primaryTransitionTokenRef.current !== transitionToken) {
+      return;
+    }
+
     const transitionLayout = surfaceSize
       ? buildNodePlaygroundTransitionLayout({
           currentPosition: { x: workflowNode.x, y: workflowNode.y },
@@ -965,12 +1067,17 @@ export function NodePlaygroundCanvas({
       return;
     }
 
+    let cancelled = false;
     const frameId = window.requestAnimationFrame(() => {
-      centerPrimaryNodeInViewport();
-      setHasCenteredFixture(true);
+      centerPrimaryNodeInViewport().finally(() => {
+        if (!cancelled) {
+          setHasCenteredFixture(true);
+        }
+      });
     });
 
     return () => {
+      cancelled = true;
       window.cancelAnimationFrame(frameId);
     };
   }, [centerPrimaryNodeInViewport, hasCenteredFixture, primaryRenderNode]);
@@ -1077,20 +1184,32 @@ export function NodePlaygroundCanvas({
     setPrimaryNodeTransition(null);
   }, [prefersReducedMotion]);
 
-  const enterNodeEditMode = useCallback((nodeId: string) => {
+  const enterNodeEditMode = useCallback(async (nodeId: string) => {
     const node = nodesById[nodeId];
     if (!node) {
       return;
     }
 
     if (nodeId === primaryNodeId && node.displayMode !== "resized" && (node.kind === "model" || node.kind === "text-template")) {
+      const transitionToken = primaryTransitionTokenRef.current + 1;
+      primaryTransitionTokenRef.current = transitionToken;
       const renderNode = canvasNodes.find((candidate) => candidate.id === nodeId) || null;
       const currentSize = getRenderedNodeSize(nodeId) || renderNode?.resolvedSize;
       const surfaceSize = getCanvasSurfaceSize();
       const focusSafeInsets = surfaceSize ? getPlaygroundFocusSafeInsets(surfaceSize) : undefined;
       if (currentSize) {
         const aspectRatio = getUploadedAssetNodeAspectRatio(node) || 1;
-        const nextSize = getWorkflowNodeDefaultSize(node.kind, "full", aspectRatio);
+        const nextSize =
+          (await measurePreflightNode(
+            buildRenderNodeForMeasurement(node, {
+              activeNodeId: nodeId,
+              fullNodeId: nodeId,
+              forcedRenderMode: null,
+            })
+          )) || getWorkflowNodeDefaultSize(node.kind, "full", aspectRatio);
+        if (!nextSize || primaryTransitionTokenRef.current !== transitionToken) {
+          return;
+        }
         const transitionLayout = surfaceSize
           ? buildNodePlaygroundTransitionLayout({
               currentPosition: { x: node.x, y: node.y },
@@ -1152,9 +1271,11 @@ export function NodePlaygroundCanvas({
     getPlaygroundFocusSafeInsets,
     getRenderedNodeSize,
     libraryFullNodeId,
+    measurePreflightNode,
     nodesById,
     prefersReducedMotion,
     primaryNodeId,
+    buildRenderNodeForMeasurement,
     updateNode,
     updateViewport,
   ]);
@@ -1362,7 +1483,9 @@ export function NodePlaygroundCanvas({
             setSelectedNodeIds([duplicateId]);
             setSelectedConnection(null);
           }}
-          onEnterEditMode={() => enterNodeEditMode(node.id)}
+          onEnterEditMode={() => {
+            void enterNodeEditMode(node.id);
+          }}
           onExitEditMode={() => {
             if (activeFullNodeId === node.id) {
               setActiveFullNodeId(null);
@@ -1556,7 +1679,9 @@ export function NodePlaygroundCanvas({
         onCommitNodeSize={handleNodeSizeCommit}
         onConnectNodes={connectNodes}
         onSelectConnection={setSelectedConnection}
-        onNodeActivate={enterNodeEditMode}
+        onNodeActivate={(nodeId) => {
+          void enterNodeEditMode(nodeId);
+        }}
         onNodeDoubleClick={(nodeId) => {
           const node = nodesById[nodeId];
           if (!node) {
@@ -1567,7 +1692,7 @@ export function NodePlaygroundCanvas({
             return;
           }
           if (node.kind === "text-template") {
-            enterNodeEditMode(nodeId);
+            void enterNodeEditMode(nodeId);
             return;
           }
           if (node.displayMode === "resized") {
@@ -1575,7 +1700,7 @@ export function NodePlaygroundCanvas({
             return;
           }
           if (node.kind === "model") {
-            enterNodeEditMode(nodeId);
+            void enterNodeEditMode(nodeId);
             return;
           }
           selectSingleNode(nodeId);
@@ -1586,6 +1711,16 @@ export function NodePlaygroundCanvas({
         selectionActions={[]}
         enableProgrammaticViewportMotion={!prefersReducedMotion}
         programmaticMotionNodeIds={transitioningPrimaryNodeId ? [transitioningPrimaryNodeId] : []}
+        programmaticMotionFrameSizes={
+          transitioningPrimaryNodeId && primaryNodeTransition
+            ? { [transitioningPrimaryNodeId]: primaryNodeTransition.predictedSize }
+            : {}
+        }
+      />
+      <CanvasFocusPreflightLayer
+        request={preflightRequest}
+        renderNodeContent={renderNodeContent}
+        onMeasured={resolvePreflightMeasurement}
       />
       {primaryWorkflowNode ? (
         <div className={styles.playgroundModeDock}>
@@ -1601,7 +1736,7 @@ export function NodePlaygroundCanvas({
                 }}
                 onClick={(event) => {
                   event.stopPropagation();
-                  transitionPrimaryNode(option.id);
+                  void transitionPrimaryNode(option.id);
                 }}
               >
                 {option.label}

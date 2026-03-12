@@ -15,6 +15,10 @@ import {
   type ActiveCanvasNodeEditorState,
   type CanvasModelEditorState,
 } from "@/components/canvas-nodes";
+import {
+  CanvasFocusPreflightLayer,
+  useCanvasFocusPreflightMeasurement,
+} from "@/components/canvas-focus-preflight";
 import { CanvasCopilotWidget } from "@/components/workspace/views/canvas-copilot-widget";
 import type {
   CanvasConnection,
@@ -850,6 +854,12 @@ export function CanvasView({ projectId }: Props) {
   const historyStacksRef = useRef(historyStacks);
   const pendingCoalescedHistoryRef = useRef<PendingCoalescedCanvasHistory | null>(null);
   const historyTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const focusActionTokenRef = useRef(0);
+  const {
+    request: preflightRequest,
+    measureNode: measurePreflightNode,
+    resolveMeasurement: resolvePreflightMeasurement,
+  } = useCanvasFocusPreflightMeasurement();
 
   useEffect(() => {
     canvasDocRef.current = canvasDoc;
@@ -1461,6 +1471,52 @@ export function CanvasView({ projectId }: Props) {
     providerModelDisplayNames,
     startedJobNodeIds,
   ]);
+
+  const buildRenderNodeForMeasurement = useCallback(
+    (
+      candidateNode: WorkflowNode,
+      options?: {
+        activeNodeId?: string | null;
+        fullNodeId?: string | null;
+        forcedRenderMode?: "full" | "resized" | null;
+      }
+    ) => {
+      const baseNode = canvasNodes.find((node) => node.id === candidateNode.id) || null;
+      if (!baseNode) {
+        return null;
+      }
+
+      const uploadedAssetAspectRatio = getUploadedAssetNodeAspectRatio(candidateNode) || undefined;
+      const presentation = resolveCanvasNodePresentation({
+        node: candidateNode,
+        activeNodeId:
+          options && Object.prototype.hasOwnProperty.call(options, "activeNodeId")
+            ? options.activeNodeId ?? null
+            : activeNodeId,
+        fullNodeId:
+          options && Object.prototype.hasOwnProperty.call(options, "fullNodeId")
+            ? options.fullNodeId ?? null
+            : effectiveFullNodeId,
+        nodeId: candidateNode.id,
+        aspectRatio: uploadedAssetAspectRatio,
+        forcedRenderMode:
+          options && Object.prototype.hasOwnProperty.call(options, "forcedRenderMode")
+            ? options.forcedRenderMode ?? null
+            : null,
+      });
+
+      return {
+        ...baseNode,
+        ...candidateNode,
+        presentation,
+        renderMode: presentation.renderMode,
+        canResize: presentation.canResize,
+        lockAspectRatio: presentation.lockAspectRatio,
+        resolvedSize: presentation.size,
+      } satisfies CanvasRenderNode;
+    },
+    [activeNodeId, canvasNodes, effectiveFullNodeId]
+  );
 
   const resolveNodeImageAssetId = useCallback(
     (node: WorkflowNode | null | undefined) => resolveNodeImageAsset(node)?.assetId || null,
@@ -3167,19 +3223,23 @@ export function CanvasView({ projectId }: Props) {
   }, [canConnectNodePair, selectedNodeIds]);
 
   const canDuplicateSelected = selectedNodeIds.length === 1;
-  const buildPredictedViewportFocusBounds = useCallback((node: WorkflowNode): CanvasFocusBounds | null => {
+  const buildPredictedViewportFocusBounds = useCallback(async (node: WorkflowNode): Promise<CanvasFocusBounds | null> => {
+    if (node.kind !== "text-template" && (node.kind !== "model" || node.displayMode === "resized")) {
+      return null;
+    }
+
     const aspectRatio = getUploadedAssetNodeAspectRatio(node) || 1;
+    const measuredSize = await measurePreflightNode(
+      buildRenderNodeForMeasurement(node, {
+        activeNodeId: node.id,
+        fullNodeId: node.id,
+        forcedRenderMode: null,
+      })
+    );
+    const predictedSize = measuredSize || getWorkflowNodeDefaultSize(node.kind, "full", aspectRatio);
 
-    if (node.kind === "text-template") {
-      return buildCanvasFocusBounds({ x: node.x, y: node.y }, getWorkflowNodeDefaultSize(node.kind, "full", aspectRatio));
-    }
-
-    if (node.kind === "model" && node.displayMode !== "resized") {
-      return buildCanvasFocusBounds({ x: node.x, y: node.y }, getWorkflowNodeDefaultSize(node.kind, "full", aspectRatio));
-    }
-
-    return null;
-  }, []);
+    return buildCanvasFocusBounds({ x: node.x, y: node.y }, predictedSize);
+  }, [buildRenderNodeForMeasurement, measurePreflightNode]);
 
   const requestViewportFocus = useCallback(
     (nodeIds: string[], options?: { predictedBoundsById?: Record<string, CanvasFocusBounds> }) => {
@@ -3244,9 +3304,16 @@ export function CanvasView({ projectId }: Props) {
   }, [applyCanvasHistoryState, captureCanvasHistoryState, commitPendingCoalescedHistory, syncHistoryStacks]);
 
   const openPrimaryEditorForNode = useCallback(
-    (nodeId: string, options?: { focusViewport?: boolean }) => {
+    async (nodeId: string, options?: { focusViewport?: boolean }) => {
       const node = nodesById[nodeId];
       if (!node) {
+        return;
+      }
+
+      const actionToken = focusActionTokenRef.current + 1;
+      focusActionTokenRef.current = actionToken;
+      const predictedBounds = options?.focusViewport ? await buildPredictedViewportFocusBounds(node) : null;
+      if (focusActionTokenRef.current !== actionToken) {
         return;
       }
 
@@ -3266,7 +3333,6 @@ export function CanvasView({ projectId }: Props) {
         setPinnedModelFullNodeId(null);
       }
       if (options?.focusViewport) {
-        const predictedBounds = buildPredictedViewportFocusBounds(node);
         requestViewportFocus([nodeId], {
           predictedBoundsById: predictedBounds ? { [nodeId]: predictedBounds } : undefined,
         });
@@ -3283,9 +3349,16 @@ export function CanvasView({ projectId }: Props) {
   );
 
   const enterNodeEditMode = useCallback(
-    (nodeId: string, options?: { focusViewport?: boolean }) => {
+    async (nodeId: string, options?: { focusViewport?: boolean }) => {
       const node = nodesById[nodeId];
       if (!node) {
+        return;
+      }
+
+      const actionToken = focusActionTokenRef.current + 1;
+      focusActionTokenRef.current = actionToken;
+      const predictedBounds = options?.focusViewport ? await buildPredictedViewportFocusBounds(node) : null;
+      if (focusActionTokenRef.current !== actionToken) {
         return;
       }
 
@@ -3305,7 +3378,6 @@ export function CanvasView({ projectId }: Props) {
         setPinnedModelFullNodeId(null);
       }
       if (options?.focusViewport) {
-        const predictedBounds = buildPredictedViewportFocusBounds(node);
         requestViewportFocus([nodeId], {
           predictedBoundsById: predictedBounds ? { [nodeId]: predictedBounds } : undefined,
         });
@@ -3325,7 +3397,7 @@ export function CanvasView({ projectId }: Props) {
     if (selectedNodeIdsRef.current.length !== 1) {
       return;
     }
-    openPrimaryEditorForNode(selectedNodeIdsRef.current[0]!);
+    void openPrimaryEditorForNode(selectedNodeIdsRef.current[0]!);
   }, [openPrimaryEditorForNode]);
 
   const focusNodeViewport = useCallback(
@@ -3335,6 +3407,7 @@ export function CanvasView({ projectId }: Props) {
         return;
       }
 
+      focusActionTokenRef.current += 1;
       commitPendingCoalescedHistory();
       setTrackedSelectedNodeIds([nodeId]);
       setTrackedSelectedConnection(null);
@@ -3358,7 +3431,7 @@ export function CanvasView({ projectId }: Props) {
       }
 
       if (node.kind === "text-template") {
-        enterNodeEditMode(nodeId, { focusViewport: true });
+        void enterNodeEditMode(nodeId, { focusViewport: true });
         return;
       }
 
@@ -3367,7 +3440,7 @@ export function CanvasView({ projectId }: Props) {
         return;
       }
 
-      openPrimaryEditorForNode(nodeId, { focusViewport: true });
+      void openPrimaryEditorForNode(nodeId, { focusViewport: true });
     },
     [enterNodeEditMode, focusNodeViewport, nodesById, openPrimaryEditorForNode]
   );
@@ -5120,7 +5193,9 @@ export function CanvasView({ projectId }: Props) {
           passiveModelEditor={passiveModelEditor}
           pickerDismissKey={`${selectedNodeIds.join(",")}|${canvasDoc.canvasViewport.x.toFixed(2)}:${canvasDoc.canvasViewport.y.toFixed(2)}:${canvasDoc.canvasViewport.zoom.toFixed(3)}|${node.presentation.renderMode}|${node.resolvedSize.width}x${node.resolvedSize.height}`}
           onSetDisplayMode={(mode) => handleNodeDisplayModeChange(node.id, mode)}
-          onEnterEditMode={() => enterNodeEditMode(node.id)}
+          onEnterEditMode={() => {
+            void enterNodeEditMode(node.id);
+          }}
           onExitEditMode={() => {
             if (activeFullNodeIdRef.current === node.id) {
               setActiveFullNodeId(null);
@@ -5393,7 +5468,7 @@ export function CanvasView({ projectId }: Props) {
       },
       openPrimaryEditor: (nodeId: string) => {
         if (canvasDocRef.current.workflow.nodes.some((node) => node.id === nodeId)) {
-          openPrimaryEditorForNode(nodeId);
+          void openPrimaryEditorForNode(nodeId);
         }
       },
       focusAndOpenNode: (nodeId: string) => {
@@ -5471,7 +5546,9 @@ export function CanvasView({ projectId }: Props) {
               onCommitNodeSize={handleNodeSizeCommit}
               onConnectNodes={connectNodes}
               onSelectConnection={selectCanvasConnection}
-              onNodeActivate={openPrimaryEditorForNode}
+              onNodeActivate={(nodeId) => {
+                void openPrimaryEditorForNode(nodeId);
+              }}
               onNodeDoubleClick={focusAndOpenNode}
               renderNodeContent={renderNodeContent}
               activePhantomPreview={activePhantomPreview}
@@ -5484,6 +5561,11 @@ export function CanvasView({ projectId }: Props) {
               selectionActions={selectionActions}
             />
           )}
+          <CanvasFocusPreflightLayer
+            request={preflightRequest}
+            renderNodeContent={renderNodeContent}
+            onMeasured={resolvePreflightMeasurement}
+          />
         </div>
 
         {showSingleCenterAction ? (
