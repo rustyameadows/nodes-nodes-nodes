@@ -10,6 +10,7 @@ export type CanvasNodeRenderMode = WorkflowNodeDisplayMode | "full";
 export type CanvasNodeInteractionPolicy =
   | "model"
   | "text-note"
+  | "reference"
   | "list"
   | "text-template"
   | "image-asset"
@@ -34,6 +35,7 @@ export type ResolvedCanvasNodePresentation = {
 
 const MIN_MODEL_SIZE: WorkflowNodeSize = { width: 460, height: 320 };
 const MIN_TEXT_NOTE_SIZE: WorkflowNodeSize = { width: 244, height: 152 };
+const MIN_REFERENCE_SIZE: WorkflowNodeSize = { width: 320, height: 212 };
 const MIN_TEMPLATE_SIZE: WorkflowNodeSize = { width: 420, height: 300 };
 const MIN_ASSET_SIZE: WorkflowNodeSize = { width: 196, height: 196 };
 
@@ -68,6 +70,7 @@ export function canResizeWorkflowNode(node: Pick<WorkflowNode, "kind">) {
   return (
     node.kind === "model" ||
     node.kind === "text-note" ||
+    node.kind === "reference" ||
     node.kind === "list" ||
     node.kind === "text-template" ||
     node.kind === "asset-source"
@@ -88,6 +91,10 @@ export function getWorkflowNodeResizeMinimumSize(
 
   if (node.kind === "text-note") {
     return MIN_TEXT_NOTE_SIZE;
+  }
+
+  if (node.kind === "reference") {
+    return MIN_REFERENCE_SIZE;
   }
 
   if (node.kind === "list") {
@@ -140,6 +147,16 @@ export function getWorkflowNodeDefaultSize(
     return MIN_TEXT_NOTE_SIZE;
   }
 
+  if (kind === "reference") {
+    if (renderMode === "compact") {
+      return { width: 176, height: 44 };
+    }
+    if (renderMode === "full") {
+      return { width: 560, height: 380 };
+    }
+    return MIN_REFERENCE_SIZE;
+  }
+
   if (kind === "list") {
     if (renderMode === "compact") {
       return { width: 156, height: 46 };
@@ -190,6 +207,10 @@ export function getCanvasNodeInteractionPolicy(
 
   if (node.kind === "text-note") {
     return "text-note";
+  }
+
+  if (node.kind === "reference") {
+    return "reference";
   }
 
   if (node.kind === "list") {

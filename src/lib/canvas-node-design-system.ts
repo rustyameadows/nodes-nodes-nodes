@@ -82,7 +82,7 @@ export function resolveCanvasNodeBorderSemantics(
   let fallbackLeftAccentType: CanvasAccentType = "neutral";
   if (provenanceAccent) {
     fallbackLeftAccentType = provenanceAccent;
-  } else if (input.kind === "text-note" || input.kind === "list") {
+  } else if (input.kind === "text-note" || input.kind === "reference" || input.kind === "list") {
     fallbackLeftAccentType = input.outputAccentType;
   } else if (input.kind === "asset-source" && input.assetOrigin === "uploaded") {
     fallbackLeftAccentType = input.outputAccentType;

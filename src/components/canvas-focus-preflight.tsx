@@ -26,6 +26,7 @@ function isGeneratedAssetNode(node: CanvasRenderNode) {
 function getPreflightNodeClassName(node: CanvasRenderNode) {
   const classes = [styles.node];
   const isTextNote = node.kind === "text-note";
+  const isReferenceNode = node.kind === "reference";
   const isListNode = node.kind === "list";
   const isTextTemplateNode = node.kind === "text-template";
   const isModelNode = node.kind === "model";
@@ -52,6 +53,9 @@ function getPreflightNodeClassName(node: CanvasRenderNode) {
   }
   if (isGeneratedTextNote) {
     classes.push(nodeStyles.nodeGeneratedTextNote);
+  }
+  if (isReferenceNode) {
+    classes.push(nodeStyles.nodeReference, nodeStyles.nodeSemanticFrame);
   }
   if (isListNode) {
     classes.push(nodeStyles.nodeList, nodeStyles.nodeSemanticFrame);

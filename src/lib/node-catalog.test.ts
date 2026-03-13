@@ -106,7 +106,7 @@ test("node catalog exposes the built-in library surface", () => {
 
   assert.deepEqual(
     entries.map((entry) => entry.id),
-    ["model", "text-note", "list", "text-template", "asset-uploaded", "asset-generated"]
+    ["model", "text-note", "reference", "list", "text-template", "asset-uploaded", "asset-generated"]
   );
 });
 
@@ -217,11 +217,11 @@ test("model catalog variants surface Gemini access states and paid-tier labels",
 test("insertable catalog entries respect canvas insertion context", () => {
   assert.deepEqual(
     getInsertableNodeCatalogEntries("canvas", sampleProviders).map((entry) => entry.id),
-    ["model", "text-note", "list", "text-template", "asset-uploaded", "asset-generated"]
+    ["model", "text-note", "reference", "list", "text-template", "asset-uploaded", "asset-generated"]
   );
   assert.deepEqual(
     getInsertableNodeCatalogEntries("model-input", sampleProviders).map((entry) => entry.id),
-    ["text-note", "asset-uploaded", "asset-generated"]
+    ["text-note", "reference", "asset-uploaded", "asset-generated"]
   );
   assert.deepEqual(
     getInsertableNodeCatalogEntries("template-input", sampleProviders).map((entry) => entry.id),

@@ -279,3 +279,18 @@ Controls:
 - asset and preview rendering uses `app-asset://` URLs
 - renderer never sees raw local file paths
 - queue/state updates arrive through preload events and TanStack Query invalidation
+
+## Canonical Reference node
+
+The canvas now includes a dedicated `Reference` node for durable project entities (for example products, people, places, brands, materials, and objects).
+
+### Canvas behavior
+- Appears as an object-like card rather than a sticky note.
+- Surfaces identity and lifecycle badges (type, status, provenance).
+- Shows compact summary content and key structured attributes directly on the node.
+- Supports preview/compact/full/resized display modes and standard canvas positioning behavior.
+
+### Workflow behavior
+- Can be inserted from the node catalog on canvas and model-input insertion flows.
+- Can connect to model nodes as canonical prompt context, similar to prompt notes.
+- Keeps durable, reusable subject context in one object instead of scattering it across notes and repeated prompt text.

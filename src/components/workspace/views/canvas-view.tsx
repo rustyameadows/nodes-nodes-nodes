@@ -91,6 +91,7 @@ import {
   type CanvasDocument,
   type Job,
   type ListNodeSettings,
+  type ReferenceNodeSettings,
   type ProviderModel,
   type RunnableWorkflowNodeType,
   type WorkflowNode,
@@ -100,11 +101,13 @@ import {
   buildTextTemplatePreview,
   createDefaultListNodeSettings,
   createGeneratedTextNoteSettings,
+  createReferenceNodeSettings,
   createTextNoteSettings,
   createTextTemplateNodeSettings,
   getGeneratedModelNodeSource,
   getGeneratedTextNoteSettings,
   getListNodeSettings,
+  getReferenceNodeSettings,
   getTextTemplateNodeSettings,
   isGeneratedTextNoteNode,
 } from "@/lib/list-template";
@@ -480,7 +483,7 @@ function applyCanvasNodeConnection(
     };
   }
 
-  const inferredKind: GeneratedConnectionDescriptor["kind"] = sourceNode.kind === "text-note" ? "prompt" : "input";
+  const inferredKind: GeneratedConnectionDescriptor["kind"] = (sourceNode.kind === "text-note" || sourceNode.kind === "reference") ? "prompt" : "input";
   if (expectedKind && expectedKind !== inferredKind) {
     return {
       nodes,
@@ -488,7 +491,7 @@ function applyCanvasNodeConnection(
     };
   }
 
-  if (targetNode.kind === "text-note") {
+  if (targetNode.kind === "text-note" || targetNode.kind === "reference") {
     if (
       targetNode.upstreamNodeIds.length === 1 &&
       targetNode.upstreamNodeIds[0] === sourceNodeId &&
@@ -515,7 +518,7 @@ function applyCanvasNodeConnection(
     };
   }
 
-  if (sourceNode.kind === "text-note") {
+  if (sourceNode.kind === "text-note" || sourceNode.kind === "reference") {
     if (targetNode.promptSourceNodeId === sourceNodeId) {
       return {
         nodes,
@@ -1411,6 +1414,7 @@ export function CanvasView({ projectId }: Props) {
   }, []);
 
   const selectedNodeIsList = selectedNode?.kind === "list";
+  const selectedNodeIsReference = selectedNode?.kind === "reference";
   const selectedNodeIsTextTemplate = selectedNode?.kind === "text-template";
   const selectedNodeIsModel = selectedNode?.kind === "model";
   const selectedModel = useMemo(() => {
@@ -1784,6 +1788,14 @@ export function CanvasView({ projectId }: Props) {
     }
     return getListNodeSettings(selectedNode.settings);
   }, [selectedNode, selectedNodeIsList]);
+
+  const selectedReferenceSettings = useMemo<ReferenceNodeSettings | null>(() => {
+    if (!selectedNodeIsReference || !selectedNode) {
+      return null;
+    }
+
+    return getReferenceNodeSettings(selectedNode.settings);
+  }, [selectedNode, selectedNodeIsReference]);
 
   const selectedTemplateListNode = useMemo(() => {
     if (!selectedNodeIsTextTemplate || !selectedNode) {
@@ -2966,11 +2978,12 @@ export function CanvasView({ projectId }: Props) {
           sourceJobId: null,
           sourceOutputIndex: null,
           processingState: null,
-          promptSourceNodeId: connectFromNode?.kind === "text-note" ? connectFromNode.id : null,
+          promptSourceNodeId:
+            connectFromNode?.kind === "text-note" || connectFromNode?.kind === "reference" ? connectFromNode.id : null,
           upstreamNodeIds:
-            connectFromNode && connectFromNode.kind !== "text-note" ? [connectFromNode.id] : [],
+            connectFromNode && connectFromNode.kind !== "text-note" && connectFromNode.kind !== "reference" ? [connectFromNode.id] : [],
           upstreamAssetIds:
-            connectFromNode && connectFromNode.kind !== "text-note"
+            connectFromNode && connectFromNode.kind !== "text-note" && connectFromNode.kind !== "reference"
               ? buildAssetRefsFromNodes([connectFromNode.id], prev.workflow.nodes)
               : [],
           x: nextPosition.x,
@@ -3068,6 +3081,65 @@ export function CanvasView({ projectId }: Props) {
 
         return {
           canvasDoc: nextDoc,
+          selectedNodeIds: [node.id],
+          selectedConnection: null,
+        };
+      });
+      if (didMutate && options?.centerOnPosition) {
+        setPendingCenteredInsert({
+          nodeId,
+          anchor: options.centerOnPosition,
+        });
+      }
+      setInsertMenu(null);
+      setActiveFullNodeId(null);
+    },
+    [providers, runUserCanvasMutation]
+  );
+
+  const addReferenceNode = useCallback(
+    (
+      position?: { x: number; y: number },
+      options?: { centerOnPosition?: { x: number; y: number } }
+    ) => {
+      const defaultProvider = getFallbackProviderModel(providers);
+      const nodeId = uid();
+      const didMutate = runUserCanvasMutation((currentState) => {
+        const prev = currentState.canvasDoc;
+        const nextPosition = nextCanvasNodePosition(prev.workflow.nodes.length, position);
+        const zIndex = nextCanvasNodeZIndex(prev.workflow.nodes);
+        const node: WorkflowNode = {
+          id: nodeId,
+          label: `Reference ${prev.workflow.nodes.filter((item) => item.kind === "reference").length + 1}`,
+          kind: "reference",
+          providerId: defaultProvider.providerId,
+          modelId: defaultProvider.modelId,
+          nodeType: "reference",
+          outputType: "text",
+          prompt: "",
+          settings: createReferenceNodeSettings(),
+          sourceAssetId: null,
+          sourceAssetMimeType: null,
+          sourceJobId: null,
+          sourceOutputIndex: null,
+          processingState: null,
+          promptSourceNodeId: null,
+          upstreamNodeIds: [],
+          upstreamAssetIds: [],
+          x: nextPosition.x,
+          y: nextPosition.y,
+          zIndex,
+          displayMode: "preview",
+          size: null,
+        };
+
+        return {
+          canvasDoc: {
+            ...prev,
+            workflow: {
+              nodes: [...prev.workflow.nodes, node],
+            },
+          },
           selectedNodeIds: [node.id],
           selectedConnection: null,
         };
@@ -3278,7 +3350,7 @@ export function CanvasView({ projectId }: Props) {
 
   const handleInsertCatalogEntry = useCallback(
     (
-      entryId: "model" | "text-note" | "list" | "text-template" | "asset-uploaded" | "asset-generated",
+      entryId: "model" | "text-note" | "reference" | "list" | "text-template" | "asset-uploaded" | "asset-generated",
       menuState: CanvasInsertMenuState | null,
       position: { x: number; y: number },
       options?: { providerId?: WorkflowNode["providerId"]; modelId?: string }
@@ -3305,6 +3377,11 @@ export function CanvasView({ projectId }: Props) {
             centerOnPosition: position,
           }
         );
+        return;
+      }
+
+      if (entryId === "reference") {
+        addReferenceNode(getCenteredInsertPosition(position), { centerOnPosition: position });
         return;
       }
 
@@ -3346,7 +3423,7 @@ export function CanvasView({ projectId }: Props) {
         connectToModelNodeId: menuState.mode === "model-input" ? menuState.connectToNodeId : undefined,
       });
     },
-    [addListNode, addModelNode, addTextNote, addTextTemplateNode]
+    [addListNode, addModelNode, addReferenceNode, addTextNote, addTextTemplateNode]
   );
 
   const updateNode = useCallback(
@@ -4142,6 +4219,26 @@ export function CanvasView({ projectId }: Props) {
     [selectedNode, updateNode]
   );
 
+  const handleSelectedReferenceSettingsChange = useCallback(
+    (nextSettings: ReferenceNodeSettings) => {
+      if (!selectedNode || !selectedNodeIsReference) {
+        return;
+      }
+
+      updateNode(
+        selectedNode.id,
+        {
+          settings: nextSettings,
+        },
+        {
+          historyMode: "coalesced",
+          historyKey: `node:${selectedNode.id}:reference-settings`,
+        }
+      );
+    },
+    [selectedNode, selectedNodeIsReference, updateNode]
+  );
+
   const handleSelectedNodeModelVariantChange = useCallback(
     (variantId: string) => {
       if (!selectedNode || !selectedNodeIsModel) {
@@ -4417,7 +4514,7 @@ export function CanvasView({ projectId }: Props) {
 
       if (request.connectionNodeId && request.connectionPort === "output") {
         const sourceNode = nodesById[request.connectionNodeId];
-        if (sourceNode && (sourceNode.kind === "text-note" || sourceNode.kind === "asset-source")) {
+        if (sourceNode && (sourceNode.kind === "text-note" || sourceNode.kind === "reference" || sourceNode.kind === "asset-source")) {
           addModelNode({ x: request.x, y: request.y }, { connectFromNodeId: sourceNode.id });
           return;
         }
@@ -4548,7 +4645,7 @@ export function CanvasView({ projectId }: Props) {
                     upstreamNodeIds: [],
                     upstreamAssetIds: [],
                   }
-                : sourceNode.kind === "text-note"
+                : sourceNode.kind === "text-note" || sourceNode.kind === "reference"
                   ? {
                       ...sourceNode,
                       settings: isGeneratedTextNoteNode(sourceNode) ? createTextNoteSettings() : sourceNode.settings,
@@ -4735,6 +4832,11 @@ export function CanvasView({ projectId }: Props) {
         return;
       }
 
+      if (command.nodeType === "reference") {
+        addReferenceNode(position);
+        return;
+      }
+
       if (command.nodeType === "list") {
         addListNode(position);
         return;
@@ -4754,6 +4856,7 @@ export function CanvasView({ projectId }: Props) {
   }, [
     addListNode,
     addModelNode,
+    addReferenceNode,
     addTextNote,
     addTextTemplateNode,
     connectSelectedNodes,
@@ -5816,6 +5919,7 @@ export function CanvasView({ projectId }: Props) {
       selectedInputNodes,
       selectedPromptSourceNode,
       selectedListSettings,
+      selectedReferenceSettings,
       selectedTemplatePreview,
       selectedTemplateListNode,
       selectedNodeSourceJobId,
@@ -5834,6 +5938,7 @@ export function CanvasView({ projectId }: Props) {
     selectedNodeRunPreview,
     selectedNodeSourceJobId,
     selectedPromptSourceNode,
+    selectedReferenceSettings,
     selectedSingleImageAssetId,
     selectedTemplateListNode,
     selectedTemplatePreview,
@@ -5912,6 +6017,7 @@ export function CanvasView({ projectId }: Props) {
           }}
           onLabelChange={handleSelectedNodeLabelChange}
           onPromptChange={handleSelectedNodePromptChange}
+          onReferenceSettingsChange={handleSelectedReferenceSettingsChange}
           onModelVariantChange={handleSelectedNodeModelVariantChange}
           onParameterChange={updateSelectedModelParameter}
           onUpdateListColumnLabel={updateSelectedListColumnLabel}
@@ -5944,6 +6050,7 @@ export function CanvasView({ projectId }: Props) {
       handleSelectedNodeLabelChange,
       handleSelectedNodePromptChange,
       handleSelectedNodeModelVariantChange,
+      handleSelectedReferenceSettingsChange,
       nodesById,
       openAssetViewer,
       openQueueInspect,

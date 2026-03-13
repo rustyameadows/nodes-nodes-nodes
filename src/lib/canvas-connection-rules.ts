@@ -20,7 +20,7 @@ export function canConnectCanvasNodes(sourceNode: WorkflowNode | null | undefine
     );
   }
 
-  if (sourceNode.kind === "text-note") {
+  if (sourceNode.kind === "text-note" || sourceNode.kind === "reference") {
     return targetNode.kind === "model";
   }
 

@@ -1367,6 +1367,7 @@ export function InfiniteCanvas({
 
         {displayNodes.map((node) => {
           const isTextNote = node.kind === "text-note";
+          const isReferenceNode = node.kind === "reference";
           const isListNode = node.kind === "list";
           const isTextTemplateNode = node.kind === "text-template";
           const isModelNode = node.kind === "model";
@@ -1473,7 +1474,7 @@ export function InfiniteCanvas({
               tabIndex={0}
               data-node-id={node.id}
               data-rail-drag={node.presentation.useRailDragHandle ? "true" : "false"}
-              className={`${styles.node} ${isSelected ? styles.nodeSelected : ""} ${programmaticMotionNodeIdSet.has(node.id) ? styles.nodeProgrammaticMotion : ""} ${shouldRenderImageFrame ? nodeStyles.nodeWithImage : ""} ${isGeneratedAsset ? nodeStyles.nodeGeneratedAsset : ""} ${isUploadedAsset ? nodeStyles.nodeUploadedAsset : ""} ${isTextNote ? nodeStyles.nodeTextNote : ""} ${isTextNote && !isGeneratedTextNote ? nodeStyles.nodeSemanticFrame : ""} ${isGeneratedTextNote ? nodeStyles.nodeGeneratedTextNote : ""} ${isListNode ? nodeStyles.nodeList : ""} ${isListNode ? nodeStyles.nodeSemanticFrame : ""} ${isTextTemplateNode ? nodeStyles.nodeTextTemplate : ""} ${isModelNode || isOperatorNode ? nodeStyles.nodeModel : ""} ${activeConnectionNodeIds.has(node.id) ? styles.nodePortActive : ""} ${showsProcessingShell ? nodeStyles.nodeGeneratedProcessing : ""} ${node.renderMode === "compact" ? nodeStyles.nodeCompactMode : ""} ${node.renderMode === "full" ? nodeStyles.nodeFullMode : ""} ${node.renderMode === "resized" ? nodeStyles.nodeResizedMode : ""}`}
+              className={`${styles.node} ${isSelected ? styles.nodeSelected : ""} ${programmaticMotionNodeIdSet.has(node.id) ? styles.nodeProgrammaticMotion : ""} ${shouldRenderImageFrame ? nodeStyles.nodeWithImage : ""} ${isGeneratedAsset ? nodeStyles.nodeGeneratedAsset : ""} ${isUploadedAsset ? nodeStyles.nodeUploadedAsset : ""} ${isTextNote ? nodeStyles.nodeTextNote : ""} ${isTextNote && !isGeneratedTextNote ? nodeStyles.nodeSemanticFrame : ""} ${isGeneratedTextNote ? nodeStyles.nodeGeneratedTextNote : ""} ${isReferenceNode ? nodeStyles.nodeReference : ""} ${isListNode ? nodeStyles.nodeList : ""} ${isListNode ? nodeStyles.nodeSemanticFrame : ""} ${isReferenceNode ? nodeStyles.nodeSemanticFrame : ""} ${isTextTemplateNode ? nodeStyles.nodeTextTemplate : ""} ${isModelNode || isOperatorNode ? nodeStyles.nodeModel : ""} ${activeConnectionNodeIds.has(node.id) ? styles.nodePortActive : ""} ${showsProcessingShell ? nodeStyles.nodeGeneratedProcessing : ""} ${node.renderMode === "compact" ? nodeStyles.nodeCompactMode : ""} ${node.renderMode === "full" ? nodeStyles.nodeFullMode : ""} ${node.renderMode === "resized" ? nodeStyles.nodeResizedMode : ""}`}
               style={nodeStyle}
               onClick={(event) => {
                 event.stopPropagation();
