@@ -206,3 +206,8 @@
 - Decision: add a persisted app-settings singleton with typed feature flags and expose toggles in `/settings/app`.
 - Initial flags: `capturePng` and `canvasNodeCleanup` gate the corresponding canvas selection-rail actions.
 - Consequence: rollout and rollback are immediate for local users, flags survive restarts, and future toggles can reuse the same path (IPC → service → `app_settings`).
+
+## 2026-03-13 - Canonical Reference Node Establishes Durable Subject Objects
+- Decision: add a first-class `reference` canvas node kind for canonical project entities that persist identity, flexible structured attributes, source pointers, provenance state, and enrichment freshness metadata.
+- Rationale: important subjects (products, people, places, objects) were otherwise spread across notes, prompts, and assets, which made cross-run consistency difficult for users and future agents.
+- Consequences: the node catalog now exposes `Reference Node`, model-input insertion accepts references, and model nodes can treat references similarly to prompt notes as reusable upstream subject context.

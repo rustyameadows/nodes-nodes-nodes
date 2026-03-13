@@ -37,7 +37,7 @@ export function resolvePrimaryCanvasEditorId(
     return "prompt";
   }
 
-  if (node.kind === "text-note") {
+  if (node.kind === "text-note" || node.kind === "reference") {
     return "note";
   }
 

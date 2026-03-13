@@ -39,6 +39,14 @@ export function getCanvasNodeTitleChip(node: Input): CanvasNodeTitleChip {
     };
   }
 
+  if (node.kind === "reference") {
+    return {
+      label: "Reference",
+      accentType: "operator",
+      color: getCanvasNodeAccentColor("operator"),
+    };
+  }
+
   if (node.kind === "list") {
     return {
       label: "List / Sheet",

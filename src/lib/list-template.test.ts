@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   buildTemplateVariableInsertText,
+  buildReferencePromptText,
   buildTextTemplatePreview,
   createListColumn,
   createListRow,
@@ -98,5 +99,36 @@ test("buildTextTemplatePreview skips fully blank rows and preserves row order", 
   assert.deepEqual(
     preview.rows.map((row) => row.text),
     ["Meet Akita with Fluffy.", "Meet Beagle with Short."]
+  );
+});
+
+
+test("buildReferencePromptText composes prompt content from key reference fields", () => {
+  const prompt = buildReferencePromptText({
+    source: "reference",
+    referenceType: "product",
+    subtitle: "Walnut lounge chair",
+    status: "draft",
+    sourceUrl: "https://example.com/chair",
+    attributes: {
+      Material: "Solid walnut",
+      Width: "82cm",
+    },
+    sourceNotes: "",
+    visualAssetIds: [],
+    provenance: "manual",
+    lastEnrichedAt: null,
+  });
+
+  assert.equal(
+    prompt,
+    [
+      "Type: product",
+      "Summary: Walnut lounge chair",
+      "Source URL: https://example.com/chair",
+      "Attributes:",
+      "- Material: Solid walnut",
+      "- Width: 82cm",
+    ].join("\n")
   );
 });

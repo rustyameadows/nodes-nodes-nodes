@@ -30,6 +30,7 @@ export type AppEventPayload = {
 export type CanvasMenuNodeType =
   | "model"
   | "text-note"
+  | "reference"
   | "list"
   | "text-template"
   | "asset-uploaded"

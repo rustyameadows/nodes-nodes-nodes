@@ -78,8 +78,16 @@ export type AppFeatureFlagKey = keyof AppFeatureFlags;
 
 export type JobRunOrigin = "canvas-node" | "copilot";
 
-export type WorkflowNodeKind = "model" | "asset-source" | "text-note" | "list" | "text-template";
-export type WorkflowNodeType = "text-gen" | "image-gen" | "video-gen" | "transform" | "text-note" | "list" | "text-template";
+export type WorkflowNodeKind = "model" | "asset-source" | "text-note" | "reference" | "list" | "text-template";
+export type WorkflowNodeType =
+  | "text-gen"
+  | "image-gen"
+  | "video-gen"
+  | "transform"
+  | "text-note"
+  | "reference"
+  | "list"
+  | "text-template";
 export type RunnableWorkflowNodeType = "text-gen" | "image-gen" | "video-gen" | "transform";
 export type WorkflowNodeDisplayMode = "preview" | "compact" | "full" | "resized";
 export type WorkflowNodeSize = {
@@ -123,6 +131,22 @@ export type BaseTextTemplateNodeSettings = {
 
 export type TextNoteSettings = {
   source: "text-note";
+};
+
+export type ReferenceNodeSource = "manual" | "url-import" | "source-material" | "model-derived";
+export type ReferenceNodeStatus = "draft" | "imported" | "enriched" | "user-reviewed" | "stale" | "needs-attention";
+
+export type ReferenceNodeSettings = {
+  source: "reference";
+  referenceType: string;
+  subtitle: string;
+  status: ReferenceNodeStatus;
+  sourceUrl: string;
+  attributes: Record<string, string>;
+  sourceNotes: string;
+  visualAssetIds: string[];
+  provenance: ReferenceNodeSource;
+  lastEnrichedAt: string | null;
 };
 
 export type GeneratedTextNoteSettings = {

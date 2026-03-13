@@ -14,6 +14,7 @@ import type { CanvasRenderNode } from "@/components/canvas-node-types";
 import type {
   ListNodeSettings,
   ProviderModel,
+  ReferenceNodeSettings,
   WorkflowNode,
 } from "@/components/workspace/types";
 import {
@@ -23,6 +24,7 @@ import {
 import {
   buildTemplateVariableInsertText,
   getListNodeSettings,
+  getReferenceNodeSettings,
   getTemplateVariableDisplayLabel,
 } from "@/lib/list-template";
 import { getCanvasNodeTitleChip, type CanvasNodeTitleChip } from "@/lib/canvas-node-title-chip";
@@ -50,6 +52,7 @@ export type ActiveCanvasNodeEditorState = {
   selectedInputNodes: WorkflowNode[];
   selectedPromptSourceNode: WorkflowNode | null;
   selectedListSettings: ListNodeSettings | null;
+  selectedReferenceSettings: ReferenceNodeSettings | null;
   selectedTemplatePreview: TextTemplatePreview | null;
   selectedTemplateListNode: WorkflowNode | null;
   selectedNodeSourceJobId: string | null;
@@ -81,6 +84,7 @@ type Props = {
   onRunNode: () => void;
   onLabelChange: (value: string) => void;
   onPromptChange: (value: string) => void;
+  onReferenceSettingsChange: (nextSettings: ReferenceNodeSettings) => void;
   onModelVariantChange: (variantId: string) => void;
   onParameterChange: (parameterKey: string, value: string | number | null) => void;
   onUpdateListColumnLabel: (columnId: string, label: string) => void;
@@ -1080,6 +1084,7 @@ export function CanvasNodeContent({
   onRunNode,
   onLabelChange,
   onPromptChange,
+  onReferenceSettingsChange,
   onModelVariantChange,
   onParameterChange,
   onUpdateListColumnLabel,
@@ -1099,6 +1104,8 @@ export function CanvasNodeContent({
   const editor = isActive ? activeEditor : null;
   const modelEditor = node.kind === "model" ? editor || passiveModelEditor : null;
   const listSettings = editor?.selectedListSettings || (node.kind === "list" ? getListNodeSettings(node.settings) : null);
+  const referenceSettings =
+    editor?.selectedReferenceSettings || (node.kind === "reference" ? getReferenceNodeSettings(node.settings) : null);
   const isImageAssetNode = node.kind === "asset-source" && node.outputType === "image";
   const templatePreview =
     editor?.selectedTemplatePreview ||
@@ -1229,6 +1236,151 @@ export function CanvasNodeContent({
         onChange={onPromptChange}
         onBlur={onCommitTextEdits}
       />
+    );
+  }
+
+  if (node.kind === "reference" && referenceSettings) {
+    const attributes = Object.entries(referenceSettings.attributes || {});
+    const attributesText = attributes.map(([key, value]) => `${key}: ${value}`).join("\n");
+
+    const handleReferenceSettingPatch = (patch: Partial<ReferenceNodeSettings>) => {
+      onReferenceSettingsChange({
+        ...referenceSettings,
+        ...patch,
+      });
+    };
+
+    const handleAttributesTextChange = (value: string) => {
+      const nextAttributes = value
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0)
+        .reduce<Record<string, string>>((acc, line) => {
+          const separatorIndex = line.indexOf(":");
+          if (separatorIndex <= 0) {
+            return acc;
+          }
+          const key = line.slice(0, separatorIndex).trim();
+          const entryValue = line.slice(separatorIndex + 1).trim();
+          if (!key) {
+            return acc;
+          }
+          acc[key] = entryValue;
+          return acc;
+        }, {});
+
+      handleReferenceSettingPatch({
+        attributes: nextAttributes,
+      });
+    };
+
+    return frame(
+      <div className={styles.referenceSurface}>
+        <div className={styles.referenceMetaRow}>
+          {editor ? (
+            <>
+              <input
+                className={styles.referenceInlineInput}
+                value={referenceSettings.referenceType}
+                onChange={(event) => handleReferenceSettingPatch({ referenceType: event.target.value })}
+                onBlur={onCommitTextEdits}
+                onPointerDown={stopPointer}
+                placeholder="Type"
+              />
+              <select
+                className={styles.referenceInlineInput}
+                value={referenceSettings.status}
+                onChange={(event) => handleReferenceSettingPatch({ status: event.target.value as ReferenceNodeSettings["status"] })}
+                onBlur={onCommitTextEdits}
+                onPointerDown={stopPointer}
+              >
+                <option value="draft">draft</option>
+                <option value="imported">imported</option>
+                <option value="enriched">enriched</option>
+                <option value="user-reviewed">user-reviewed</option>
+                <option value="stale">stale</option>
+                <option value="needs-attention">needs-attention</option>
+              </select>
+              <select
+                className={styles.referenceInlineInput}
+                value={referenceSettings.provenance}
+                onChange={(event) => handleReferenceSettingPatch({ provenance: event.target.value as ReferenceNodeSettings["provenance"] })}
+                onBlur={onCommitTextEdits}
+                onPointerDown={stopPointer}
+              >
+                <option value="manual">manual</option>
+                <option value="url-import">url-import</option>
+                <option value="source-material">source-material</option>
+                <option value="model-derived">model-derived</option>
+              </select>
+            </>
+          ) : (
+            <>
+              <span className={styles.referenceBadge}>{referenceSettings.referenceType || "subject"}</span>
+              <span className={styles.referenceBadge}>{referenceSettings.status}</span>
+              <span className={styles.referenceBadge}>{referenceSettings.provenance}</span>
+            </>
+          )}
+        </div>
+
+        {editor ? (
+          <input
+            className={styles.referenceSummaryInput}
+            value={referenceSettings.subtitle}
+            onChange={(event) => handleReferenceSettingPatch({ subtitle: event.target.value })}
+            onBlur={onCommitTextEdits}
+            onPointerDown={stopPointer}
+            placeholder="Short descriptor"
+          />
+        ) : (
+          <div className={styles.referenceSummary}>
+            {referenceSettings.subtitle?.trim() || node.prompt.trim() || "Canonical project reference"}
+          </div>
+        )}
+
+        <div>
+          <div className={styles.referenceFieldLabel}>Source URL</div>
+          {editor ? (
+            <input
+              className={styles.referenceSummaryInput}
+              value={referenceSettings.sourceUrl}
+              onChange={(event) => handleReferenceSettingPatch({ sourceUrl: event.target.value })}
+              onBlur={onCommitTextEdits}
+              onPointerDown={stopPointer}
+              placeholder="https://..."
+            />
+          ) : referenceSettings.sourceUrl.trim() ? (
+            <div className={styles.referenceValue}>{referenceSettings.sourceUrl}</div>
+          ) : (
+            <div className={styles.referenceValue}>No source URL</div>
+          )}
+        </div>
+
+        <div>
+          <div className={styles.referenceFieldLabel}>Attributes</div>
+          {editor ? (
+            <textarea
+              className={styles.referenceAttributesEditor}
+              value={attributesText}
+              onChange={(event) => handleAttributesTextChange(event.target.value)}
+              onBlur={onCommitTextEdits}
+              onPointerDown={stopPointer}
+              placeholder="dimensions: W 82cm × D 88cm × H 76cm"
+            />
+          ) : attributes.length > 0 ? (
+            <div className={styles.referenceKeyValueList}>
+              {attributes.slice(0, 4).map(([key, value]) => (
+                <div key={key} style={{ display: "contents" }}>
+                  <span className={styles.referenceKey}>{key}</span>
+                  <span className={styles.referenceValue}>{value}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className={styles.referenceValue}>No structured attributes</div>
+          )}
+        </div>
+      </div>
     );
   }
 

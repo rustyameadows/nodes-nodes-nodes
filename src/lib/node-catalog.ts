@@ -1,18 +1,25 @@
-import { createDefaultListNodeSettings, createTextNoteSettings, createTextTemplateNodeSettings } from "@/lib/list-template";
+import {
+  buildReferencePromptText,
+  createDefaultListNodeSettings,
+  createReferenceNodeSettings,
+  createTextNoteSettings,
+  createTextTemplateNodeSettings,
+} from "@/lib/list-template";
 import type { ProviderId, ProviderModel, WorkflowNode } from "@/components/workspace/types";
 
 export type NodeCatalogEntryId =
   | "model"
   | "text-note"
+  | "reference"
   | "list"
   | "text-template"
   | "asset-uploaded"
   | "asset-generated";
 
 export type NodeCatalogInsertContext = "canvas" | "model-input" | "template-input";
-export type NodeCatalogCategory = "Generation" | "Text" | "Data" | "Assets";
+export type NodeCatalogCategory = "Generation" | "Text" | "Data" | "Knowledge" | "Assets";
 export type NodeCatalogDisplayMode = "preview" | "compact" | "full" | "resized";
-export type SpawnableNodeCatalogKind = "text-note" | "list" | "text-template";
+export type SpawnableNodeCatalogKind = "text-note" | "reference" | "list" | "text-template";
 
 export type NodeCatalogVariantStatus =
   | "ready"
@@ -305,6 +312,34 @@ function createBaseTextNoteNode(overrides?: Partial<WorkflowNode>): WorkflowNode
   };
 }
 
+
+function createBaseReferenceNode(overrides?: Partial<WorkflowNode>): WorkflowNode {
+  const referenceSettings = overrides?.settings || createReferenceNodeSettings();
+  return {
+    id: overrides?.id || "library-reference",
+    label: overrides?.label || "Reference",
+    providerId: overrides?.providerId || "openai",
+    modelId: overrides?.modelId || "gpt-image-1.5",
+    kind: "reference",
+    nodeType: "reference",
+    outputType: "text",
+    prompt: overrides?.prompt || buildReferencePromptText(referenceSettings),
+    settings: referenceSettings,
+    sourceAssetId: null,
+    sourceAssetMimeType: null,
+    sourceJobId: null,
+    sourceOutputIndex: null,
+    processingState: null,
+    promptSourceNodeId: null,
+    upstreamNodeIds: overrides?.upstreamNodeIds || [],
+    upstreamAssetIds: overrides?.upstreamAssetIds || [],
+    x: overrides?.x ?? 220,
+    y: overrides?.y ?? 180,
+    displayMode: overrides?.displayMode || "preview",
+    size: overrides?.size || null,
+  };
+}
+
 function createBaseListNode(overrides?: Partial<WorkflowNode>): WorkflowNode {
   return {
     id: overrides?.id || "library-list",
@@ -435,7 +470,7 @@ const baseDefinitions: CatalogBaseDefinition[] = [
       promptSummary: "Use for plain written content, explanations, ideas, captions, or standalone text.",
       payloadSummary: "text-note nodes use the text field.",
     },
-    buildFixture() {
+        buildFixture() {
       const noteNode = createBaseTextNoteNode({
         id: "library-text-note-primary",
         label: "Idea Note",
@@ -454,6 +489,62 @@ const baseDefinitions: CatalogBaseDefinition[] = [
       };
     },
   },
+
+  {
+    id: "reference",
+    label: "Reference Node",
+    shortDescription: "Canonical project entity for a durable real-world subject.",
+    category: "Knowledge",
+    inputSummary: "Manual fields, URL/source notes, optional supporting visuals and attributes.",
+    outputSummary: "Reusable canonical subject context for downstream model and planning nodes.",
+    insertableOnCanvas: true,
+    insertContexts: ["canvas", "model-input"],
+    hasVariants: false,
+    supportedDisplayModes: ["preview", "compact", "full", "resized"],
+    detailCopy:
+      "Reference nodes anchor durable entities such as products, people, locations, brands, and objects. They mix identity data, flexible structured facts, notes, and provenance for reuse across the graph.",
+    settingsSummary: [
+      "Identity and type",
+      "Structured attributes",
+      "Source URL + notes",
+      "Provenance + freshness",
+    ],
+        buildFixture() {
+      const referenceNode = createBaseReferenceNode({
+        id: "library-reference-primary",
+        label: "Horizon Lounge Chair",
+        prompt: "Compact premium lounge chair reference for campaign consistency.",
+        settings: {
+          source: "reference",
+          referenceType: "product",
+          subtitle: "Walnut frame · Moss boucle",
+          status: "enriched",
+          sourceUrl: "https://example.com/products/horizon-lounge-chair",
+          attributes: {
+            dimensions: 'W 82cm × D 88cm × H 76cm',
+            materials: "Walnut, boucle upholstery",
+            configurations: "Ottoman optional",
+          },
+          sourceNotes: "Keep silhouette and warm fabric tones consistent across scenes.",
+          visualAssetIds: [],
+          provenance: "url-import",
+          lastEnrichedAt: "2026-03-13T00:00:00.000Z",
+        },
+        x: 220,
+        y: 140,
+        size: { width: 420, height: 286 },
+        displayMode: "resized",
+      });
+
+      return {
+        primaryNodeId: referenceNode.id,
+        resizePresetSize: { width: 420, height: 286 },
+        nodes: [referenceNode],
+        viewport: { x: -24, y: 30, zoom: 0.88 },
+      };
+    },
+  },
+
   {
     id: "list",
     label: "List / Sheet",
@@ -474,7 +565,7 @@ const baseDefinitions: CatalogBaseDefinition[] = [
       promptSummary: "Use for structured repeated data, rows, tabular information, records, or datasets.",
       payloadSummary: "list nodes use columns and rows.",
     },
-    buildFixture() {
+        buildFixture() {
       const listNode = createBaseListNode({
         id: "library-list-primary",
         label: "Cute Northern UK Animals",
@@ -546,7 +637,7 @@ const baseDefinitions: CatalogBaseDefinition[] = [
       promptSummary: "Use for reusable prompt or writing patterns with fill-in placeholders.",
       payloadSummary: "text-template nodes use templateText with [[variable]] placeholders.",
     },
-    buildFixture() {
+        buildFixture() {
       const listNode = createBaseListNode({
         id: "library-template-list",
         label: "Animal Data",
@@ -614,7 +705,7 @@ const baseDefinitions: CatalogBaseDefinition[] = [
     detailCopy:
       "Uploaded asset nodes point to files already in the project asset store. They act as reusable references for edits, transforms, and comparison flows.",
     settingsSummary: ["Asset preview", "Open in viewer", "Download", "Resizable image framing"],
-    buildFixture() {
+        buildFixture() {
       const assetNode = createBaseAssetNode({
         id: "library-uploaded-asset",
         label: "Uploaded Asset",

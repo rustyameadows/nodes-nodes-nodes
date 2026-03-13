@@ -4,7 +4,12 @@ import {
   type ProviderId,
   type WorkflowNode,
 } from "@/components/workspace/types";
-import { normalizeTextNoteSettings, getListNodeSettings, getTextTemplateNodeSettings } from "@/lib/list-template";
+import {
+  normalizeTextNoteSettings,
+  getListNodeSettings,
+  getReferenceNodeSettings,
+  getTextTemplateNodeSettings,
+} from "@/lib/list-template";
 import { normalizeWorkflowNodeDisplayMode, normalizeWorkflowNodeSize } from "@/lib/canvas-node-presentation";
 import { normalizeLegacyTopazModelId } from "@/lib/topaz-gigapixel-settings";
 
@@ -28,6 +33,7 @@ export function normalizeCanvasNode(raw: Record<string, unknown>, index: number)
     raw.kind === "model" ||
     raw.kind === "asset-source" ||
     raw.kind === "text-note" ||
+    raw.kind === "reference" ||
     raw.kind === "list" ||
     raw.kind === "text-template"
       ? (raw.kind as WorkflowNode["kind"])
@@ -47,6 +53,8 @@ export function normalizeCanvasNode(raw: Record<string, unknown>, index: number)
         ? getTextTemplateNodeSettings(baseSettings)
         : inferredKind === "text-note"
           ? normalizeTextNoteSettings(baseSettings)
+          : inferredKind === "reference"
+            ? getReferenceNodeSettings(baseSettings)
           : baseSettings;
 
   return {
@@ -63,10 +71,17 @@ export function normalizeCanvasNode(raw: Record<string, unknown>, index: number)
             ? "list"
             : inferredKind === "text-template"
               ? "text-template"
+              : inferredKind === "reference"
+                ? "reference"
               : "image-gen")),
     outputType:
       (raw.outputType as WorkflowNode["outputType"]) ||
-      (inferredKind === "list" || inferredKind === "text-template" || inferredKind === "text-note" ? "text" : "image"),
+      (inferredKind === "list" ||
+      inferredKind === "text-template" ||
+      inferredKind === "text-note" ||
+      inferredKind === "reference"
+        ? "text"
+        : "image"),
     prompt: String(raw.prompt || ""),
     sourceAssetId: raw.sourceAssetId ? String(raw.sourceAssetId) : null,
     sourceAssetMimeType: raw.sourceAssetMimeType ? String(raw.sourceAssetMimeType) : null,

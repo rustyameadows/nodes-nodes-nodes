@@ -307,3 +307,20 @@ The renderer never sees absolute paths; those refs are resolved only in main/wor
     - `canvasNodeCleanup` boolean
   - timestamps (`created_at`, `updated_at`)
 - defaults: both flags `true` when unset or partially missing
+
+## Reference node settings payload (canvas document)
+
+`WorkflowNode.kind = "reference"` and `WorkflowNode.nodeType = "reference"` represent canonical project entities.
+
+Reference settings are stored in `WorkflowNode.settings` with `source: "reference"` and include:
+
+- `referenceType` (string): category label such as product, person, location, object, brand, material.
+- `subtitle` (string): compact identifying descriptor for canvas readability.
+- `status` (`draft | imported | enriched | user-reviewed | stale | needs-attention`): enrichment lifecycle state.
+- `sourceUrl` (string): optional canonical source pointer.
+- `attributes` (`Record<string, string>`): flexible structured facts.
+- Reference nodes also persist a synthesized `prompt` string derived from reference settings so model `promptSourceNodeId` links always resolve deterministic prompt text at execution time.
+- `sourceNotes` (string): unstructured context and guidance.
+- `visualAssetIds` (string[]): optional associated visual asset ids.
+- `provenance` (`manual | url-import | source-material | model-derived`): origin of the current data.
+- `lastEnrichedAt` (ISO string or null): last enrichment timestamp.

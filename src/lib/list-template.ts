@@ -9,11 +9,13 @@ import type {
   TextNoteSettings,
   TextTemplateNodeSettings,
   WorkflowNode,
+  ReferenceNodeSettings,
 } from "@/components/workspace/types";
 
 export const LIST_NODE_SOURCE = "list";
 export const TEXT_TEMPLATE_SOURCE = "text-template";
 export const TEXT_NOTE_SOURCE = "text-note";
+export const REFERENCE_SOURCE = "reference";
 export const TEMPLATE_OUTPUT_SOURCE = "template-output";
 export const MODEL_OUTPUT_TEXT_SOURCE = "generated-model-text";
 export const MODEL_OUTPUT_LIST_SOURCE = "generated-model-list";
@@ -116,6 +118,100 @@ export function createTextTemplateNodeSettings(): TextTemplateNodeSettings {
 export function createTextNoteSettings(): TextNoteSettings {
   return {
     source: TEXT_NOTE_SOURCE,
+  };
+}
+
+export function createReferenceNodeSettings(): ReferenceNodeSettings {
+  return {
+    source: REFERENCE_SOURCE,
+    referenceType: "product",
+    subtitle: "",
+    status: "draft",
+    sourceUrl: "",
+    attributes: {},
+    sourceNotes: "",
+    visualAssetIds: [],
+    provenance: "manual",
+    lastEnrichedAt: null,
+  };
+}
+
+export function buildReferencePromptText(settings: ReferenceNodeSettings): string {
+  const lines: string[] = [];
+  const referenceType = settings.referenceType.trim();
+  const subtitle = settings.subtitle.trim();
+  const sourceUrl = settings.sourceUrl.trim();
+  const attributes = Object.entries(settings.attributes || {})
+    .map(([key, value]) => [String(key).trim(), String(value).trim()] as const)
+    .filter(([key, value]) => key.length > 0 && value.length > 0);
+
+  if (referenceType) {
+    lines.push(`Type: ${referenceType}`);
+  }
+
+  if (subtitle) {
+    lines.push(`Summary: ${subtitle}`);
+  }
+
+  if (sourceUrl) {
+    lines.push(`Source URL: ${sourceUrl}`);
+  }
+
+  if (attributes.length > 0) {
+    lines.push("Attributes:");
+    attributes.forEach(([key, value]) => {
+      lines.push(`- ${key}: ${value}`);
+    });
+  }
+
+  return lines.join("\n");
+}
+
+export function getReferenceNodeSettings(value: unknown): ReferenceNodeSettings {
+  const record = asRecord(value);
+  const attributesRecord = asRecord(record.attributes);
+  const attributes = Object.entries(attributesRecord).reduce<Record<string, string>>((acc, entry) => {
+    const [key, rawValue] = entry;
+    const normalizedKey = String(key || "").trim();
+    if (!normalizedKey) {
+      return acc;
+    }
+    acc[normalizedKey] = String(rawValue ?? "");
+    return acc;
+  }, {});
+
+  const visualAssetIds = Array.isArray(record.visualAssetIds)
+    ? record.visualAssetIds
+        .map((assetId) => String(assetId || "").trim())
+        .filter((assetId) => assetId.length > 0)
+    : [];
+
+  return {
+    source: REFERENCE_SOURCE,
+    referenceType: String(record.referenceType || "").trim() || "subject",
+    subtitle: String(record.subtitle ?? ""),
+    status:
+      record.status === "imported" ||
+      record.status === "enriched" ||
+      record.status === "user-reviewed" ||
+      record.status === "stale" ||
+      record.status === "needs-attention"
+        ? record.status
+        : "draft",
+    sourceUrl: String(record.sourceUrl ?? ""),
+    attributes,
+    sourceNotes: String(record.sourceNotes ?? ""),
+    visualAssetIds,
+    provenance:
+      record.provenance === "url-import" ||
+      record.provenance === "source-material" ||
+      record.provenance === "model-derived"
+        ? record.provenance
+        : "manual",
+    lastEnrichedAt:
+      typeof record.lastEnrichedAt === "string" && record.lastEnrichedAt.trim().length > 0
+        ? String(record.lastEnrichedAt)
+        : null,
   };
 }
 
