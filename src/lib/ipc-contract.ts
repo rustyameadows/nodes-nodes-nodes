@@ -10,6 +10,7 @@ import type {
   OpenAIImageMode,
   ProviderCredentialKey,
   ProviderCredentialStatus,
+  AppSettings,
   Project,
   ProviderId,
   ProviderModel,
@@ -136,6 +137,8 @@ export type ImportAssetInput = {
 
 export type NodeInterface = {
   listProjects: () => Promise<Project[]>;
+  getAppSettings: () => Promise<AppSettings>;
+  saveAppSettings: (settings: AppSettings) => Promise<AppSettings>;
   createProject: (name: string) => Promise<Project>;
   updateProject: (projectId: string, payload: { name?: string; status?: "active" | "archived" }) => Promise<Project>;
   deleteProject: (projectId: string) => Promise<void>;

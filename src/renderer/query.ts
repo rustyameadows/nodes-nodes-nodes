@@ -2,6 +2,7 @@ import { QueryClient } from "@tanstack/react-query";
 
 export const queryKeys = {
   projects: ["projects"] as const,
+  appSettings: ["app-settings"] as const,
   providers: ["providers"] as const,
   providerCredentials: ["provider-credentials"] as const,
   workspace: (projectId: string) => ["workspace", projectId] as const,

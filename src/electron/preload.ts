@@ -12,6 +12,8 @@ function invoke<T>(method: string, ...args: unknown[]) {
 
 const nodeInterface: NodeInterface = {
   listProjects: () => invoke("listProjects"),
+  getAppSettings: () => invoke("getAppSettings"),
+  saveAppSettings: (settings) => invoke("saveAppSettings", settings),
   createProject: (name) => invoke("createProject", name),
   updateProject: (projectId, payload) => invoke("updateProject", projectId, payload),
   deleteProject: (projectId) => invoke("deleteProject", projectId),

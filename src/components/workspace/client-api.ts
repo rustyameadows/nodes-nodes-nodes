@@ -14,6 +14,7 @@ import {
   resolveImageModelSettings,
 } from "@/lib/provider-model-helpers";
 import type {
+  AppSettings,
   AssetFilterState,
   CanvasDocument,
   ImportedAssetResult,
@@ -28,6 +29,14 @@ import type {
 
 export async function getProjects() {
   return window.nodeInterface.listProjects();
+}
+
+export async function getAppSettings(): Promise<AppSettings> {
+  return window.nodeInterface.getAppSettings();
+}
+
+export async function saveAppSettings(settings: AppSettings): Promise<AppSettings> {
+  return window.nodeInterface.saveAppSettings(settings);
 }
 
 export async function createProject(name: string) {

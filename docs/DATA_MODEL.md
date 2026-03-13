@@ -296,3 +296,14 @@ The renderer never sees absolute paths; those refs are resolved only in main/wor
 - Project deletion cascades through workspace state, canvas, jobs, attempts, assets, feedback, tags, and preview metadata.
 - Filesystem cleanup for project assets and job previews runs alongside row deletion.
 - SQLite foreign keys stay enabled at connection startup.
+
+
+## app_settings
+- singleton table for app-wide preferences and rollout controls
+- columns:
+  - `id` (`"singleton"`)
+  - `feature_flags` JSON
+    - `capturePng` boolean
+    - `canvasNodeCleanup` boolean
+  - timestamps (`created_at`, `updated_at`)
+- defaults: both flags `true` when unset or partially missing

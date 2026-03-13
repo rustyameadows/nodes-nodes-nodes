@@ -70,6 +70,7 @@ import {
   createJobFromRequest,
   getAssetFileUrl,
   getCanvasWorkspace,
+  getAppSettings,
   getAssetPointers,
   getJobs,
   getPreviewFrameFileUrl,
@@ -85,6 +86,7 @@ import {
 } from "@/components/workspace/client-api";
 import {
   defaultCanvasDocument,
+  type AppFeatureFlags,
   type Asset,
   type CanvasDocument,
   type Job,
@@ -172,6 +174,7 @@ import {
   setCanvasGeneratedOutputReceiptKeys,
 } from "@/lib/generated-output-receipts";
 import { subscribeToCanvasMenuCommand } from "@/renderer/canvas-menu-command-bus";
+import { APP_FEATURE_FLAG_DEFAULTS } from "@/lib/feature-flags";
 import { publishCanvasMenuState, resetCanvasMenuState } from "@/renderer/canvas-menu-context-bus";
 import styles from "./canvas-view.module.css";
 
@@ -204,9 +207,13 @@ const CANVAS_EXPORT_MAX_EDGE = 4096;
 const CANVAS_EXPORT_SCALE_CAP = 2;
 
 function sanitizeSelectionExportName(value: string) {
-  const cleaned = value
+  const withoutControl = Array.from(value)
+    .filter((character) => character >= " ")
+    .join("");
+
+  const cleaned = withoutControl
     .trim()
-    .replace(/[<>:"/\\|?*\u0000-\u001F]/g, "-")
+    .replace(/[<>:"/|?*]/g, "-")
     .replace(/\s+/g, "-")
     .replace(/-+/g, "-")
     .replace(/^-|-$/g, "");
@@ -945,6 +952,7 @@ export function CanvasView({ projectId }: Props) {
   const [copilotModelVariantId, setCopilotModelVariantId] = useState<string | null>(null);
   const [copilotActiveJobId, setCopilotActiveJobId] = useState<string | null>(null);
   const [isCapturingSelectionPng, setIsCapturingSelectionPng] = useState(false);
+  const [featureFlags, setFeatureFlags] = useState<AppFeatureFlags>(APP_FEATURE_FLAG_DEFAULTS);
   const [historyStacks, setHistoryStacks] = useState<CanvasHistoryStacks>({
     undo: [],
     redo: [],
@@ -2213,9 +2221,10 @@ export function CanvasView({ projectId }: Props) {
     setCopilotMessages([]);
     setCopilotActiveJobId(null);
 
-    Promise.all([getProviders(), fetchCanvas(), fetchJobs(), openProject(projectId)])
-      .then(([nextProviders]) => {
+    Promise.all([getProviders(), getAppSettings(), fetchCanvas(), fetchJobs(), openProject(projectId)])
+      .then(([nextProviders, nextAppSettings]) => {
         setProviders(nextProviders);
+        setFeatureFlags(nextAppSettings.featureFlags);
       })
       .catch((error) => {
         console.error(error);
@@ -2227,13 +2236,21 @@ export function CanvasView({ projectId }: Props) {
 
   useEffect(() => {
     return subscribeToAppEvent("workspace.changed", (payload) => {
-      if (payload.projectId !== projectId || payload.reason !== "asset-import") {
-        return;
+      if (payload.projectId === projectId && payload.reason === "asset-import") {
+        fetchCanvas().catch((error) => {
+          console.error("Failed to refresh canvas after external asset import", error);
+        });
       }
 
-      fetchCanvas().catch((error) => {
-        console.error("Failed to refresh canvas after external asset import", error);
-      });
+      if (!payload.projectId) {
+        getAppSettings()
+          .then((nextSettings) => {
+            setFeatureFlags(nextSettings.featureFlags);
+          })
+          .catch((error) => {
+            console.error("Failed to refresh app feature flags", error);
+          });
+      }
     });
   }, [fetchCanvas, projectId]);
 
@@ -6036,7 +6053,7 @@ export function CanvasView({ projectId }: Props) {
       },
     ];
 
-    if (selectedNodeIds.length >= 2) {
+    if (selectedNodeIds.length >= 2 && featureFlags.canvasNodeCleanup) {
       actions.push({
         id: "clean-up-selection",
         label: "Clean Up Selection",
@@ -6046,7 +6063,8 @@ export function CanvasView({ projectId }: Props) {
       });
     }
 
-    actions.push({
+    if (featureFlags.capturePng) {
+      actions.push({
       id: "capture-png",
       label: "Capture PNG",
       onClick: () => {
@@ -6054,6 +6072,8 @@ export function CanvasView({ projectId }: Props) {
       },
       disabled: isCapturingSelectionPng,
     });
+
+    }
 
     if (selectedNodeIds.length > 1 && selectedImageAssetIds.length > 0) {
       actions.push({
@@ -6089,6 +6109,8 @@ export function CanvasView({ projectId }: Props) {
     openCompare,
     selectedImageAssetIds,
     selectedNodeIds,
+    featureFlags.canvasNodeCleanup,
+    featureFlags.capturePng,
   ]);
 
   const insertMenuTargetNode =
@@ -6208,9 +6230,22 @@ export function CanvasView({ projectId }: Props) {
         redoCanvasChange();
       },
       cleanUpSelection: () => {
+        if (!featureFlags.canvasNodeCleanup) {
+          return;
+        }
         cleanUpSelectedNodes();
       },
       captureSelectionPng: (filePath?: string) => {
+        if (!featureFlags.capturePng) {
+          return Promise.resolve({
+            canceled: true,
+            filePath: null,
+            exportedNodeIds: [],
+            exportedConnectionIds: [],
+            width: 0,
+            height: 0,
+          });
+        }
         return captureSelectedNodesPng({
           filePath,
         });
@@ -6296,6 +6331,8 @@ export function CanvasView({ projectId }: Props) {
     setTrackedSelectedNodeIds,
     undoCanvasChange,
     updateNode,
+    featureFlags.canvasNodeCleanup,
+    featureFlags.capturePng,
   ]);
 
   return (

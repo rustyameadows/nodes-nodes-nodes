@@ -69,6 +69,13 @@ export type ProviderCredentialStatus = {
   source: ProviderCredentialSource;
 };
 
+export type AppFeatureFlags = {
+  capturePng: boolean;
+  canvasNodeCleanup: boolean;
+};
+
+export type AppFeatureFlagKey = keyof AppFeatureFlags;
+
 export type JobRunOrigin = "canvas-node" | "copilot";
 
 export type WorkflowNodeKind = "model" | "asset-source" | "text-note" | "list" | "text-template";
@@ -145,6 +152,10 @@ export type UploadedAssetNodeSettings = {
 };
 
 export type WorkflowNodeSettings = Record<string, unknown>;
+
+export type AppSettings = {
+  featureFlags: AppFeatureFlags;
+};
 
 export type Project = {
   id: string;

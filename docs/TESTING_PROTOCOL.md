@@ -180,6 +180,7 @@ What it does:
   - queue view render
   - project settings render without provider credentials
   - app settings render with provider credentials
+  - feature flags section renders with `Capture PNG` and `Canvas node cleanup` toggles
   - packaged SQLite and on-disk asset persistence
 
 Expected output:
@@ -355,3 +356,10 @@ Update this protocol when any of these change:
 - Electron boot path
 - mac packaging or packaged-app verification flow
 - required verification steps for canvas/assets/queue flows
+
+
+### Feature Flags Smoke
+1. Open App Settings.
+2. Toggle off `Capture PNG` and verify the canvas selection rail no longer shows `Capture PNG`.
+3. Toggle off `Canvas node cleanup` and verify multi-selection no longer shows `Clean Up Selection`.
+4. Re-enable both flags and verify both actions return without restarting the app.

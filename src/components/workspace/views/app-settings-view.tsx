@@ -1,18 +1,22 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Badge, Button, Field, Input, Panel, SectionHeader, ToolbarGroup } from "@/components/ui";
 import { useRouter } from "@/renderer/navigation";
 import {
   clearProviderCredential,
+  getAppSettings,
   getProviderCredentials,
   getProjects,
   getProviders,
   refreshProviderAccess,
+  saveAppSettings,
   saveProviderCredential,
 } from "@/components/workspace/client-api";
 import type {
+  AppFeatureFlagKey,
+  AppSettings,
   Project,
   ProviderCredentialKey,
   ProviderCredentialStatus,
@@ -23,6 +27,17 @@ import { buildUiDataAttributes } from "@/lib/design-system";
 import { queryKeys } from "@/renderer/query";
 import { buildAppHomeRoute, buildWorkspaceRoute } from "@/renderer/workspace-route";
 import styles from "./settings-view.module.css";
+
+const FEATURE_FLAG_LABELS: Record<AppFeatureFlagKey, { title: string; description: string }> = {
+  capturePng: {
+    title: "Capture PNG",
+    description: "Shows the Capture PNG action in the canvas selection rail.",
+  },
+  canvasNodeCleanup: {
+    title: "Canvas node cleanup",
+    description: "Shows the Clean Up Selection action for multi-selected nodes.",
+  },
+};
 
 const PROVIDER_LABELS: Record<ProviderCredentialKey, string> = {
   OPENAI_API_KEY: "OpenAI",
@@ -115,6 +130,7 @@ function resolveCurrentProject(projects: Project[]) {
 
 export function AppSettingsView() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [credentialDrafts, setCredentialDrafts] = useState<Record<ProviderCredentialKey, string>>({
     OPENAI_API_KEY: "",
     GOOGLE_API_KEY: "",
@@ -123,6 +139,8 @@ export function AppSettingsView() {
   const [credentialBusyKey, setCredentialBusyKey] = useState<ProviderCredentialKey | null>(null);
   const [refreshBusyProviderId, setRefreshBusyProviderId] = useState<"google-gemini" | null>(null);
   const [credentialError, setCredentialError] = useState<string | null>(null);
+  const [featureFlagsBusy, setFeatureFlagsBusy] = useState<AppFeatureFlagKey | null>(null);
+  const [featureFlagsError, setFeatureFlagsError] = useState<string | null>(null);
   const { data: projects = [], isLoading: projectsLoading } = useQuery<Project[]>({
     queryKey: queryKeys.projects,
     queryFn: getProjects,
@@ -134,6 +152,10 @@ export function AppSettingsView() {
   const { data: providerCredentials = [], isLoading: credentialsLoading } = useQuery<ProviderCredentialStatus[]>({
     queryKey: queryKeys.providerCredentials,
     queryFn: getProviderCredentials,
+  });
+  const { data: appSettings } = useQuery<AppSettings>({
+    queryKey: queryKeys.appSettings,
+    queryFn: getAppSettings,
   });
 
   const currentProject = useMemo(() => resolveCurrentProject(projects), [projects]);
@@ -148,6 +170,10 @@ export function AppSettingsView() {
           })),
     [providerCredentials]
   );
+  const featureFlags = appSettings?.featureFlags || {
+    capturePng: true,
+    canvasNodeCleanup: true,
+  };
 
   return (
     <main {...buildUiDataAttributes("app", "comfortable")} className={styles.page}>
@@ -199,6 +225,65 @@ export function AppSettingsView() {
             </Button>
           ) : null}
         </ToolbarGroup>
+      </Panel>
+
+
+      <Panel variant="panel" className={styles.panel}>
+        <SectionHeader
+          eyebrow="Workspace"
+          title="Feature Flags"
+          description="Enable or disable experimental UI actions from one app-level settings surface."
+        />
+
+        <div className={styles.credentialsList}>
+          {(Object.keys(FEATURE_FLAG_LABELS) as AppFeatureFlagKey[]).map((key) => {
+            const detail = FEATURE_FLAG_LABELS[key];
+            const enabled = featureFlags[key];
+            const isBusy = featureFlagsBusy === key;
+
+            return (
+              <section key={key} className={styles.credentialCard}>
+                <div className={styles.credentialHeader}>
+                  <div>
+                    <h2>{detail.title}</h2>
+                    <p>{key}</p>
+                  </div>
+                  <div className={styles.badgeRow}>
+                    <Badge variant={enabled ? "success" : "warning"}>{enabled ? "Enabled" : "Disabled"}</Badge>
+                  </div>
+                </div>
+                <p className={styles.helpText}>{detail.description}</p>
+                <ToolbarGroup className={styles.actionRow}>
+                  <Button
+                    variant="secondary"
+                    disabled={Boolean(featureFlagsBusy)}
+                    onClick={async () => {
+                      setFeatureFlagsBusy(key);
+                      setFeatureFlagsError(null);
+                      try {
+                        await saveAppSettings({
+                          featureFlags: {
+                            ...featureFlags,
+                            [key]: !enabled,
+                          },
+                        });
+                        await queryClient.invalidateQueries({ queryKey: queryKeys.appSettings });
+                      } catch (error) {
+                        setFeatureFlagsError(error instanceof Error ? error.message : "Failed to save feature flags");
+                      } finally {
+                        setFeatureFlagsBusy(null);
+                      }
+                    }}
+                  >
+                    {isBusy ? "Saving..." : enabled ? "Disable" : "Enable"}
+                  </Button>
+                </ToolbarGroup>
+              </section>
+            );
+          })}
+        </div>
+
+        {featureFlagsError ? <div className={styles.error}>{featureFlagsError}</div> : null}
       </Panel>
 
       <Panel variant="panel" className={styles.panel}>
@@ -274,6 +359,8 @@ export function AppSettingsView() {
 
                         try {
                           await saveProviderCredential(status.key, draftValue);
+                          await queryClient.invalidateQueries({ queryKey: queryKeys.providerCredentials });
+                          await queryClient.invalidateQueries({ queryKey: queryKeys.providers });
                           setCredentialDrafts((current) => ({
                             ...current,
                             [status.key]: "",
@@ -299,6 +386,8 @@ export function AppSettingsView() {
 
                         try {
                           await clearProviderCredential(status.key);
+                          await queryClient.invalidateQueries({ queryKey: queryKeys.providerCredentials });
+                          await queryClient.invalidateQueries({ queryKey: queryKeys.providers });
                         } catch (nextError) {
                           setCredentialError(
                             nextError instanceof Error ? nextError.message : `Failed to clear ${status.key}`
@@ -321,6 +410,7 @@ export function AppSettingsView() {
 
                           try {
                             await refreshProviderAccess("google-gemini");
+                            await queryClient.invalidateQueries({ queryKey: queryKeys.providers });
                           } catch (nextError) {
                             setCredentialError(
                               nextError instanceof Error ? nextError.message : "Failed to refresh Gemini access"

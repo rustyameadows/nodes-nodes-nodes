@@ -111,6 +111,14 @@ CREATE TABLE IF NOT EXISTS asset_tag_links (
   PRIMARY KEY (asset_id, tag_id)
 );
 
+
+CREATE TABLE IF NOT EXISTS app_settings (
+  id TEXT PRIMARY KEY NOT NULL,
+  feature_flags TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS provider_models (
   provider_id TEXT NOT NULL,
   model_id TEXT NOT NULL,

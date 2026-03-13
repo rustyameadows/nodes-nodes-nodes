@@ -1,5 +1,6 @@
 import {
   defaultCanvasDocument,
+  type AppSettings,
   type Asset,
   type CanvasDocument,
   type ImportedAssetResult,
@@ -44,6 +45,7 @@ import {
   getTopazGigapixelParameterDefinitions,
   getTopazPromptMode,
 } from "@/lib/topaz-gigapixel-settings";
+import { APP_FEATURE_FLAG_DEFAULTS, normalizeFeatureFlags } from "@/lib/feature-flags";
 
 const STORAGE_KEY = "node-interface-browser-fallback";
 
@@ -63,6 +65,9 @@ type StoredProject = {
 type BrowserStore = {
   projects: StoredProject[];
   providerCredentials?: Partial<Record<ProviderCredentialKey, string>>;
+  appSettings?: {
+    featureFlags?: Record<string, unknown>;
+  };
 };
 
 function nowIso() {
@@ -91,6 +96,10 @@ function readStore(): BrowserStore {
         parsed.providerCredentials && typeof parsed.providerCredentials === "object"
           ? parsed.providerCredentials
           : {},
+      appSettings:
+        parsed.appSettings && typeof parsed.appSettings === "object"
+          ? parsed.appSettings
+          : { featureFlags: APP_FEATURE_FLAG_DEFAULTS },
     };
   } catch {
     return { projects: [] };
@@ -142,6 +151,26 @@ function updateProjectInStore(projectId: string, updater: (project: StoredProjec
   store.projects = store.projects.map((project) => (project.id === projectId ? updater(project) : project));
   writeStore(store);
   return store;
+}
+
+function getStoredAppSettings(): AppSettings {
+  const store = readStore();
+  return {
+    featureFlags: normalizeFeatureFlags(store.appSettings?.featureFlags),
+  };
+}
+
+function saveStoredAppSettings(settings: AppSettings): AppSettings {
+  const store = readStore();
+  const normalized: AppSettings = {
+    featureFlags: normalizeFeatureFlags(settings.featureFlags),
+  };
+
+  store.appSettings = {
+    featureFlags: normalized.featureFlags,
+  };
+  writeStore(store);
+  return normalized;
 }
 
 function listStoredProviderCredentials(): ProviderCredentialStatus[] {
@@ -641,6 +670,14 @@ export function installBrowserNodeInterface() {
   const nodeInterface: NodeInterface = {
     async listProjects() {
       return readStore().projects.map(toProject);
+    },
+    async getAppSettings(): Promise<AppSettings> {
+      return getStoredAppSettings();
+    },
+    async saveAppSettings(settings: AppSettings): Promise<AppSettings> {
+      const saved = saveStoredAppSettings(settings);
+      broadcast("workspace.changed");
+      return saved;
     },
     async createProject(name: string) {
       const timestamp = nowIso();

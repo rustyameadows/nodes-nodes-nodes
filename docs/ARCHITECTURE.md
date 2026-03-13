@@ -44,6 +44,7 @@
 ## App Data Layout
 - App data root: explicit path under Electron `appData`, pinned to `~/Library/Application Support/Nodes Node Nodes/node-interface-demo` on macOS
 - SQLite file: `app.sqlite`
+- Global app settings (including feature flags) persist in `app_settings` as a singleton row.
 - Asset binaries: `assets/<projectId>/...`
 - Preview frames: `previews/<jobId>/...`
 
@@ -96,6 +97,7 @@ Native menu flow:
 - canvas-specific native menu commands are forwarded inside the renderer to `CanvasView`, which reuses the same insert helpers as the in-canvas insert popup and the same canvas command path as keyboard shortcuts
 - `Home` is a dedicated app-level route at `/`
 - `App Settings` is a dedicated global route at `/settings/app`, separate from project-scoped settings
+- App Settings now includes a feature-flag section used to gate experimental UI behaviors without code edits.
 
 TanStack Query owns persisted app data in the renderer and is invalidated from those desktop events.
 
@@ -139,6 +141,7 @@ TanStack Query owns persisted app data in the renderer and is invalidated from t
 - Multi-node drag uses the current selection as a batch and preserves relative spacing across the moved nodes.
 - `Clean Up Selection` mutates only the selected nodes and records one immediate canvas history entry.
 - `Capture PNG` builds an induced selected subgraph, lays it out in an ephemeral export scene, rasterizes the SVG in the renderer, and hands the encoded PNG bytes to the Electron main process for native save-dialog persistence.
+- Canvas selection actions are gated by app-level feature flags (`capturePng`, `canvasNodeCleanup`) loaded at canvas boot and refreshed after app-settings saves.
 - Active node cards switch drag to floating rail/hotspot affordances so inline controls stay editable without causing content shift.
 - Double-click node focus is owned by `CanvasView`: it may first change the node's presentation state, then waits for the node shell to settle before animating the viewport fit.
 - Primary inline editor routing is resolved by node type:

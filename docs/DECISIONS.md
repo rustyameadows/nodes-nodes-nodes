@@ -199,3 +199,10 @@
 - Decision: rebuild `/nodes` as a quiet gallery of real node specimens instead of a metadata-heavy registry page.
 - Rationale: the old hero, metrics, and badge-heavy cards competed with the actual node shapes and made the library read like docs instead of a focused browse surface.
 - Consequence: the index now keeps only a compact title/search header plus home navigation, every card centers the fixture's primary node inside a dark mini-canvas stage using the shared node-render shaping path, and deeper I/O/settings/display-mode explanation remains on the detail pages rather than the gallery index.
+
+
+## 2026-03-13 — App-level feature flags in App Settings
+- Context: We need a durable way to incrementally roll out settings-page-controlled behavior without hard-coding temporary checks in canvas code.
+- Decision: add a persisted app-settings singleton with typed feature flags and expose toggles in `/settings/app`.
+- Initial flags: `capturePng` and `canvasNodeCleanup` gate the corresponding canvas selection-rail actions.
+- Consequence: rollout and rollback are immediate for local users, flags survive restarts, and future toggles can reuse the same path (IPC → service → `app_settings`).

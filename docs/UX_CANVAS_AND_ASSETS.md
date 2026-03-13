@@ -269,6 +269,9 @@ Controls:
 - app home is reachable from the in-canvas `Menu` pill, app settings, and the native macOS `Project` menu
 - Node Library is reachable from app home, the in-canvas `Menu` pill, and the native macOS app/project menus
 - App Settings shows per-provider readiness; the Gemini row includes per-project access summary plus a manual `Refresh Access` action
+- App Settings also includes app-level feature flags used for progressive rollout of canvas behaviors.
+  - `capturePng`: controls whether `Capture PNG` appears in the selection rail
+  - `canvasNodeCleanup`: controls whether `Clean Up Selection` appears for multi-selection
 - Node Library detail keeps the actual playground canvas black while the surrounding rails and wrappers follow the light app surface system
 - browser uploads are replaced by native file dialogs
 - native file dialog imports and mac menu bar imports both create uploaded asset-source nodes through the same shared insertion path

@@ -16,7 +16,7 @@ import type {
   SaveCanvasPngExportRequest,
   ShowAppTarget,
 } from "@/lib/ipc-contract";
-import type { AssetFilterState } from "@/components/workspace/types";
+import type { AppSettings, AssetFilterState } from "@/components/workspace/types";
 import { createAppIcon, createMenuBarIcon } from "@/electron/brand";
 import { buildNativeMenuTemplate, type NativeMenuItemDescriptor } from "@/electron/native-menu";
 import { APP_ID, APP_NAME, APP_USER_DATA_DIRNAME } from "@/lib/runtime/app-meta";
@@ -36,6 +36,7 @@ import {
   syncProviderModels,
 } from "@/lib/services/providers";
 import { getWorkspaceSnapshot, saveWorkspaceSnapshot } from "@/lib/services/workspace";
+import { getAppSettings, saveAppSettings } from "@/lib/services/app-settings";
 
 const APP_EVENT_CHANNEL = "node-interface:event";
 const APP_INVOKE_CHANNEL = "node-interface:invoke";
@@ -698,6 +699,12 @@ function registerElectronTestHooks() {
 function registerIpc() {
   const handlers = {
     listProjects: async () => listProjects(),
+    getAppSettings: async () => getAppSettings(),
+    saveAppSettings: async (settings: AppSettings) => {
+      const saved = await saveAppSettings(settings);
+      broadcastEvent({ event: "workspace.changed" });
+      return saved;
+    },
     createProject: async (name: string) => {
       const project = await createProject(name);
       broadcastEvent({ event: "projects.changed", projectId: project.id });
@@ -841,9 +848,11 @@ function registerIpc() {
       hideMenuBarWindow();
     },
     saveCanvasPngExport: async (request: SaveCanvasPngExportRequest) => {
-      const normalizedName = (request.suggestedName || "canvas-selection.png")
+      const normalizedName = Array.from(request.suggestedName || "canvas-selection.png")
+        .filter((character) => character >= " ")
+        .join("")
         .trim()
-        .replace(/[<>:"/\\|?*\u0000-\u001F]/g, "-")
+        .replace(/[<>:"/|?*]/g, "-")
         .replace(/\s+/g, " ");
       const defaultFileName = normalizedName.toLowerCase().endsWith(".png") ? normalizedName : `${normalizedName}.png`;
       const resolvedFilePath =

@@ -172,6 +172,14 @@ export const assetTagLinks = sqliteTable(
   })
 );
 
+
+export const appSettings = sqliteTable("app_settings", {
+  id: text("id").primaryKey(),
+  featureFlags: text("feature_flags", { mode: "json" }).$type<Record<string, unknown>>().notNull(),
+  createdAt: timestamps.createdAt,
+  updatedAt: timestamps.updatedAt,
+});
+
 export const providerModels = sqliteTable("provider_models", {
   providerId: text("provider_id").notNull(),
   modelId: text("model_id").notNull(),
